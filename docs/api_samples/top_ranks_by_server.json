@@ -1,0 +1,18 @@
+{
+  "code": 200,
+  "message": "Success",
+  "topRanks": [
+    {
+      "nickname": "AsiaTop1",
+      "rank": 1,
+      "mmr": 5176,
+      "userEmblems": []
+    },
+    {
+      "nickname": "AsiaTop2",
+      "rank": 2,
+      "mmr": 5088,
+      "userEmblems": []
+    }
+  ]
+}

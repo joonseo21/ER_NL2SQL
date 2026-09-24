@@ -1,0 +1,25 @@
+{
+  "code": 200,
+  "message": "Success",
+  "data": {
+    "ActionCost": 1525244,
+    "Area": 41524422,
+    "Character": 98231011,
+    "CharacterLevelUpStat": 77412388,
+    "CharacterMastery": 55219900,
+    "CharacterModeModifier": 33108741,
+    "WeaponTypeInfo": 22091455,
+    "ItemSkillLinker": 11873221,
+    "ItemSpawn": 88654300,
+    "ItemWeapon": 66123788,
+    "ItemArmor": 44219900,
+    "ItemSpecial": 99881122,
+    "ItemConsumable": 77223344,
+    "Monster": 55667788,
+    "MonsterLevelUpStat": 33445566,
+    "MonsterDropGroup": 11223344,
+    "DropGroup": 99001122,
+    "VFCredit": 77889900,
+    "Season": 55667711
+  }
+}

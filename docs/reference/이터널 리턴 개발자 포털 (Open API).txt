@@ -1,0 +1,3404 @@
+이터널 리턴 개발자 포털 (Open API)
+외부 개발자를 위한 종합 API 레퍼런스
+2025-10-13
+Table of Contents
+1. 소개
+1.1. 요청 보내기
+1.2. 표준 응답 래퍼
+1.2.1. HTTP 상태 코드
+1.3. API 주요 엔드포인트 목록
+2. 엔드포인트
+2.1. 사용자
+2.1.1. UID 조회 (v1)
+2.1.2. 사용자 경기 목록 조회 (v1)
+2.1.3. 사용자 랭크 조회 (v1)
+2.1.4. 사용자 통계 조회 (v2)
+2.1.5. 유니온 팀 조회 (v1)
+2.2. 랭킹
+2.2.1. 통합 랭커 조회 (v1)
+2.2.2. 서버별 상위 랭커 조회 (v1)
+2.3. 매치
+2.3.1. 경기 정보 조회 (v1)
+2.4. 기타
+2.4.1. 게임 데이터 조회 (v2)
+2.4.2. 언어 데이터 조회 (v1)
+2.4.3. 무기 루트 조회 (v1)
+3. 데이터 정의
+3.1. unionTeam
+3.2. userRank
+3.3. userStats
+3.4. characterStat
+3.5. BattleUserResult
+3.6. RecommendWeaponRoute
+3.7. RecommendWeaponRouteDesc
+4. 참조
+4.1. 리전 서버 (RegionServer)
+4.2. MatchingMode
+4.3. MatchingTeamMode
+4.4. 야생 동물 (Monster)
+4.5. 숙련도 (mastery)
+4.6. 스킬 코드
+4.7. 지역 번호
+4.8. 장비 (Equipment)
+4.9. 전술 스킬
+4.10. 가젯 스킬
+4.11. 날씨 / 환경 변수
+로고
+이 문서는 버전 9.4.0 기준으로 마지막 업데이트되었습니다.
+개인정보 보호 목적으로 일부 엔드포인트가 변경됐습니다.
+
+개인정보 보호 이슈로, 더 이상 userNum 기반 검색을 지원하지 않습니다.
+앞으로 사용자 엔드포인트는 플레이어를 참조하기 위해 임시 userId 키를 요구합니다.
+
+1. 소개
+1.1. 요청 보내기
+모든 사용자 요청에는 x-api-key가 포함되어야 합니다.
+이 x-api-key는 최초 로그인 후 발급된 키입니다.
+우측 상단의 "My Dashboard"에서 발급된 API 키를 확인할 수 있습니다.
+
+파이썬 예시
+
+import requests
+import json
+
+url = "https://open-api.bser.io/v1/user/nickname?query=*USER_NICKNAME*"
+# 기본 UID 조회 엔드포인트 사용 예.
+
+header = { "x-api-key" : "YOUR_API_KEY"}
+
+# 헤더에는 x-api-key가 반드시 포함되어야 합니다.
+res = requests.get(url, headers=header)
+1.2. 표준 응답 래퍼
+파이썬 예시
+
+import requests
+>>> res = requests.get("YOUR_URL_HERE", headers=header)
+>>> res.json()
+{
+    "code": 200,
+    "message": "Success",
+    "data":
+        { "YourData" : True }
+        # 일부 엔드포인트는 data 대신 리소스별 키를 사용합니다
+}
+일반적인 응답은 항상 "code", "message", 혹은 "data"라는 이름의 페이로드 키를 포함합니다.
+
+1.2.1. HTTP 상태 코드
+코드	의미
+200
+
+성공
+
+400
+
+잘못된 요청 매개변수
+
+403
+
+금지됨 또는 레이트 리미트
+
+404
+
+리소스를 찾을 수 없음
+
+429
+
+요청 과다 (403과 동일)
+
+500
+
+내부 서버 오류
+
+1.3. API 주요 엔드포인트 목록
+다음은 접근 가능한 주요 엔드포인트입니다.
+
+그룹	이름	용도
+사용자
+
+UID 조회
+
+닉네임으로 사용자 UID를 획득합니다.
+
+사용자
+
+사용자 경기 목록 조회
+
+사용자의 최근 경기(UID)를 조회합니다.
+
+사용자
+
+사용자 랭크 조회
+
+사용자의 랭크(UID)를 조회합니다.
+
+사용자
+
+사용자 통계 조회
+
+사용자의 통계(UID)를 조회합니다.
+
+사용자
+
+유니온 팀 조회
+
+사용자의 유니온 팀 정보(UID)를 조회합니다.
+
+랭킹
+
+상위 랭커 조회
+
+상위 랭커를 조회합니다.
+
+랭킹
+
+서버별 상위 랭커 조회
+
+서버별 상위 랭커를 조회합니다.
+
+매치
+
+경기 정보 조회
+
+특정 경기의 모든 정보를 조회합니다.
+
+기타
+
+게임 데이터 조회
+
+인게임 데이터 테이블을 조회합니다.
+
+기타
+
+언어 데이터 조회
+
+언어 데이터(l10n)를 조회합니다.
+
+기타
+
+무기 루트 조회
+
+무기 루트 데이터를 조회합니다.
+
+2. 엔드포인트
+2.1. 사용자
+2.1.1. UID 조회 (v1)
+대부분의 엔드포인트는 사용자를 식별하기 위해 UID가 필요합니다.
+주의: UID는 영구적이지 않습니다 — 사용자가 닉네임을 변경할 때마다 달라집니다.
+
+엔드포인트
+/v1/user/nickname?query={nickname}
+
+매개변수
+매개변수	타입	설명
+nickname
+
+string
+
+플레이어의 현재 인게임 닉네임.
+
+응답 (200)
+{
+    "code":200,
+    "message":"Success",
+    "user":{
+        "uid": "eff12455D22Xj91",
+        "nickname":"ANONYMOUS"
+        }
+}
+데이터 정의
+이 엔드포인트는 UID와 조회된 닉네임을 반환합니다.
+
+2.1.2. 사용자 경기 목록 조회 (v1)
+지난 90일 동안 사용자가 플레이한 모든 경기를 나열합니다.
+사용자가 닉네임을 변경한 경우, 변경 이전에 플레이한 경기는 이 검색 결과에 포함되지 않습니다.
+
+엔드포인트
+/v1/user/games/uid/{uid}
+
+매개변수
+이름	타입	설명
+userId
+
+string
+
+GET UID 엔드포인트로 획득한 UID. UID 조회 (v1)
+
+응답 (200)
+{
+    "code":200,
+    "message":"Success",
+    "userGames":[
+        BattleUserResult,
+        BattleUserResult
+        ]
+}
+데이터 정의
+이 엔드포인트는 BattleUserResult 데이터 목록을 반환합니다.
+자세한 내용은 BattleUserResult를 참조하세요.
+
+2.1.3. 사용자 랭크 조회 (v1)
+엔드포인트
+/v1/rank/uid/{userId}/{seasonId}/{matchingTeamMode}
+
+특정 시즌에서 플레이어의 현재 랭크와 MMR을 조회합니다.
+
+매개변수
+이름	타입	설명
+userId
+
+string
+
+UID 조회 (v1) 엔드포인트로 획득한 UID.
+
+seasonId
+
+int
+
+시즌 식별자.
+
+matchingTeamMode
+
+int
+
+3: 스쿼드 만 지원합니다.
+
+응답 (200)
+{
+    "code":200,
+    "message":"Success",
+    "userRank":{
+        "mmr":3933,
+        "nickname":"ANONYMOUS",
+        "rank":11,
+        "serverCode":10,
+        "serverRank":24
+        }
+}
+데이터 정의
+이 엔드포인트는 userRank 데이터를 반환합니다.
+자세한 내용은 userRank를 참조하세요.
+
+2.1.4. 사용자 통계 조회 (v2)
+엔드포인트
+/v2/user/stats/uid/{userId}/{seasonId}/{matchingMode}
+
+사용자의 캐릭터 및 승률 통계 정보를 조회합니다.
+
+매개변수
+이름	타입	설명
+userId
+
+string
+
+UID 조회 (v1) 엔드포인트로 획득한 UID.
+
+seasonId
+
+int
+
+대상 시즌 ID. (일반 대전은 0을 사용합니다.)
+
+matchingMode
+
+int
+
+현재 2: Normal, 3: Ranked만 지원합니다.
+
+응답 (200)
+{
+    "code": 200,
+    "message": "Success",
+    "userStats": [
+        {
+        "seasonId": 33,
+        "matchingMode": 3,
+        "matchingTeamMode": 3,
+        "mmr": 3107,
+        "nickname": "Anon3",
+        "rank": 24,
+        "rankSize": 58,
+        "totalGames": 3,
+        "totalWins": 1,
+        "totalTeamKills": 45,
+        "totalDeaths": 3,
+        "escapeCount": 0,
+        "rankPercent": 0.41,
+        "averageRank": 2.67,
+        "averageKills": 14.33,
+        "averageAssistants": 0.33,
+        "averageHunts": 37.33,
+        "top1": 0.33,
+        "top2": 0.33,
+        "top3": 0.67,
+        "top5": 1.0,
+        "top7": 1.0,
+        "characterStats": [
+            {
+                "characterCode": 78,
+                "totalGames": 1,
+                "usages": 1,
+                "maxKillings": 18,
+                "top3": 1,
+                "wins": 1,
+                "top3Rate": 1,
+                "averageRank": 1
+            },
+            {
+                "characterCode": 23,
+                "totalGames": 1,
+                "usages": 1,
+                "maxKillings": 20,
+                "top3": 1,
+                "wins": 0,
+                "top3Rate": 1,
+                "averageRank": 3
+            },
+            {
+                "characterCode": 43,
+                "totalGames": 1,
+                "usages": 1,
+                "maxKillings": 5,
+                "top3": 0,
+                "wins": 0,
+                "top3Rate": 0,
+                "averageRank": 4
+            }
+          ]
+        }
+    ]
+}
+데이터 정의
+이 엔드포인트는 userStat을 반환합니다.
+userStats를 참조하세요.
+
+2.1.5. 유니온 팀 조회 (v1)
+엔드포인트
+/v1/unionTeam/uid/{userId}/{seasonId}
+
+사용자의 유니온 팀 티어 및 승리 통계를 조회합니다.
+
+매개변수
+이름	타입	설명
+userId
+
+string
+
+GET UID 엔드포인트로 획득한 UID. UID 조회 (v1)
+
+seasonId
+
+int
+
+대상 시즌.
+
+응답 (200)
+{
+    "code":200,
+    "message":"Success",
+    "teams":[
+        {
+        union_team,
+        union_team
+        }
+    ]
+}
+데이터 정의
+이 엔드포인트는 'teams’라는 이름으로 unionTeam 목록을 반환합니다.
+자세한 내용은 unionTeam를 참조하세요.
+
+2.2. 랭킹
+2.2.1. 통합 랭커 조회 (v1)
+엔드포인트
+/v1/rank/top/{seasonId}/{matchingTeamMode}
+
+특정 시즌과 팀 모드(글로벌)의 상위 랭커를 조회합니다.
+랭킹은 랭크 매치에만 지원됩니다.
+현재 지원되는 matchingTeamMode는 3(스쿼드)뿐입니다.
+
+매개변수
+이름	타입	설명
+seasonId
+
+int
+
+시즌 식별자 (1~N).
+
+matchingTeamMode
+
+int
+
+3: Squad만 지원합니다.
+
+응답 (200)
+{
+    "code":200,
+    "message":"Success",
+    "topRanks":[
+            {
+                "uid": "ss2mgx-sa11m-dsa1",
+                "nickname":"ANONYMOUS",
+                "rank":1,
+                "mmr":5176,
+                "userEmblems": []
+            }
+        ]
+}
+데이터 정의
+이 엔드포인트는 userRank 목록을 반환합니다.
+
+2.2.2. 서버별 상위 랭커 조회 (v1)
+엔드포인트
+/v1/rank/top/{seasonId}/{matchingTeamMode}/{serverCode}
+
+특정 시즌과 팀 모드에 대한 서버별 상위 랭커를 조회합니다.
+
+매개변수
+이름	타입	설명
+seasonId
+
+int
+
+시즌 식별자 (1~N).
+
+matchingTeamMode
+
+int
+
+3: Squad만 지원합니다.
+
+serverCode
+
+int
+
+서버 코드. 리전 서버 (RegionServer) 참조.
+
+응답 (200)
+{
+    "code":200,
+    "message":"Success",
+    "topRanks":[
+        {
+            "nickname":"ANONYMOUS",
+            "rank":1,
+            "mmr":5176,
+            "userEmblems" : []
+        }
+    ]
+}
+데이터 정의
+이 엔드포인트는 userRank 목록을 반환합니다.
+
+2.3. 매치
+2.3.1. 경기 정보 조회 (v1)
+엔드포인트
+/v1/games/{gameId}
+
+특정 경기의 모든 플레이어 데이터를 조회합니다.
+
+매개변수
+이름	타입	설명
+gameId
+
+int
+
+고유 경기 식별자.
+
+응답 (200)
+{
+    "code":200,
+    "message":"Success",
+    "userGames":[
+        BattleUserResult,
+        BattleUserResult,
+        ]
+}
+데이터 정의
+엔드 포인트로 매치에 포함된 모든 유저의 BattleUserResult 목록을 받습니다.
+
+2.4. 기타
+2.4.1. 게임 데이터 조회 (v2)
+엔드포인트
+/v2/data/{metaType}
+
+매개변수
+매개변수	타입	설명
+metaType
+
+string
+
+조회하려는 데이터의 종류입니다.
+hash를 입력하면 사용 가능한 모든 metaType을 확인할 수 있습니다.
+metaType에는 테이블 이름을 입력합니다.
+
+해시 응답
+{
+    "code":200,
+    "message":"Success",
+    "data": {
+      "ActionCost" : 1525244,
+      "Area" : 41524422
+      }
+}
+해시 조회는 테이블 이름과 해당 해시 코드의 딕셔너리를 반환합니다.
+키를 metaType 입력으로 사용하세요.
+예: /v2/data/ActionCost
+
+테이블 응답
+{
+    "code":200,
+    "message":"Success",
+    "data":
+        [
+            { "code" : 1525244, "name" : "example", "prefabName" : "something", "damage" : "0.f"},
+            { "code" : 1525245, "name" : "example2", "prefabName" : "something2", "damage" : "0.f"}
+        ]
+}
+데이터는 딕셔너리 목록으로 반환됩니다. 각 딕셔너리는 한 행을 의미합니다.
+
+주요 데이터 테이블
+다음은 주목할 만한 데이터 테이블과 용도입니다.
+
+테이블	설명
+Character
+
+캐릭터의 기본 능력치를 표시합니다.
+
+CharacterLevelUpStat
+
+레벨별 캐릭터 능력치 변화를 표시합니다.
+
+CharacterMastery
+
+캐릭터가 습득 가능한 마스터리 정보를 표시합니다.
+각 캐릭터는 최대 4개의 무기 마스터리를 가집니다.
+
+CharacterModeModifier
+
+팀 모드별로 캐릭터에 적용되는 보정값을 표시합니다.
+
+WeaponTypeInfo
+
+무기 타입별 기본 공격 속도와 사거리를 표시합니다.
+
+ItemSkillLinker
+
+특정 아이템 스킬을 보유한 아이템을 표시합니다.
+
+ItemSpawn
+
+지역별 아이템 박스 스폰 수량을 표시합니다.
+
+ItemWeapon
+
+각 무기 아이템의 기본 스탯과 재료를 표시합니다.
+
+ItemArmor
+
+각 방어구 아이템의 기본 스탯과 재료를 표시합니다.
+
+ItemSpecial
+
+각 사용형 아이템의 기본 스탯과 재료를 표시합니다.
+
+ItemConsumable
+
+각 소모품 아이템의 기본 스탯과 재료를 표시합니다.
+
+Monster
+
+몬스터의 기본 스탯을 표시합니다.
+
+MonsterLevelUpStat
+
+레벨별 몬스터 능력치 변화를 표시합니다.
+
+MonsterDropGroup
+
+레벨별 몬스터의 드랍 그룹을 표시합니다. (DropGroup과 함께 사용)
+
+DropGroup
+
+드랍되는 아이템을 표시합니다.
+
+VFCredit
+
+행동 및 시간에 따라 획득하는 크레딧을 표시합니다.
+
+Season
+
+현재 시즌을 표시합니다.
+
+2.4.2. 언어 데이터 조회 (v1)
+엔드포인트
+/v1/l10n/{language}
+
+매개변수
+매개변수	타입	설명
+language
+
+string
+
+완전 지원 언어 :
+Korean, English, Japanese, ChineseSimplified, ChineseTraditional
+부분 지원 언어 :
+French, Spanish, SpanishLatin, Portuguese, PortugueseLatin, Indonesian, German, Russian, Thai, Vietnamese, Italian, Polish
+
+응답 <200>
+{
+    "code":200,
+    "message":"Success",
+    "data": {
+        "l10Path" : "*A_LINK_TO_TEXT_DOWNLOAD*"
+        }
+}
+l10nPath 값은 언어 데이터 다운로드 링크입니다.
+텍스트는 ┃ 구분자로 나뉜 키-값 쌍입니다.
+주의하세요, 구분자가 일반적으로 사용하는 문자 값이 아닙니다.
+
+l10n 예시
+Character/Name/0┃Random
+Character/Name/1┃Jackie
+Character/Name/2┃Aya
+Character/Name/3┃Fiora
+Character/Name/4┃Magnus
+Character/Name/5┃Zahir
+Character/Name/6┃Nadine
+Character/Name/7┃Hyunwoo
+Character/Name/8┃Hart
+Character/Name/9┃Isol
+Character/Name/10┃Li Dailin
+Character/Name/11┃Yuki
+Character/Name/12┃Hyejin
+Character/Name/13┃Xiukai
+Character/Name/14┃Chiara
+Character/Name/15┃Sissela
+Character/Name/16┃Silvia
+데이터 가져오기 (권장)
+다음은 l10n 데이터를 가져오는 예시 코드입니다.
+
+파이썬
+import requests, json
+
+BASE_URL = "https://open-api.bser.io/v1/l10n/"
+LANGUAGE = "English"
+header = { "x-api-key" : "YOUR_API_KEY_HERE" } # 실제 API 키로 교체하세요.
+
+#메타데이터 및 다운로드 링크 가져오기
+meta = requests.get(f"{BASE_URL}/{LANGUAGE}", headers=header).json()
+l10n_url = meta["data"]["l10Path"]
+
+#로컬라이제이션 파일 다운로드 및 파싱
+text = requests.get(l10n_url).text
+l10n = dict(line.split("┃", 1) for line in text.splitlines() if "┃" in line)
+2.4.3. 무기 루트 조회 (v1)
+엔드포인트
+/v1/weaponRoutes/recommend
+
+최신 추천 무기 루트를 최대 100개까지 가져옵니다.
+
+매개변수
+이름	타입	설명
+routeId
+
+int
+
+선택 사항. 제공 시 해당 루트만 반환합니다.
+
+응답 (200)
+{
+    "code":200,
+    "message":"Success",
+    "result":[
+        {
+            "recommendedWeaponRoute" :  recommendedWeaponRoute,
+            "recommendedWeaponRouteDesc" : recommendedWeaponRouteDesc
+        },
+        {
+            "recommendedWeaponRoute" :  recommendedWeaponRoute,
+            "recommendedWeaponRouteDesc" : recommendedWeaponRouteDesc
+        }
+    ]
+}
+데이터 정의
+엔드 포인트는 리스트의 형태로 루트의 정보를 반환합니다.
+루트 정보는 RecommendWeaponRoute 및 RecommendWeaponRouteDesc로 구성됩니다.
+
+3. 데이터 정의
+3.1. unionTeam
+Key	DataType	Description
+tnm
+
+str
+
+유니온 팀 이름
+
+ti
+
+int
+
+유니온 팀의 현재 티어
+
+stt
+
+int
+
+유니온 팀의 S티어 티켓 수
+
+sstt
+
+int
+
+유니온 팀의 SS티어 티켓 수
+
+ssstt
+
+int
+
+유니온 팀의 SSS티어 티켓 수
+
+ssti
+
+int
+
+유니온 팀의 현재 시즌 최고 티어
+
+ssstw
+
+int
+
+SSS 티어 게임 승리 횟수
+
+sstw
+
+int
+
+SS 티어 게임 승리 횟수
+
+stw
+
+int
+
+S 티어 게임 승리 횟수
+
+aaatw
+
+Int
+
+AAA 티어 게임 승리 횟수
+
+aatw
+
+int
+
+AA 티어 게임 승리 횟수
+
+atw
+
+int
+
+A 티어 게임 승리 횟수
+
+bbbtw
+
+Int
+
+BBB 티어 게임 승리 횟수
+
+bbtw
+
+int
+
+BB 티어 게임 승리 횟수
+
+btw
+
+int
+
+B 티어 게임 승리 횟수
+
+ccctw
+
+int
+
+CCC 티어 게임 승리 횟수
+
+cctw
+
+int
+
+CC 티어 게임 승리 횟수
+
+ctw
+
+int
+
+C 티어 게임 승리 횟수
+
+dddtw
+
+Int
+
+DDD 티어 게임 승리 횟수
+
+ddtw
+
+Int
+
+DD 티어 게임 승리 횟수
+
+dtw
+
+int
+
+D 티어 게임 승리 횟수
+
+etw
+
+int
+
+E 티어 게임 승리 횟수
+
+ffftw
+
+int
+
+FFF 티어 게임 승리 횟수
+
+fftw
+
+int
+
+FF 티어 게임 승리 횟수
+
+ftw
+
+int
+
+F 티어 게임 승리 횟수
+
+cdt
+
+int
+
+팀 생성 일자. Epoch Time 기준.
+
+udt
+
+int
+
+팀 정보 업데이트 일자. Epoch Time 기준.
+
+3.2. userRank
+키	타입	설명
+nickname
+
+string
+
+플레이어 닉네임.
+
+mmr
+
+int
+
+매치메이킹 레이팅.
+
+rank
+
+int
+
+글로벌 랭크.
+
+serverCode
+
+int
+
+지역 서버 코드. 리전 서버 (RegionServer) 참조.
+
+serverRank
+
+int
+
+해당 서버 내 랭크.
+
+3.3. userStats
+Key	DataType	Description
+seasonId
+
+int
+
+목표 시즌. 게임 데이터 조회 (v2)에서 현재 시즌 정보를 알 수 있습니다.
+
+matchingMode
+
+int
+
+MatchingMode 참조.
+
+matchingTeamMode
+
+int
+
+MatchingTeamMode 참조.
+
+mmr
+
+int
+
+유저의 현재 RP. 해당 정보는 랭크 대전에서만 유효합니다.
+
+nickname
+
+string
+
+유저의 닉네임.
+
+rank
+
+int
+
+현재 유저의 랭킹. (통합 기준)
+
+rankSize
+
+int
+
+총 랭킹에 포함된 유저 수
+
+totalGames
+
+int
+
+총 플레이한 랭크 대전 횟수.
+
+totalWins
+
+int
+
+총 우승 횟수 (1등)
+
+totalTeamKills
+
+int
+
+총 TK.
+
+totalDeaths
+
+int
+
+총 사망 횟수
+
+escapeCount
+
+int
+
+총 탈출 횟수
+
+rankPercent
+
+float
+
+RP 기준 백분율. 해당 정보는 랭크 대전에서만 유효합니다.
+
+averageRank
+
+float
+
+평균 등수.
+
+averageAssistants
+
+float
+
+평균 어시스트.
+
+averageHunts
+
+float
+
+평균 야생 동물 사냥 횟수.
+
+top1
+
+float
+
+1등 비율
+
+top2
+
+float
+
+2등 비율
+
+top3
+
+float
+
+3등 비율
+
+top5
+
+float
+
+5등 비율
+
+top7
+
+float
+
+7등 비율
+
+characterStats
+
+CharacterStat[]
+
+유저가 플레이한 캐릭터의 정보. characterStat 참조.
+
+3.4. characterStat
+키	타입	설명
+characterCode
+
+int
+
+캐릭터 코드.
+
+totalGames
+
+int
+
+플레이한 경기 수.
+
+maxKillings
+
+int
+
+단일 경기 최고 처치 수.
+
+wins
+
+int
+
+승리 수.
+
+top3
+
+int
+
+상위 3위 안에 든 횟수.
+
+3.5. BattleUserResult
+Key	DataType	Description
+nickname
+
+string
+
+플레이어 닉네임.
+
+gameId
+
+int
+
+게임을 식별하는 고유 번호.
+
+matchingMode
+
+int
+
+게임의 매칭 모드. MatchingMode 참고
+
+matchingTeamMode
+
+Int
+
+게임의 팀 매칭 모드. MatchingTeamMode 참고
+
+seasonId
+
+Int
+
+시즌 ID.
+
+characterNum
+
+Int
+
+플레이어 캐릭터 코드.
+
+skinCode
+
+int
+
+플레이어 캐릭터의 스킨 코드.
+
+characterLevel
+
+int
+
+사망/승리 시점의 캐릭터 레벨
+
+gameRank
+
+int
+
+플레이어의 최종 순위.
+
+playerKill
+
+int
+
+플레이어의 매치 중 처치 수.
+
+playerAssistant
+
+int
+
+플레이어의 매치 중 어시스트 수.
+
+monsterKill
+
+int
+
+플레이어가 매치 중 처치한 야생 동물 수. (Wickeline 등 정예 몬스터 포함)
+
+bestWeapon
+
+int
+
+매치 종료 시 가장 레벨이 높은 무기 숙련도의 ID. 숙련도 (mastery) 참고
+
+bestWeaponLevel
+
+int
+
+매치 종료 시 가장 레벨이 높은 무기 숙련도의 레벨.
+
+masteryLevel
+
+<int, int>
+
+매치 종료 시점의 숙련도 ID와 숙련도 레벨 매핑 딕셔너리. <숙련도 코드, 숙련도 레벨> 숙련도 (mastery) 참고
+
+equipment
+
+<int, int>
+
+매치 종료 시 장착된 아이템 ID 딕셔너리. <장비 슬롯, 아이템 코드>. 슬롯 ID는 장비 (Equipment) 참고
+
+versionSeason
+
+int
+
+메인 시즌 식별자입니다. 새 시즌 업데이트가 있을 때마다 값이 변경됩니다
+
+versionMajor
+
+int
+
+게임 버전. 시즌 중 업데이트가 있을 때마다 값이 변경됩니다.
+
+versionMinor
+
+int
+
+게임 버전. 계획되지 않았을 수 있는 마이너 업데이트 시에도 값이 변경됩니다.
+
+language
+
+string
+
+현재 플레이어 언어.
+
+skillLevelInfo
+
+<int, int>
+
+매치 종료 시점의 스킬 ID와 레벨 딕셔너리. <스킬 코드, 스킬 레벨> 스킬 코드 참고.
+
+skillOrderInfo
+
+<int, int>
+
+매치 중 스킬 레벨업 순서 기록 딕셔너리. <순서, 스킬 코드> 자세한 내용은 스킬 코드 참고.
+
+serverName
+
+string
+
+전투 서버 위치.
+
+maxHp
+
+int
+
+스탯. 최대 체력.
+
+maxSp
+
+int
+
+스탯. 최대 스태미너.
+
+attackPower
+
+int
+
+스탯. 공격력.
+
+moveSpeed
+
+float
+
+스탯. 이동 속도.
+
+defense
+
+int
+
+스탯. 방어력.
+
+hpRegen
+
+float
+
+스탯. 체력 재생.
+
+spRegen
+
+float
+
+스탯. 스태미너 재생.
+
+attackSpeed
+
+float
+
+스탯. 공격 속도.
+
+outOfCombatMoveSpeed
+
+float
+
+스탯. 비전투 시 이동 속도.
+
+sightRange
+
+float
+
+스탯. 시야 범위.
+
+attackRange
+
+float
+
+스탯. 기본 공격 사거리.
+
+criticalStrikeChance
+
+float
+
+스탯. 추가 치명타 확률(값: 0~100 이상).
+
+criticalStrikeDamage
+
+float
+
+스탯. 추가 치명타 피해 배율(값: 0~100 이상).
+
+coolDownReduction
+
+float
+
+스탯. 쿨다운 감소(값: 0~100 이상).
+
+lifeSteal
+
+float
+
+스탯. 오므니사이폰.
+
+normalLifeSteal
+
+float
+
+스탯. 일반 유형 피해 흡혈.
+
+skillLifeSteal
+
+float
+
+스탯. 스킬 유형 피해 흡혈.
+
+amplifierToMonster
+
+float
+
+스탯. 몬스터에 대한 피해 증폭.
+
+trapDamage
+
+float
+
+스탯. 함정 피해 증폭.
+
+gainExp
+
+int
+
+매치 종료 후 계정이 획득한 경험치.
+
+startDtm
+
+DateTime
+
+매치 시작 시 서버 시간.
+
+duration
+
+int
+
+매치 종료 시 서버 프레임 시간.
+
+mmrBefore
+
+int
+
+매치 시작 전 플레이어의 MMR. # 참고: 민감한 정보이며 일부 API 플레이어에게만 제공됩니다.
+
+mmrGain
+
+int
+
+해당 매치의 MMR 변화량.
+
+mmrAfter
+
+int
+
+플레이어의 신규 MMR. # 참고: 민감한 정보이며 일부 API 플레이어에게만 제공됩니다.
+
+playTime
+
+int
+
+플레이어 기준 매치 종료까지 경과한 시간(초).
+
+watchTime
+
+int
+
+관전 시간(초).
+
+totalTime
+
+int
+
+플레이 시간과 관전 시간의 합.
+
+botAdded
+
+int
+
+매치에 추가된 AI 봇 수.
+
+botRemain
+
+int
+
+플레이어 기준 매치 종료 시 남아 있던 AI 봇 수.
+
+restrictedAreaAccelerated
+
+int
+
+제한 구역 가속이 발생한 횟수.
+
+safeAreas
+
+Int
+
+플레이어 기준 매치 종료 시 남은 지역 수.
+
+teamNumber
+
+int
+
+플레이어의 팀 번호.
+
+preMade
+
+int
+
+팀 인원 수. 팀 파인더로 합류한 플레이어는 포함하지 않습니다.
+
+eventMissionResult
+
+<int, int>
+
+이벤트 미션 ID와 목표 누적 횟수의 딕셔너리. <이벤트 코드, 횟수>
+
+gainedNormalMmrKFactor
+
+float
+
+플레이어에게 부여된 MMR의 신뢰도. (더 이상 지원되지 않음)
+
+victory
+
+int
+
+승리 여부(Boolean).
+
+craftUncommon
+
+int
+
+제작한 언커먼 등급 아이템 수.
+
+craftRare
+
+int
+
+제작한 레어 등급 아이템 수.
+
+craftEpic
+
+int
+
+제작한 에픽 등급 아이템 수.
+
+craftLegend
+
+int
+
+제작한 레전더리 등급 아이템 수.
+
+damageToPlayer
+
+int
+
+플레이어가 다른 플레이어 캐릭터에게 가한 총 피해량.
+
+damageToPlayer_trap
+
+int
+
+플레이어가 다른 플레이어 캐릭터에게 가한 함정 피해량.
+
+damageToPlayer_basic
+
+int
+
+플레이어가 다른 플레이어 캐릭터에게 가한 기본 공격 유형 피해량.
+
+damageToPlayer_skill
+
+int
+
+플레이어가 다른 플레이어 캐릭터에게 가한 스킬 유형 피해량.
+
+damageToPlayer_itemSkill
+
+int
+
+플레이어가 다른 플레이어 캐릭터에게 가한 아이템 스킬 유형 피해량.
+
+damageToPlayer_direct
+
+int
+
+플레이어가 다른 플레이어 캐릭터에게 가한 직접 유형 피해량.
+
+damageToPlayer_uniqueSkill
+
+int
+
+플레이어가 다른 플레이어 캐릭터에게 가한 고유 스킬 유형 피해량.
+
+damageFromPlayer
+
+int
+
+플레이어가 다른 플레이어 캐릭터에게 받은 총 피해량.
+
+damageFromPlayer_trap
+
+int
+
+플레이어가 다른 플레이어 캐릭터에게 받은 함정 피해량.
+
+damageFromPlayer_basic
+
+int
+
+플레이어가 다른 플레이어 캐릭터에게 받은 기본 공격 유형 피해량.
+
+damageFromPlayer_skill
+
+int
+
+플레이어가 다른 플레이어 캐릭터에게 받은 스킬 유형 피해량.
+
+damageFromPlayer_itemSkill
+
+int
+
+플레이어가 다른 플레이어 캐릭터에게 받은 아이템 스킬 유형 피해량.
+
+damageFromPlayer_direct
+
+int
+
+플레이어가 다른 플레이어 캐릭터에게 받은 직접 유형 피해량.
+
+damageFromPlayer_uniqueSkill
+
+int
+
+플레이어가 다른 플레이어 캐릭터에게 받은 고유 스킬 유형 피해량.
+
+damageToMonster
+
+int
+
+플레이어가 몬스터에게 가한 총 피해량.
+
+damageToMonster_trap
+
+int
+
+플레이어가 몬스터에게 가한 함정 피해량.
+
+damageToMonster_basic
+
+int
+
+플레이어가 몬스터에게 가한 일반 피해량.
+
+damageToMonster_skill
+
+int
+
+플레이어가 몬스터에게 가한 스킬 피해량.
+
+damageToMonster_itemSkill
+
+int
+
+플레이어가 몬스터에게 가한 고유 피해량.
+
+damageToMonster_direct
+
+int
+
+플레이어가 몬스터에게 가한 직접 피해량.
+
+damageToMonster_uniqueSkill
+
+int
+
+플레이어가 몬스터에게 가한 고유 스킬 피해량.
+
+damageFromMonster
+
+int
+
+플레이어가 몬스터에게 받은 총 피해량.
+
+damageToPlayer_Shield
+
+int
+
+플레이어가 다른 플레이어 캐릭터의 보호막에 가한 피해량.
+
+damageOffsetedByShield_Player
+
+int
+
+플레이어가 보호막으로 흡수한 다른 플레이어 캐릭터로부터의 피해량.
+
+damageOffsetedByShield_Monster
+
+int
+
+플레이어가 보호막으로 흡수한 야생 동물로부터의 피해량.
+
+killMonsters
+
+<int, int>
+
+몬스터 ID와 플레이어의 처치 수 딕셔너리. 야생 동물 (Monster) 참고.
+
+healAmount
+
+int
+
+플레이어의 총 회복량. (자연 재생 제외)
+
+teamRecover
+
+int
+
+다른 플레이어 캐릭터에게 제공한 총 회복량.
+
+protectAbsorb
+
+int
+
+보호막이 흡수/방어한 피해량.
+
+addSurveillanceCamera
+
+int
+
+플레이어가 설치한 감시 카메라 수.
+
+addTelephotoCamera
+
+int
+
+플레이어가 설치한 망원 카메라 수. (나타폰의 트레일 카메라는 망원 카메라로 간주됩니다.)
+
+removeSurveillanceCamera
+
+int
+
+플레이어가 파괴한 감시 카메라 수.
+
+removeTelephotoCamera
+
+int
+
+플레이어가 파괴한 망원 카메라 수. (나타폰의 트레일 카메라는 망원 카메라로 간주됩니다.)
+
+useHyperLoop
+
+int
+
+플레이어의 하이퍼루프 사용 횟수.
+
+useSecurityConsole
+
+int
+
+플레이어의 보안 콘솔 사용 횟수.
+
+giveUp
+
+int
+
+기권 여부(Boolean).
+
+teamSpectator
+
+int
+
+플레이어가 매치를 관전 중인지 여부(Boolean).
+
+routeIdOfStart
+
+int
+
+플레이어가 매치 시작 시 선택한 경로 ID.
+
+routeSlotId
+
+int
+
+선택한 경로의 슬롯 ID.
+
+placeOfStart
+
+int
+
+플레이어가 선택한 시작 지역. 표 참고.
+
+mmrAvg
+
+int
+
+팀의 평균 MMR.
+
+teamKill
+
+int
+
+플레이어 기준 매치 종료 시 팀의 총 처치 수.
+
+accountLevel
+
+int
+
+현재 계정 레벨.
+
+killerUserNum
+
+int
+
+플레이어를 처치한 플레이어의 고유 번호 식별자. killerUserNum2, killerUserNum3 변형 값이 있습니다. 레거시 값으로 중요도가 높지 않습니다.
+
+killer
+
+string
+
+처치한 상대의 식별자. killer2, killer3 변형 값이 있습니다. 레거시 값으로 중요도가 높지 않습니다.
+
+killDetail
+
+string
+
+플레이어를 처치한 플레이어의 닉네임. 처치 주체가 제한 타이머인 경우 현재 지역명을 반환합니다. killDetail2, killDetail3 변형 값이 있습니다. 레거시 값으로 중요도가 높지 않습니다. 값은 반환되지만, 해석 방법은 더 이상 지원되지 않습니다.
+
+killerCharacter
+
+string
+
+플레이어를 처치한 플레이어의 캐릭터 이름. killerCharacter2, killerCharacter3 변형 값이 있습니다. 레거시 값으로 중요도가 높지 않습니다. 값은 반환되지만, 해석 방법은 더 이상 지원되지 않습니다.
+
+killerWeapon
+
+string
+
+플레이어를 처치한 플레이어의 무기. killerWeapon2, killerWeapon3 변형 값이 있습니다. 레거시 값으로 중요도가 높지 않습니다. 값은 반환되지만, 해석 방법은 더 이상 지원되지 않습니다.
+
+causeOfDeath
+
+string
+
+플레이어의 사망을 유발한 스킬 또는 오브젝트 이름. causeOfDeath2, causeOfDeath3 변형 값이 있습니다. 레거시 값으로 중요도가 높지 않습니다. 값은 반환되지만, 해석 방법은 더 이상 지원되지 않습니다.
+
+placeOfDeath
+
+string
+
+플레이어가 사망한 지역의 ID. placeOfDeath2, placeOfDeath3 변형 값이 있습니다. 레거시 값으로 중요도가 높지 않습니다. 값은 반환되지만, 해석 방법은 더 이상 지원되지 않습니다.
+
+fishingCount
+
+int
+
+플레이어가 매치 중 수행한 낚시 횟수.
+
+useEmoticonCount
+
+int
+
+플레이어가 매치 중 사용한 이모트 횟수.
+
+traitFirstCore
+
+int
+
+첫 번째 코어 증강 코드.
+
+traitFirstSub
+
+int[2]
+
+첫 번째 두 개의 서브 슬롯 증강 코드.
+
+traitSecondSub
+
+int[3]
+
+두 번째 두 개의 서브 슬롯 증강 코드. 코볼트 모드에서는 최대 세 개의 슬롯 증강이 있을 수 있습니다. (인퓨전은 일부 증강에 해당)
+
+totalVFCredit
+
+int[20]
+
+플레이어가 획득한 크레딧 양. 1분마다 별도의 인덱스로 누적됩니다.
+
+creditSource
+
+<str, int>
+
+출처별로 분류된 크레딧 누적량. 자세한 내용 참조.
+
+usedVFCredit
+
+int[20]
+
+플레이어가 사용한 크레딧 양. 1분마다 별도의 인덱스로 누적됩니다.
+
+itemTransferredConsole
+
+int[]
+
+플레이어가 전송 콘솔을 통해 요청한 아이템의 아이템 코드.
+
+itemTransferredDrone
+
+int[]
+
+플레이어가 전송 드론을 통해 요청한 아이템의 아이템 코드.
+
+craftMythic
+
+int
+
+제작한 신화 등급 아이템 수.
+
+playerDeaths
+
+int
+
+플레이어의 사망 횟수.
+
+killGamma
+
+bool
+
+감마 처치 여부(Boolean). (처치자만)
+
+killDetails
+
+<int, int>
+
+플레이어가 처치한 캐릭터의 딕셔너리. <캐릭터 코드, 횟수>
+
+deathDetails
+
+<int, int>
+
+플레이어를 처치한 캐릭터의 딕셔너리. <캐릭터 코드, 횟수>
+
+ccTimeToPlayer
+
+float
+
+플레이어가 가한 총 CC(군중 제어) 시간. (대상: 다른 플레이어)
+
+foodCraftCount
+
+<int, int>
+
+등급별 조리 음식 총량. <등급, 수량>
+
+beverageCraftCount
+
+<int, int>
+
+등급별 제작 음료 총량. <등급, 수량>
+
+airSupplyOpenCount
+
+<int, int>
+
+개봉한 공중 보급 상자 총량. <보급 등급, 수량>
+
+escapeState
+
+int
+
+1: (2 이외의 사유로) 탈출 실패 2: 적에 의해 탈출 실패 3: 탈출 성공
+
+collectItemForLog
+
+int[]
+
+collectItemForLog[CollectibleCode] = 수집한 수집품 개수. 자세한 내용 참조.
+
+equipFirstItemForLog
+
+<int, int[]>
+
+최상위 무기 아이템 코드. <장비 슬롯, 아이템 코드>. 자세한 내용 참조. 정수 목록의 값은 캐릭터가 장착한 최상위 아이템으로 갱신됩니다.
+
+totalDoubleKill
+
+int
+
+플레이어가 더블 킬을 달성한 총 횟수.
+
+totalTripleKill
+
+int
+
+플레이어가 트리플 킬을 달성한 총 횟수.
+
+totalQuadraKill
+
+int
+
+플레이어가 쿼드라 킬을 달성한 총 횟수.
+
+totalExtraKill
+
+int
+
+플레이어가 5연속 이상 처치를 달성한 총 횟수.
+
+tacticalSkillGroup
+
+int
+
+전술 스킬의 그룹 코드. 자세한 내용 참조.
+
+tacticalSkillLevel
+
+int
+
+전술 스킬의 최종 레벨.
+
+totalGainVFCredit
+
+int
+
+총 획득 크레딧.
+
+killPlayerGainVFCredit
+
+int
+
+다른 플레이어 처치로 획득한 크레딧.
+
+killChickenGainVFCredit
+
+int
+
+닭 처치로 획득한 크레딧.
+
+killBoarGainVFCredit
+
+int
+
+멧돼지 처치로 획득한 크레딧.
+
+killWildDogGainVFCredit
+
+int
+
+들개 처치로 획득한 크레딧.
+
+killWolfGainVFCredit
+
+int
+
+늑대 처치로 획득한 크레딧.
+
+killBearGainVFCredit
+
+int
+
+곰 처치로 획득한 크레딧.
+
+killOmegaGainVFCredit
+
+int
+
+오메가 처치로 획득한 크레딧.
+
+killBatGainVFCredit
+
+int
+
+박쥐 처치로 획득한 크레딧.
+
+killWicklineGainVFCredit
+
+int
+
+위클라인 처치로 획득한 크레딧.
+
+killAlphaGainVFCredit
+
+int
+
+알파 처치로 획득한 크레딧.
+
+killItemBountyGainVFCredit
+
+int
+
+플레이어 현상금 처치로 획득한 크레딧.
+
+killDroneGainVFCredit
+
+int
+
+드론 파괴로 획득한 크레딧.
+
+killGammaGainVFCredit
+
+int
+
+감마 처치로 획득한 크레딧.
+
+killTurretGainVFCredit
+
+int
+
+포탑 파괴로 획득한 크레딧. (실제로는 불가능)
+
+itemShredderGainVFCredit
+
+int
+
+아이템 판매로 획득한 크레딧.
+
+totalUseVFCredit
+
+int
+
+플레이어가 사용한 크레딧.
+
+remoteDroneUseVFCreditMySelf
+
+int
+
+원격 드론 전송(자기 사용)으로 사용한 크레딧.
+
+remoteDroneUseVFCreditAlly
+
+int
+
+원격 드론 전송(아군에게)으로 사용한 크레딧.
+
+transferConsoleFromMaterialUseVFCredit
+
+int
+
+전송 콘솔에서 사용한 크레딧. 탈출에 사용되는 루트키는 제외.
+
+transferConsoleFromEscapeKeyUseVFCredit
+
+int
+
+전송 콘솔에서 루트키 구매에 사용한 크레딧.
+
+transferConsoleFromRevivalUseVFCredit
+
+int
+
+전송 콘솔에서 부활에 사용한 크레딧.
+
+tacticalSkillUpgradeUseVFCredit
+
+int
+
+전술 스킬 레벨업에 사용한 크레딧.
+
+teamElimination
+
+int
+
+팀이 적을 처치한 횟수.
+
+teamDown
+
+int
+
+팀이 적을 다운시킨 횟수.
+
+teamBattleZoneDown
+
+int
+
+팀이 전투 지역에서 적을 다운시킨 횟수.
+
+teamRepeatDown
+
+int
+
+팀이 동일 적을 반복적으로 다운시킨 횟수.
+
+adaptiveForce
+
+int
+
+스탯. 플레이어의 최종 적응력(Adaptive Force).
+
+adaptiveForceAttack
+
+int
+
+적응력으로 전환된 추가 공격력.
+
+adaptiveForceAmplify
+
+int
+
+적응력으로 전환된 추가 스킬 증폭.
+
+skillAmp
+
+int
+
+스탯. 플레이어의 최종 스킬 증폭.
+
+campFireCraftUncommon
+
+int
+
+모닥불에서 제작한 언커먼 등급 음식 수.
+
+campFireCraftRare
+
+int
+
+모닥불에서 제작한 레어 등급 음식 수.
+
+campFireCraftEpic
+
+int
+
+모닥불에서 제작한 에픽 등급 음식 수.
+
+campFireCraftLegendary
+
+int
+
+모닥불에서 제작한 레전더리 등급 음식 수.
+
+tacticalSkillUseCount
+
+int
+
+플레이어가 전술 스킬을 사용한 횟수.
+
+creditRevivalCount
+
+int
+
+전송 콘솔을 통해 부활한 횟수.
+
+creditRevivedOthersCount
+
+int
+
+전송 콘솔을 통해 아군을 부활시킨 횟수.
+
+timeSpentInBriefingRoom
+
+int
+
+브리핑 룸에서 보낸 시간.
+
+IsLeavingBeforeCreditRevivalTerminate
+
+bool
+
+크레딧 부활이 불가능해지기 전에 게임을 나갔는지 여부.
+
+crGetAnimal
+
+int
+
+야생 동물 처치로 획득한 총 크레딧.
+
+crGetMutant
+
+int
+
+돌연변이 동물 처치로 획득한 총 크레딧.
+
+crGetPhaseStart
+
+int
+
+페이즈 변경으로 획득한 총 크레딧.
+
+crGetKill
+
+int
+
+다른 플레이어 처치로 획득한 총 크레딧.
+
+crGetAssist
+
+int
+
+아군의 플레이어 처치 지원으로 획득한 총 크레딧.
+
+crGetTimeElapsed
+
+int
+
+시간 경과로 획득한 총 크레딧.
+
+crGetCreditBonus
+
+int
+
+크레딧이 가장 적은 플레이어에게 지급된 총 보정 크레딧.
+
+crUseRemoteDrone
+
+int
+
+원격 드론이 사용한 총 크레딧.
+
+crUseUpgradeTacticalSkill
+
+int
+
+전술 스킬 업그레이드에 사용한 총 크레딧.
+
+crUseTreeOfLife
+
+int
+
+생명의 나무 구매에 사용한 총 크레딧.
+
+crUseMythril
+
+int
+
+미스릴 구매에 사용한 총 크레딧.
+
+crUseForceCore
+
+int
+
+포스 코어 구매에 사용한 총 크레딧.
+
+crUseVFBloodSample
+
+int
+
+VF 혈액 샘플 구매에 사용한 총 크레딧.
+
+crUseRootkit
+
+int
+
+루트키트 구매에 사용한 총 크레딧.
+
+mmrGainInGame
+
+int
+
+게임 내 랭크 포인트 증가량.
+
+mmrLossEntryCost
+
+int
+
+게임 입장(참가 비용)으로 인한 랭크 포인트 손실.
+
+premadeMatchingType
+
+int
+
+게임에서 사용된 매칭 유형. 0: 1~3인 사전구성 팀 모두 매칭됨 1: 1~2인 사전구성 팀만 매칭됨 2: 3인 사전구성 팀만 매칭됨
+
+viewContribution
+
+int
+
+시야 기여도 점수 합계.
+
+useReconDrone
+
+int
+
+정찰 드론 사용 횟수.
+
+useEmpDrone
+
+int
+
+EMP 드론 사용 횟수.
+
+exceptPreMadeTeam
+
+int
+
+2인 사전구성 팀과 매칭 거부.
+
+terminateCount
+
+int
+
+터미네이트 시킨 팀 수.
+
+clutchCount
+
+int
+
+클러치 달성 횟수.
+
+unknownKill
+
+int
+
+마무리되지 않은 다운 적 수. (토너먼트용)
+
+mainWeather
+
+int
+
+이 게임의 주요 날씨 효과. 날씨 / 환경 변수
+
+subWeather
+
+int
+
+이 게임의 보조 날씨 효과. 날씨 / 환경 변수
+
+activeInstallation
+
+<int, int>
+
+게임에서 사용된 환경변수의 사용 횟수.
+
+useGuideRobot
+
+int
+
+루미에 채널링한 횟수.
+
+guideRobotRadial
+
+int
+
+루미에서 라디얼 등급 아이템 구매에 사용한 크레딧.
+
+guideRobotFlagShip
+
+int
+
+루미에서 플래그십 등급 아이템 구매에 사용한 크레딧.
+
+guideRobotSignature
+
+int
+
+루미에서 시그니처 등급 아이템 구매에 사용한 크레딧.
+
+crGetByGuideRobot
+
+int
+
+전투 모드에서 루미에게 획득한 크레딧.
+
+damageToGuideRobot
+
+int
+
+루미에게 가한 피해량
+
+getBuffCubeRed
+
+int
+
+획득한 선혈 큐브 횟수
+
+getBuffCubePurple
+
+int
+
+획득한 우주 큐브 횟수
+
+getBuffCubeGreen
+
+int
+
+획득한 생명 큐브 횟수
+
+getBuffCubeGold
+
+int
+
+획득한 풍요 큐브 횟수
+
+getBuffCubeSkyBlue
+
+int
+
+획득한 바람 큐브 횟수
+
+sumGetBuffCube
+
+int
+
+수집한 모든 큐브의 총합.
+
+teamDownCanNotEliminate
+
+int
+
+전멸 방지 페이즈 동안의 처치 수. (현재 2일차)
+
+teamDownCanEliminate
+
+int
+
+전멸 방지 페이즈가 아닐 때의 처치 수. (현재 2일차)
+
+teamRepeatDownCanNotEliminate
+
+int
+
+전멸 방지 페이즈 동안의 반복 처치 수. (현재 2일차)
+
+teamRepeatDownCanEliminate
+
+int
+
+전멸 방지 페이즈가 아닐 때의 반복 처치 수. (현재 2일차)
+
+enterDimensionRift
+
+int
+
+균열(일반/강화)에 진입한 횟수.
+
+enterDimensionEmpoweredRift
+
+int
+
+균열(강화)에 진입한 횟수.
+
+winFromDimensionRift
+
+int
+
+균열(일반/강화) 전투 승리 횟수.
+
+winFromDimensionEmpoweredRift
+
+int
+
+균열(강화) 전투 승리 횟수.
+
+enterTurbulentRift
+
+int
+
+난류 진입 횟수.
+
+useGadget
+
+<int, int>
+
+특정 가젯 스킬 사용 횟수. 자세한 내용 참조. <GadgetSkillID, 횟수>
+
+getBoriReward
+
+<int, int>
+
+보리 처치 시 드롭되는 아이템 상자의 등급. 상자 내용물을 처치자가 획득했다는 의미는 아닙니다. <grade, 횟수>
+
+totalTurbineTakeover
+
+int
+
+[COBALT 전용] 플레이어가 증폭기 점령에 성공한 총 횟수.
+
+StartingItems
+
+int[7]
+
+[COBALT 전용] 플레이어가 처음 획득한 아이템 세트. 일반적으로 6개 아이템이며, 예외적으로 7개까지일 수 있습니다.
+
+usedNormalHealPack
+
+int
+
+[COBALT 전용] 일반 회복 팩 사용량(플레이어).
+
+usedReinforcedHealPack
+
+int
+
+[COBALT 전용] 강화 회복 팩 사용량(플레이어).
+
+usedNormalShiedPack
+
+int
+
+[COBALT 전용] 일반 보호막 팩 사용량(플레이어).
+
+usedReinforcedShieldPack
+
+int
+
+[COBALT 전용] 강화 보호막 팩 사용량(플레이어).
+
+boughtInfusion
+
+<int, int>
+
+[COBALT 전용] 인퓨전 상품과 플레이어의 구매 횟수 딕셔너리. <InfusionProductCode, 수량>
+
+finalInfusion
+
+int[3]
+
+[COBALT 전용] 플레이어가 최종적으로 보유한 3개의 특성 인퓨전.
+
+scoredPoint
+
+int[20]
+
+[COBALT 전용] 플레이어가 획득한 점수. 점수는 1분마다 별도의 인덱스로 개별 누적됩니다.
+
+killsPhaseOne
+
+int
+
+[COBALT 전용] 페이즈 1에서 플레이어가 누적한 처치 수.
+
+killsPhaseTwo
+
+int
+
+[COBALT 전용] 페이즈 2에서 플레이어가 누적한 처치 수.
+
+killsPhaseThree
+
+int
+
+[COBALT 전용] 페이즈 3에서 플레이어가 누적한 처치 수.
+
+deathsPhaseOne
+
+int
+
+[COBALT 전용] 페이즈 1에서 플레이어가 누적한 사망 수.
+
+deathsPhaseTwo
+
+int
+
+[COBALT 전용] 페이즈 2에서 플레이어가 누적한 사망 수.
+
+deathsPhaseThree
+
+int
+
+[COBALT 전용] 페이즈 2에서 플레이어가 누적한 사망 수.
+
+infusionReRollUseVFCredit
+
+int
+
+[COBALT 전용] 인퓨전 리롤에 사용한 크레딧.
+
+infusionTraitUseVFCredit
+
+int
+
+[COBALT 전용] 인퓨전에서 특성 구매에 사용한 크레딧.
+
+infusionRelicUseVFCredit
+
+int
+
+[COBALT 전용] 인퓨전에서 유물 구매에 사용한 크레딧.
+
+infusionStoreUseVFCredit
+
+int
+
+[COBALT 전용] 인퓨전에서 아이템 구매에 사용한 크레딧.
+
+cobaltRandomPickRemoveCharacter
+
+int
+
+[COBALT 전용] 플레이어가 풀에서 제거한 캐릭터의 캐릭터 코드.
+
+squadRumbleRank
+
+int
+
+[스쿼드 럼블 전용] 현재 스쿼드 럼블 랭크.
+
+battleZone1AreaCode
+
+int
+
+사용 중단(Deprecated).
+
+battleZone1BattleMark
+
+int
+
+사용 중단(Deprecated).
+
+battleZone1ItemCode
+
+int[]
+
+사용 중단(Deprecated).
+
+battleZone2AreaCode
+
+int
+
+사용 중단(Deprecated).
+
+battleZone2BattleMark
+
+int
+
+사용 중단(Deprecated).
+
+battleZone2ItemCode
+
+int[]
+
+사용 중단(Deprecated).
+
+battleZone3AreaCode
+
+int
+
+사용 중단(Deprecated).
+
+battleZone3BattleMark
+
+int
+
+사용 중단(Deprecated).
+
+battleZone3ItemCode
+
+int[]
+
+사용 중단(Deprecated).
+
+battleZonePlayerKillCount
+
+int
+
+사용 중단(Deprecated).
+
+battleZonePlayerDeathCount
+
+int
+
+사용 중단(Deprecated).
+
+battleZone1Winner
+
+int
+
+사용 중단(Deprecated).
+
+battleZone2Winner
+
+int
+
+사용 중단(Deprecated).
+
+battleZone3Winner
+
+int
+
+사용 중단(Deprecated).
+
+battleZone1BattleMarkCount
+
+int
+
+사용 중단(Deprecated).
+
+battleZone2BattleMarkCount
+
+int
+
+사용 중단(Deprecated).
+
+battleZone3BattleMarkCount
+
+int
+
+사용 중단(Deprecated).
+
+teamDownInAutoResurrection
+
+int
+
+사용 중단(Deprecated).
+
+teamDownDeactiveAutoResurrection
+
+int
+
+사용 중단(Deprecated).
+
+teamRepeatDownInAutoResurrection
+
+int
+
+사용 중단(Deprecated).
+
+teamRepeatDownDeactiveAutoResurrection
+
+int
+
+사용 중단(Deprecated).
+
+3.6. RecommendWeaponRoute
+Key	DataType	Description
+id
+
+int
+
+루트에 지급되는 고유 번호.
+
+title
+
+string
+
+유저가 설정한 루트 이름.
+
+userNickname
+
+string
+
+수정한 유저의 닉네임
+
+characterCode
+
+int
+
+지정된 루트의 캐릭터 번호
+
+slotId
+
+int
+
+제작자의 슬롯 번호
+
+weaponType
+
+int
+
+무기 타입. 숙련도 (mastery) 참조
+
+weaponCodes
+
+string
+
+루트에 지정된 초기 목표 아이템 정보. 정수 아이템 코드로 이루어진 배열을 문자화하여 전달. 예) {“weaponCodes” : “[100242, 100420, 402040, 100302, 104020]”}
+
+traitCodes
+
+string
+
+루트에 지정된 초기 특성 정보. 예) {“traitCodes” : “[7001020, 7002040]”}
+
+lateGameItemCodes
+
+string
+
+루트에 지정된 후반 아이템 목록. 아이템 코드로 이루어진 딕셔너리를 문자화하여 전달. “0” 키는 자동으로 변경되는 후반 아이템 목록. 그 외에는 순차적으로 “1”, “2”로 네이밍. 예) {'lateGameItemCodes' : '{"0":"[122402, 502014]", "1";"[]"}'}
+
+remoteTransferItemCodes
+
+string
+
+원격 드론으로 구매가 필요한 아이템 목록. 아이템 코드로 이루어진 리스트를 문자화하여 전달. 예) {"remoteTransderItemCodes" : "[100424, 100355]"}
+
+tacticalSkillGroupCode
+
+int
+
+루트에 포함된 전술 스킬. <<tactical-skill-codes>
+
+paths
+
+string
+
+루트에 지정된 방문 지역 목록. 지역 코드로 이루어진 리스트를 문자화하여 전달. <<area-codes> 예) {"paths" : "[70, 110, 120, 180]"}
+
+count
+
+int
+
+루트가 공유된 횟수
+
+version
+
+string
+
+클라이언트의 버전
+
+teamMode
+
+int
+
+솔로, 듀오, 스쿼드 구분. 현재는 0으로 고정.
+
+languageCode
+
+string
+
+제작자의 언어 코드.
+
+routeVersion
+
+int
+
+루트의 버전 정보.
+
+share
+
+bool
+
+루트의 공유 여부.
+
+updateDtm
+
+int
+
+최종 업데이트 일자. Epoch Time.
+
+v2Like
+
+int
+
+현재 시즌에 받은 추천 수
+
+v2WinRate
+
+int
+
+현재 시즌에 기록된 승률
+
+v2SeasonId
+
+int
+
+현재 시즌 번호
+
+v2AccumulateLike
+
+int
+
+누적 추천 수
+
+v2AccumulateWinRate
+
+int
+
+누적 승률
+
+v2AccumulateSeasonId
+
+int
+
+미사용 데이터.
+
+3.7. RecommendWeaponRouteDesc
+키	타입	설명
+recommendWeaponRouteId
+
+int
+
+연결된 루트 ID.
+
+skillPath
+
+string
+
+쉼표로 구분된 스킬 오더(예: q,w,w,q,q,w,q).
+
+desc
+
+string
+
+루트에 포함된 설명 문자열이 있을 때만 전달됩니다.
+
+4. 참조
+4.1. 리전 서버 (RegionServer)
+리전 서버 코드입니다.
+
+코드	리전
+10
+
+Asia
+
+12
+
+NA
+
+13
+
+Europe
+
+14
+
+South America
+
+17
+
+Asia2
+
+18
+
+Asia3
+
+4.2. MatchingMode
+Matching Mode는 다음 요소의 조합에서 파생된 고유 식별자입니다:
+
+게임 모드(예: Cobalt, Lumia Squad, Lumia Lonewolf)
+매칭 타입(예: Normal, Ranked, Custom)
+
+코드	매칭 모드
+2
+
+스쿼드 일반 매치.
+
+3
+
+스쿼드 랭크 매치.
+
+4
+
+코발트 일반 매치.
+
+9
+
+론울프 매치.
+
+4.3. MatchingTeamMode
+코드	매칭 팀 모드
+1
+
+론울프
+
+3
+
+스쿼드
+
+4
+
+코발트 프로토콜
+
+4.4. 야생 동물 (Monster)
+야생 동물 이름은 L10N에서 검색하여 얻을 수 있습니다.
+언어 데이터 조회 (v1)를 사용해 각 야생 동물의 이름을 가져올 수 있습니다.
+
+각 야생 동물의 이름은 "Monster/Name/" 접두어 뒤에 monsterCode를 붙인 값을 키 값으로 사용합니다.
+
+검색 예시
+MONSTER_PREFIX = "Monster/Name/"
+
+search_monster_key = MONSTER_PREFIX + "MONSTER CODE TO SEARCH"
+
+monster_name = l10n[search_monster_key]
+# 앞서 생성한 l10n 딕셔너리.
+4.5. 숙련도 (mastery)
+숙련도	한글명	코드
+Glove
+
+글러브
+
+1
+
+Tonfa
+
+톤파
+
+2
+
+Bat
+
+방망이
+
+3
+
+Whip
+
+채찍
+
+4
+
+Throw
+
+투척
+
+5
+
+Shuriken
+
+암기
+
+6
+
+Bow
+
+활
+
+7
+
+Crossbow
+
+석궁
+
+8
+
+Pistol
+
+권총
+
+9
+
+Assault Rifle
+
+돌격 소총
+
+10
+
+Sniper Rifle
+
+저격총
+
+11
+
+Hammer
+
+망치
+
+13
+
+Axe
+
+도끼
+
+14
+
+Dagger
+
+단검
+
+15
+
+Two-handed Sword
+
+양손검
+
+16
+
+Polearm
+
+폴암
+
+17
+
+Dual Swords
+
+쌍검
+
+18
+
+Spear
+
+창
+
+19
+
+Nunchaku
+
+쌍절곤
+
+20
+
+Rapier
+
+레이피어
+
+21
+
+Guitar
+
+기타
+
+22
+
+Camera
+
+카메라
+
+23
+
+Arcana
+
+아르카나
+
+24
+
+VF Prosthetics
+
+VF의수
+
+25
+
+Craft
+
+제작
+
+101
+
+Search
+
+탐색
+
+102
+
+Move
+
+이동
+
+103
+
+Defense
+
+방어
+
+201
+
+Hunt
+
+사냥
+
+202
+
+4.6. 스킬 코드
+스킬 이름은 L10N에서 검색하여 얻을 수 있습니다.
+언어 데이터 조회 (v1)를 사용해 각 스킬 코드의 이름을 가져오세요.
+
+각 스킬 이름은 "Skill/Group/Name/" 접두어 뒤에 스킬 코드가 붙은 키에 저장됩니다.
+예를 들어, skillCode 1001010의 스킬 이름은 "Skill/Group/Name/" 키를 통해 확인할 수 있습니다.
+
+4.7. 지역 번호
+언어 데이터 조회 (v1)를 검색하여 각 지역 코드의 이름을 가져오세요.
+
+번호	이름	검색 키
+10
+
+항구
+
+Area/Name/Harbor
+
+20
+
+창고
+
+Area/Name/Warehouse
+
+30
+
+연못
+
+Area/Name/Pond
+
+40
+
+개울
+
+Area/Name/Stream
+
+50
+
+해변
+
+Area/Name/SandyBeach
+
+60
+
+고급주택가
+
+Area/Name/Uptown
+
+70
+
+골목길
+
+Area/Name/Alley
+
+80
+
+주유소
+
+Area/Name/GasStation
+
+90
+
+호텔
+
+Area/Name/Hotel
+
+100
+
+경찰서
+
+Area/Name/PoliceStation
+
+110
+
+소방서
+
+Area/Name/FireStation
+
+120
+
+병원
+
+Area/Name/Hospital
+
+130
+
+절
+
+Area/Name/Temple
+
+140
+
+양궁장
+
+Area/Name/Archery
+
+150
+
+묘지
+
+Area/Name/Cemetery
+
+160
+
+숲
+
+Area/Name/Forest
+
+170
+
+공장
+
+Area/Name/Factory
+
+180
+
+교회
+
+Area/Name/Church
+
+190
+
+학교
+
+Area/Name/School
+
+1000
+
+연구소
+
+Area/Name/Laboratory
+
+4.8. 장비 (Equipment)
+코드	슬롯
+0
+
+무기
+
+1
+
+가슴
+
+2
+
+머리
+
+3
+
+팔
+
+4
+
+다리
+
+4.9. 전술 스킬
+전술 스킬 그룹은 조금은 독특한 데이터 셋을 사용합니다..
+언어 데이터 조회 (v1)의 데이터를 기반으로 다음을 확인하세요.
+
+코드	검색 키
+30
+
+Skill/Group/Name/4000000
+
+40
+
+Skill/Group/Name/4001000
+
+50
+
+Skill/Group/Name/4101000
+
+60
+
+Skill/Group/Name/4102000
+
+70
+
+Skill/Group/Name/4103000
+
+80
+
+Skill/Group/Name/4104000
+
+90
+
+Skill/Group/Name/4105000
+
+110
+
+Skill/Group/Name/4107000
+
+120
+
+Skill/Group/Name/4110000
+
+130
+
+Skill/Group/Name/4112000
+
+140
+
+Skill/Group/Name/4113000
+
+150
+
+Skill/Group/Name/4108000
+
+4.10. 가젯 스킬
+코드	검색 키
+8300301
+
+Skill/Group/Name/8300300
+
+8300101
+
+Skill/Group/Name/8300100
+
+8300201
+
+Skill/Group/Name/8300200
+
+8300401
+
+Skill/Group/Name/8300400
+
+8300501
+
+Skill/Group/Name/8300500
+
+8310201
+
+Skill/Group/Name/8310200
+
+4.11. 날씨 / 환경 변수
+타입	키 패턴
+Weather
+
+Weather/Name/{code}
+
+Installation
+
+Installation/Name/{code}
+
+Last updated 2025-11-19 11:09:04 +0900

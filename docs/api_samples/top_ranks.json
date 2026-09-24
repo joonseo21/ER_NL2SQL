@@ -1,0 +1,27 @@
+{
+  "code": 200,
+  "message": "Success",
+  "topRanks": [
+    {
+      "uid": "ss2mgx-sa11m-dsa1",
+      "nickname": "TopPlayer1",
+      "rank": 1,
+      "mmr": 5176,
+      "userEmblems": []
+    },
+    {
+      "uid": "ab3cde-fg44h-hij5",
+      "nickname": "TopPlayer2",
+      "rank": 2,
+      "mmr": 5102,
+      "userEmblems": []
+    },
+    {
+      "uid": "kl6mno-pq77r-stu8",
+      "nickname": "TopPlayer3",
+      "rank": 3,
+      "mmr": 5048,
+      "userEmblems": []
+    }
+  ]
+}

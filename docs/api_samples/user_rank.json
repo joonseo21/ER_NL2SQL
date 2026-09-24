@@ -1,0 +1,11 @@
+{
+  "code": 200,
+  "message": "Success",
+  "userRank": {
+    "mmr": 3933,
+    "nickname": "TestPlayer",
+    "rank": 11,
+    "serverCode": 10,
+    "serverRank": 24
+  }
+}

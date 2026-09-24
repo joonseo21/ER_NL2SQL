@@ -1,0 +1,8 @@
+{
+  "code": 200,
+  "message": "Success",
+  "user": {
+    "uid": "eff12455D22Xj91",
+    "nickname": "TestPlayer"
+  }
+}

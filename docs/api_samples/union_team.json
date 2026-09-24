@@ -1,0 +1,35 @@
+{
+  "code": 200,
+  "message": "Success",
+  "teams": [
+    {
+      "tnm": "TeamAlpha",
+      "ti": 8,
+      "stt": 2,
+      "sstt": 1,
+      "ssstt": 0,
+      "ssti": 8,
+      "sssw": 0,
+      "sstw": 1,
+      "stw": 2,
+      "aaatw": 3,
+      "aatw": 5,
+      "atw": 8,
+      "bbbtw": 4,
+      "bbtw": 6,
+      "btw": 10,
+      "ccctw": 2,
+      "cctw": 3,
+      "ctw": 5,
+      "dddtw": 1,
+      "ddtw": 2,
+      "dtw": 3,
+      "etw": 1,
+      "ffftw": 0,
+      "fftw": 0,
+      "ftw": 1,
+      "cdt": 1698825600,
+      "udt": 1730448000
+    }
+  ]
+}

@@ -1,0 +1,74 @@
+{
+  "code": 200,
+  "message": "Success",
+  "result": [
+    {
+      "recommendedWeaponRoute": {
+        "id": 10042,
+        "title": "Dagger Rush Build",
+        "userNickname": "RouteAuthor",
+        "characterCode": 2,
+        "slotId": 1,
+        "weaponType": 15,
+        "weaponCodes": "[100242, 100420, 402040, 100302, 104020]",
+        "traitCodes": "[7001020, 7002040]",
+        "lateGameItemCodes": "{\"0\":\"[122402, 502014]\", \"1\":\"[]\"}",
+        "remoteTransferItemCodes": "[100424, 100355]",
+        "tacticalSkillGroupCode": 50,
+        "paths": "[70, 110, 120, 180]",
+        "count": 1245,
+        "version": "9.4.0",
+        "teamMode": 0,
+        "languageCode": "Korean",
+        "routeVersion": 3,
+        "share": true,
+        "updateDtm": 1730448000,
+        "v2Like": 320,
+        "v2WinRate": 58,
+        "v2SeasonId": 33,
+        "v2AccumulateLike": 1840,
+        "v2AccumulateWinRate": 55,
+        "v2AccumulateSeasonId": 33
+      },
+      "recommendedWeaponRouteDesc": {
+        "recommendWeaponRouteId": 10042,
+        "skillPath": "q,w,w,q,q,w,q,e,q,w,q,r,q,w,w,e,e,r,e,e",
+        "desc": "초반 골목길에서 재료 수급 후 병원으로 이동. 단검 7레벨 완성 후 교전 가능."
+      }
+    },
+    {
+      "recommendedWeaponRoute": {
+        "id": 10055,
+        "title": "Bow Snipe Route",
+        "userNickname": "ArcherPro",
+        "characterCode": 9,
+        "slotId": 2,
+        "weaponType": 7,
+        "weaponCodes": "[200110, 200220, 200330]",
+        "traitCodes": "[7001010, 7003020]",
+        "lateGameItemCodes": "{\"0\":\"[211402, 305011]\", \"1\":\"[]\"}",
+        "remoteTransferItemCodes": "[]",
+        "tacticalSkillGroupCode": 40,
+        "paths": "[160, 150, 130, 120]",
+        "count": 892,
+        "version": "9.4.0",
+        "teamMode": 0,
+        "languageCode": "Korean",
+        "routeVersion": 2,
+        "share": true,
+        "updateDtm": 1730361600,
+        "v2Like": 210,
+        "v2WinRate": 54,
+        "v2SeasonId": 33,
+        "v2AccumulateLike": 990,
+        "v2AccumulateWinRate": 52,
+        "v2AccumulateSeasonId": 33
+      },
+      "recommendedWeaponRouteDesc": {
+        "recommendWeaponRouteId": 10055,
+        "skillPath": "q,q,w,q,q,e,q,w,q,w,q,r,w,w,e,w,e,r,e,e",
+        "desc": "묘지에서 안전하게 파밍. 후반 저격 포지션 유지."
+      }
+    }
+  ]
+}

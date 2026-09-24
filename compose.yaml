@@ -1,0 +1,44 @@
+name: er-analytics
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-er_analytics}
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      COLLECTOR_PASSWORD: ${COLLECTOR_PASSWORD:?Set COLLECTOR_PASSWORD in .env}
+      AGENT_RO_PASSWORD: ${AGENT_RO_PASSWORD:?Set AGENT_RO_PASSWORD in .env}
+    ports:
+      - "5433:5432"
+    volumes:
+      - er_postgres_data:/var/lib/postgresql/data
+      - ./docs/schema_v1.sql:/docker-entrypoint-initdb.d/010-schema.sql:ro
+      - ./db/init/020-roles.sh:/docker-entrypoint-initdb.d/020-roles.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ${POSTGRES_DB:-er_analytics}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  collector:
+    profiles: ["collector"]
+    build:
+      context: ./backend/pipeline
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      COLLECTOR_DATABASE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-er_analytics}
+      COLLECTOR_PASSWORD: ${COLLECTOR_PASSWORD:?Set COLLECTOR_PASSWORD in .env}
+      ER_API_KEY: ${ER_API_KEY:?Set ER_API_KEY in .env}
+      ER_SEASON_ID: ${ER_SEASON_ID:?Set ER_SEASON_ID in .env}
+      ER_TOP_RANKER_LIMIT: ${ER_TOP_RANKER_LIMIT:-50}
+      ER_REQUESTS_PER_SECOND: ${ER_REQUESTS_PER_SECOND:-1.0}
+      ER_COLLECTION_ENABLED: "true"
+      ER_COLLECTION_CONTINUOUS: ${ER_COLLECTION_CONTINUOUS:-true}
+      ER_COLLECTION_INTERVAL: ${ER_COLLECTION_INTERVAL:-6h}
+
+volumes:
+  er_postgres_data:

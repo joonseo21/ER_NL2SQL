@@ -1,0 +1,7 @@
+{
+  "code": 200,
+  "message": "Success",
+  "data": {
+    "l10Path": "https://cdn.bser.io/l10n/English_20241105.txt"
+  }
+}

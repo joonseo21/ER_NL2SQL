@@ -1,0 +1,62 @@
+{
+  "code": 200,
+  "message": "Success",
+  "userStats": [
+    {
+      "seasonId": 33,
+      "matchingMode": 3,
+      "matchingTeamMode": 3,
+      "mmr": 3107,
+      "nickname": "TestPlayer",
+      "rank": 24,
+      "rankSize": 58,
+      "totalGames": 3,
+      "totalWins": 1,
+      "totalTeamKills": 45,
+      "totalDeaths": 3,
+      "escapeCount": 0,
+      "rankPercent": 0.41,
+      "averageRank": 2.67,
+      "averageKills": 14.33,
+      "averageAssistants": 0.33,
+      "averageHunts": 37.33,
+      "top1": 0.33,
+      "top2": 0.33,
+      "top3": 0.67,
+      "top5": 1.0,
+      "top7": 1.0,
+      "characterStats": [
+        {
+          "characterCode": 78,
+          "totalGames": 1,
+          "usages": 1,
+          "maxKillings": 18,
+          "top3": 1,
+          "wins": 1,
+          "top3Rate": 1.0,
+          "averageRank": 1.0
+        },
+        {
+          "characterCode": 23,
+          "totalGames": 1,
+          "usages": 1,
+          "maxKillings": 20,
+          "top3": 1,
+          "wins": 0,
+          "top3Rate": 1.0,
+          "averageRank": 3.0
+        },
+        {
+          "characterCode": 43,
+          "totalGames": 1,
+          "usages": 1,
+          "maxKillings": 5,
+          "top3": 0,
+          "wins": 0,
+          "top3Rate": 0.0,
+          "averageRank": 4.0
+        }
+      ]
+    }
+  ]
+}
