@@ -74,7 +74,8 @@
 | `agent_server/` | uv 기반 Python NL2SQL 실행기 |
 | `backend/pipeline/` | Spring Boot 수집기. 로컬/컨테이너 단일 실행과 주기 실행 지원 |
 | `frontend/` | 비어 있음 |
-| `docs/schema_v1.sql` | 현재 PostgreSQL 기준 스키마 |
+| `docs/schema_v1.sql` | 최초(v1) PostgreSQL 스키마. 적용된 뒤에는 수정하지 않는다 |
+| `db/migrations/` | v2 이후 스키마 변경 SQL(`V{n}__설명.sql`, 멱등). 신규 볼륨은 `compose.yaml` initdb 마운트로, 운영 DB는 수동 적용 |
 | `docs/api_samples/` | 가상 샘플 (§2) |
 | `docs/results/` | (신규) 실행 결과 근거 자료 (§6-9) |
 | `docs/reference/이터널 리턴 개발자 포털 (Open API).txt` | 공식 문서(v9.4.0) 로컬 참고본 |
@@ -94,7 +95,7 @@
 - 조회는 자체 DB에서 처리하고 API 직접 호출은 최소화한다.
 
 **DB**
-- 스키마 변경은 `docs/schema_v1.sql`에 반영한다. 마이그레이션 도구를 도입한 뒤에는 **적용된 마이그레이션을 수정하지 않고** 새 파일을 추가한다.
+- 스키마 변경은 `db/migrations/V{n}__*.sql`에 **멱등 SQL로 새 파일을 추가**한다. `docs/schema_v1.sql`과 이미 적용된 마이그레이션은 수정하지 않는다. 새 파일은 `compose.yaml`의 initdb 마운트(`015-...`)에도 추가하고, 운영 DB에는 `pg_dump` 백업 후 `postgres` 계정으로 수동 적용한다(Flyway 미도입).
 - 쿼리는 항상 파라미터 바인딩. 문자열 이어붙이기 금지.
 - 스키마를 바꾸면 LLM용 스키마 설명 파일과 `agent_ro` 권한도 **같은 커밋에서** 갱신한다. 새 컬럼은 `raw` JSONB에서 backfill한다.
 - 운영 DB: 마이그레이션 전 `pg_dump` 백업. **`docker compose down -v` 금지**(볼륨 삭제).

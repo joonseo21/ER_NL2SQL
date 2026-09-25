@@ -8,7 +8,9 @@ Only the following PostgreSQL tables may be queried.
   - `matching_mode`: 3 means ranked.
   - `matching_team_mode`: 3 means squad.
   - `version_major`, `version_minor`: client/patch version fields.
-  - `start_dtm`: match start time.
+  - `start_dtm`: match start time, a `timestamptz` column (time-zone-aware absolute instant; the
+    source is KST +09:00). NULL when the source value was missing or invalid. Do not rely on the
+    session time zone: convert with `start_dtm AT TIME ZONE 'Asia/Seoul'` before extracting a date or hour.
   - `server_name`: server name.
 - `participants`: one row per player in a match.
   - `game_id`: joins to `games.game_id`.
@@ -32,3 +34,6 @@ Rules:
 3. Use `NULLIF` where division by zero is possible.
 4. Prefer character names by joining `characters`; keep codes when metadata is absent.
 5. Limit detail queries. Aggregate queries may return fewer rows naturally.
+6. For "today", a calendar date, or hour of day based on `games.start_dtm`, use Korea time:
+   `(games.start_dtm AT TIME ZONE 'Asia/Seoul')::date` or `EXTRACT(HOUR FROM games.start_dtm AT TIME ZONE 'Asia/Seoul')`.
+   Never cast `games.start_dtm` to `date` directly.

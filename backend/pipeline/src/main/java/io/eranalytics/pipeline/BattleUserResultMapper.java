@@ -1,10 +1,14 @@
 package io.eranalytics.pipeline;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
+import java.util.regex.Pattern;
 
 final class BattleUserResultMapper {
+    // ER API sends offsets without a colon (e.g. +0900), which OffsetDateTime.parse rejects.
+    private static final Pattern COMPACT_OFFSET = Pattern.compile("(?<=\\d)([+-]\\d{2})(\\d{2})$");
+
     private BattleUserResultMapper() {
     }
 
@@ -38,7 +42,7 @@ final class BattleUserResultMapper {
                 nullableInt(node, "versionSeason"),
                 nullableInt(node, "versionMajor"),
                 nullableInt(node, "versionMinor"),
-                nullableDateTime(node, "startDtm"),
+                nullableOffsetDateTime(node, "startDtm"),
                 nullableText(node, "serverName")
         );
     }
@@ -68,13 +72,13 @@ final class BattleUserResultMapper {
         return node.hasNonNull(field) ? node.get(field).asText(null) : null;
     }
 
-    private static LocalDateTime nullableDateTime(JsonNode node, String field) {
+    private static OffsetDateTime nullableOffsetDateTime(JsonNode node, String field) {
         String value = nullableText(node, field);
         if (value == null) {
             return null;
         }
         try {
-            return LocalDateTime.parse(value);
+            return OffsetDateTime.parse(COMPACT_OFFSET.matcher(value.trim()).replaceFirst("$1:$2"));
         } catch (DateTimeParseException exception) {
             return null;
         }
@@ -83,7 +87,7 @@ final class BattleUserResultMapper {
     record GameRow(
             long gameId, Integer seasonId, Integer matchingMode, Integer matchingTeamMode,
             Integer versionSeason, Integer versionMajor, Integer versionMinor,
-            LocalDateTime startDtm, String serverName
+            OffsetDateTime startDtm, String serverName
     ) {
     }
 
