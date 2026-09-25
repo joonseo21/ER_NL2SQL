@@ -1,4 +1,5 @@
 .env
+*.pem
 *.api-key.properties
 application-api-key.properties
 .idea/

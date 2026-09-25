@@ -1,0 +1,25 @@
+spring:
+  application:
+    name: er-pipeline
+  config:
+    import:
+      - optional:file:./.env[.properties]
+      - optional:file:../../.env[.properties]
+  main:
+    web-application-type: none
+  datasource:
+    url: ${COLLECTOR_DATABASE_URL:jdbc:postgresql://localhost:5433/er_analytics}
+    username: collector
+    password: ${COLLECTOR_PASSWORD:}
+
+er:
+  api:
+    base-url: https://open-api.bser.io
+    key: ${ER_API_KEY:}
+    season-id: ${ER_SEASON_ID:12}
+    top-ranker-limit: ${ER_TOP_RANKER_LIMIT:50}
+    requests-per-second: ${ER_REQUESTS_PER_SECOND:1.0}
+  collection:
+    enabled: ${ER_COLLECTION_ENABLED:false}
+    continuous: ${ER_COLLECTION_CONTINUOUS:false}
+    interval: ${ER_COLLECTION_INTERVAL:6h}
