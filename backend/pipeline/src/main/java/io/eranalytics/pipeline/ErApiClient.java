@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.time.Duration;
+import java.util.Map;
+import java.util.function.Supplier;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -37,10 +39,21 @@ final class ErApiClient {
     }
 
     JsonNode get(String endpoint, String logEndpoint) {
+        return execute(() -> restClient.get().uri(endpoint), logEndpoint);
+    }
+
+    JsonNode get(String uriTemplate, Map<String, ?> uriVariables, String logEndpoint) {
+        return execute(() -> restClient.get().uri(uriTemplate, uriVariables), logEndpoint);
+    }
+
+    private JsonNode execute(
+            Supplier<RestClient.RequestHeadersSpec<?>> requestSupplier,
+            String logEndpoint
+    ) {
         rateGate.awaitTurn();
         long started = System.nanoTime();
         try {
-            return restClient.get().uri(endpoint).exchange((request, response) -> {
+            return requestSupplier.get().exchange((request, response) -> {
                 HttpStatusCode status = response.getStatusCode();
                 byte[] body = response.getBody().readAllBytes();
                 if (status.isError()) {

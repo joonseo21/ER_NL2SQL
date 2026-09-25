@@ -2,7 +2,6 @@ package io.eranalytics.pipeline;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import java.time.Duration;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -15,7 +14,6 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
-import org.springframework.web.util.UriUtils;
 
 @Component
 @Order(10)
@@ -122,12 +120,13 @@ final class CollectionRunner implements ApplicationRunner {
             if (nickname.isBlank()) {
                 continue;
             }
-            String encodedNickname = UriUtils.encodeQueryParam(nickname, StandardCharsets.UTF_8);
-            String endpoint = "/v1/user/nickname?query=" + encodedNickname;
             try {
                 JsonNode response = withBootstrapRetry(
                         "/v1/user/nickname",
-                        () -> api.get(endpoint, "/v1/user/nickname"));
+                        () -> api.get(
+                                "/v1/user/nickname?query={nickname}",
+                                Map.of("nickname", nickname),
+                                "/v1/user/nickname"));
                 String userId = response.path("user").path("userId").asText();
                 if (userId.isBlank()) {
                     log.warn("Nickname lookup succeeded but userId was absent for rank {}",
