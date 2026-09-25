@@ -16,8 +16,10 @@
   - API 상태코드·지연시간 로그
   - Docker 컨테이너 상시 실행 및 6시간 fixed-delay 반복 수집
   - 한글·일본어·한자 등 Unicode 닉네임 UTF-8 단일 인코딩 처리
+  - 경기 시작 시각을 시간대 포함으로 저장: `OffsetDateTime` 파싱, `games.start_dtm timestamptz`
+- 스키마 마이그레이션 구조: `db/migrations/V{n}__*.sql`(멱등), 신규 볼륨은 compose initdb 마운트, 운영은 백업 후 수동 적용
 - Python 단발 NL2SQL 실행기
-  - 스키마 설명과 닉네임 마스킹 샘플을 Gemini에 제공
+  - 스키마 설명과 닉네임 마스킹 샘플을 Gemini에 제공(시간대 규칙 포함: 날짜·시간 집계는 `AT TIME ZONE 'Asia/Seoul'`)
   - PostgreSQL AST 기반 단일 SELECT/테이블 화이트리스트 검사
   - 결과 최대 200행과 읽기 전용 transaction 강제
   - 질문·모델·SQL·가드·실행 결과 JSONL 로그
@@ -39,6 +41,7 @@
 | SSH 터널 원격 조회 | 로컬 Python `agent_ro`로 EC2 DB 조회 성공 |
 | Unicode 닉네임 | 한글 1위 랭커 실호출·DB 적재 및 혼합 Unicode 회귀 테스트 성공 |
 | NL2SQL 종단 실행 | 5개 질문 중 3개 최종 성공, 생성 SQL 3건 모두 가드·DB 실행 성공 |
+| `start_dtm` 시간대 수정 | Gradle 20건 통과, 운영 DB 265건 backfill 후 NULL 0건, 재배포 후 신규 14건도 NULL 0건 |
 
 ## 실제 실행 결과
 
@@ -48,5 +51,6 @@
 - 실제 ER API 초기 호출 195건에서 429 1회를 관측했다. 상세 수치는 `collection_stats.md`에 기록했다.
 - 2026-09-25 NL2SQL 호출 8회에서 성공 3회, Gemini 503 실패 4회, 무료 일일 quota 429 실패 1회를 관측했다. 질문 5개 중 3개는 재시도를 포함해 최종 답변에 도달했다.
 - SQL 생성에 성공한 3건은 모두 가드와 실제 DB 실행까지 성공했다. 상세는 `nl2sql_trials.md`에 기록했다.
+- `games.start_dtm`은 처음 265건 모두 NULL이었다. 원본의 `+0900` 오프셋을 파싱하지 못한 것이 원인이었고, 매퍼 수정과 `timestamptz` 마이그레이션, `raw` backfill로 해결했다. 재배포 후 최종 279경기 모두 값이 있다. 상세는 `start_dtm_backfill.md`에 기록했다.
 
 실제 실행 후 `api_findings.md`, `collection_stats.md`, `nl2sql_trials.md`에 측정값을 기록한다.

@@ -174,3 +174,63 @@ Postman은 ER API의 실제 응답 구조를 캡처하는 용도다. 현재 Spri
 6. `nl2sql_log.jsonl`: 생성 SQL과 가드 통과 기록
 
 공개되는 보고서에는 API 키를 절대 노출하지 않는다. UID와 닉네임도 흐리거나 마스킹하고, 가능하면 집계 결과 화면을 사용한다.
+
+## 8. 스키마 마이그레이션 적용
+
+`docs/schema_v1.sql`은 볼륨을 **처음 만들 때 한 번만** 적용된다. 이후 스키마 변경은 `db/migrations/V{n}__*.sql`에
+멱등 SQL로 추가하고 아래처럼 적용한다. Flyway는 아직 도입하지 않았다. 적용된 파일은 수정하지 않고 새 파일을 추가한다.
+
+### 신규 볼륨
+
+`compose.yaml`의 `docker-entrypoint-initdb.d` 마운트가 `010`(v1) → `015`(V2) → `020`(roles) 순서로 자동 적용한다.
+새 마이그레이션을 추가하면 이 마운트에도 파일을 추가한다.
+
+### 기존 로컬 볼륨
+
+이미 만들어진 볼륨에는 V2가 자동으로 적용되지 않는다. 로컬 DB의 `games.start_dtm`이 `timestamp`이면 직접 적용한다.
+
+```powershell
+cd C:\er-analytics\ER_NL2SQL
+Get-Content db\migrations\V2__games_start_dtm_timestamptz.sql |
+  docker-compose exec -T postgres psql -v ON_ERROR_STOP=1 -U postgres -d er_analytics
+```
+
+### 운영(EC2)
+
+EC2에 SSH로 접속해 `~/ER_NL2SQL`에서 실행한다. EC2에서는 `docker compose`(하이픈 없음)를 쓴다.
+접속 주소와 키 경로는 문서에 기록하지 않는다.
+
+1. **운영 규모로 사전 검증한다.** 참가자 수천 행, `raw` 수 KB 이상인 데이터로 `EXPLAIN ANALYZE`를 확인한다.
+   행이 몇 개뿐인 DB에서는 계획이 달라 느린 쿼리가 드러나지 않는다. V2의 backfill이 그랬다(운영 규모에서 42초, 개선안 0.2초).
+2. 푸시한 뒤 EC2에서 `git pull --ff-only`. 작업 트리가 깨끗한지 먼저 확인한다.
+3. **읽기 전용 사전 점검**: `current_database()`, 버전, 테이블 행 수, `collect_queue`의 DONE이 아닌 작업 수, 마지막 `api_call_log` 시각.
+   큐가 비어 있을 때 적용한다. `ALTER`는 커밋될 때까지 `games`에 배타 락을 잡는다(`lock_timeout`은 락 대기 상한이지 보유 시간 제한이 아니다).
+4. **백업**: 적용 전에 반드시 만들고 목차를 확인한다.
+
+   ```bash
+   umask 077 && mkdir -p ~/backups
+   F=~/backups/er_analytics_pre_V2_$(date -u +%Y%m%dT%H%M%SZ).dump
+   docker exec er-analytics-postgres-1 pg_dump -U postgres -d er_analytics -Fc > "$F"
+   docker exec -i er-analytics-postgres-1 pg_restore --list < "$F" | grep "TABLE DATA"
+   ```
+
+5. **적용**: 테이블 소유자인 `postgres`로 실행한다(`collector`는 `ALTER` 권한이 없다). 컨테이너 안 소켓 접속이라 비밀번호는 필요 없다.
+   적용 전에 파일이 커밋본과 같은지 해시로 확인한다.
+
+   ```bash
+   docker exec -i er-analytics-postgres-1 psql -v ON_ERROR_STOP=1 -U postgres -d er_analytics \
+     < db/migrations/V2__games_start_dtm_timestamptz.sql
+   ```
+
+6. **검증**: 컬럼 타입, 행 수가 그대로인지, 값을 원본(`participants.raw`)과 대조, `agent_ro`·`collector` 권한.
+7. **collector 교체**: DB를 먼저 바꾸고 collector를 나중에 교체한다. 옛 collector는 `startDtm`을 파싱하지 못해 항상 NULL을 넣으므로 새 컬럼 타입과 충돌하지 않는다.
+
+   ```bash
+   docker compose --profile collector build collector
+   docker compose --profile collector up -d --no-deps collector
+   ```
+
+   `--no-deps` 없이 `up`하면 `compose.yaml`이 바뀐 postgres 컨테이너까지 재생성된다(볼륨은 유지). 교체 전에 큐가 유휴인지 다시 확인한다.
+8. collector는 시작하자마자 사이클을 한 번 실행한다. `Collection queue drained`가 나온 뒤 새로 수집된 행의 값을 확인한다.
+
+어떤 경우에도 `docker compose down -v`는 실행하지 않는다(볼륨 삭제).
