@@ -1,4 +1,4 @@
-package io.eranalytics.pipeline;
+package io.eranalytics.pipeline.collection;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import java.time.OffsetDateTime;

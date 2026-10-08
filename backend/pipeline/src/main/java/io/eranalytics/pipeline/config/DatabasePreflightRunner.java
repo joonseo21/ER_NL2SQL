@@ -1,4 +1,4 @@
-package io.eranalytics.pipeline;
+package io.eranalytics.pipeline.config;
 
 import java.sql.Connection;
 import java.sql.ResultSet;

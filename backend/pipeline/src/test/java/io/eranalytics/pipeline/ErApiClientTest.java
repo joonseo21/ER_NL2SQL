@@ -8,6 +8,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+
+import io.eranalytics.pipeline.erapi.ErApiClient;
+import io.eranalytics.pipeline.erapi.RequestRateGate;
+import io.eranalytics.pipeline.config.ErApiProperties;
+import io.eranalytics.pipeline.collection.CollectorRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.web.client.RestClient;

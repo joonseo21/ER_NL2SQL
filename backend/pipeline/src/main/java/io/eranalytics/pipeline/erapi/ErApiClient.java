@@ -1,4 +1,4 @@
-package io.eranalytics.pipeline;
+package io.eranalytics.pipeline.erapi;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -6,19 +6,22 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.Map;
 import java.util.function.Supplier;
+
+import io.eranalytics.pipeline.collection.CollectorRepository;
+import io.eranalytics.pipeline.config.ErApiProperties;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
 @Component
-final class ErApiClient {
+public class ErApiClient {
     private final RestClient restClient;
     private final RestClient publicRestClient;
     private final ObjectMapper objectMapper;
     private final RequestRateGate rateGate;
     private final CollectorRepository repository;
 
-    ErApiClient(
+    public ErApiClient(
             RestClient.Builder builder,
             ObjectMapper objectMapper,
             RequestRateGate rateGate,
@@ -34,15 +37,15 @@ final class ErApiClient {
         this.repository = repository;
     }
 
-    JsonNode get(String endpoint) {
+    public JsonNode get(String endpoint) {
         return get(endpoint, endpoint);
     }
 
-    JsonNode get(String endpoint, String logEndpoint) {
+    public JsonNode get(String endpoint, String logEndpoint) {
         return execute(() -> restClient.get().uri(endpoint), logEndpoint);
     }
 
-    JsonNode get(String uriTemplate, Map<String, ?> uriVariables, String logEndpoint) {
+    public JsonNode get(String uriTemplate, Map<String, ?> uriVariables, String logEndpoint) {
         return execute(() -> restClient.get().uri(uriTemplate, uriVariables), logEndpoint);
     }
 
@@ -81,7 +84,7 @@ final class ErApiClient {
         }
     }
 
-    String getPublicText(String absoluteUrl, String logName) {
+    public String getPublicText(String absoluteUrl, String logName) {
         long started = System.nanoTime();
         try {
             return publicRestClient.get().uri(absoluteUrl).exchange((request, response) -> {

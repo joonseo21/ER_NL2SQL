@@ -1,16 +1,17 @@
-package io.eranalytics.pipeline;
+package io.eranalytics.pipeline.collection;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Optional;
+
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 @Repository
-class CollectorRepository {
+public class CollectorRepository {
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
 
@@ -40,7 +41,7 @@ class CollectorRepository {
                 """, userId);
     }
 
-    void enqueue(String jobType, String targetKey) {
+    public void enqueue(String jobType, String targetKey) {
         jdbc.update("""
                 INSERT INTO collect_queue(job_type, target_key)
                 VALUES (?, ?)
@@ -49,7 +50,7 @@ class CollectorRepository {
     }
 
     @Transactional
-    Optional<QueueJob> claimNext() {
+    public Optional<QueueJob> claimNext() {
         List<QueueJob> jobs = jdbc.query("""
                 SELECT id, job_type, target_key, attempts
                 FROM collect_queue
@@ -69,7 +70,7 @@ class CollectorRepository {
         return Optional.of(job);
     }
 
-    void markDone(long id) {
+    public void markDone(long id) {
         jdbc.update("""
                 UPDATE collect_queue
                 SET status = 'DONE', last_error = NULL, updated_at = now()
@@ -77,7 +78,7 @@ class CollectorRepository {
                 """, id);
     }
 
-    void markFailure(QueueJob job, String error, boolean retryable) {
+    public void markFailure(QueueJob job, String error, boolean retryable) {
         String status = retryable && job.attempts() < 5 ? "RETRY" : "FAILED";
         jdbc.update("""
                 UPDATE collect_queue
@@ -87,7 +88,7 @@ class CollectorRepository {
     }
 
     @Transactional
-    void upsertGame(List<JsonNode> results) {
+    public void upsertGame(List<JsonNode> results) {
         if (results.isEmpty()) {
             throw new IllegalArgumentException("Game response contained no participants");
         }
@@ -132,14 +133,14 @@ class CollectorRepository {
         }
     }
 
-    void logApiCall(String endpoint, int statusCode, long latencyMs) {
+    public void logApiCall(String endpoint, int statusCode, long latencyMs) {
         jdbc.update("""
                 INSERT INTO api_call_log(endpoint, status_code, latency_ms)
                 VALUES (?, ?, ?)
                 """, endpoint, statusCode, Math.max(0, latencyMs));
     }
 
-    void upsertCharacter(int code, String nameKo, String nameEn) {
+    public void upsertCharacter(int code, String nameKo, String nameEn) {
         jdbc.update("""
                 INSERT INTO characters(character_code, name_ko, name_en)
                 VALUES (?, ?, ?)

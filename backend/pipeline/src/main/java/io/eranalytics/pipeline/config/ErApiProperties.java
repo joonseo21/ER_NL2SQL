@@ -1,4 +1,4 @@
-package io.eranalytics.pipeline;
+package io.eranalytics.pipeline.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 

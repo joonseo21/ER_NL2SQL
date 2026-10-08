@@ -1,18 +1,18 @@
-package io.eranalytics.pipeline;
+package io.eranalytics.pipeline.erapi;
 
-final class ApiException extends RuntimeException {
+public class ApiException extends RuntimeException {
     private final int statusCode;
 
-    ApiException(int statusCode, String message) {
+    public ApiException(int statusCode, String message) {
         super(message);
         this.statusCode = statusCode;
     }
 
-    int statusCode() {
+    public int getStatusCode() {
         return statusCode;
     }
 
-    boolean retryable() {
+    public boolean retryable() {
         return statusCode == 403 || statusCode == 429 || statusCode >= 500;
     }
 }

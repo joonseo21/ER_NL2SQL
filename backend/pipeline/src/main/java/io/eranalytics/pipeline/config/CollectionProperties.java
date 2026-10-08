@@ -1,4 +1,4 @@
-package io.eranalytics.pipeline;
+package io.eranalytics.pipeline.config;
 
 import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;

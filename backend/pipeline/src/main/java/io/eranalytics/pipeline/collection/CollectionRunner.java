@@ -1,4 +1,4 @@
-package io.eranalytics.pipeline;
+package io.eranalytics.pipeline.collection;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import java.time.Duration;
@@ -7,6 +7,11 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
+
+import io.eranalytics.pipeline.erapi.ErApiClient;
+import io.eranalytics.pipeline.erapi.ApiException;
+import io.eranalytics.pipeline.config.CollectionProperties;
+import io.eranalytics.pipeline.config.ErApiProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
@@ -138,7 +143,7 @@ final class CollectionRunner implements ApplicationRunner {
                         properties.seasonId());
             } catch (ApiException exception) {
                 log.warn("Could not resolve rank {} to userId: HTTP {}",
-                        ranker.path("rank").asInt(), exception.statusCode());
+                        ranker.path("rank").asInt(), exception.getStatusCode());
             }
         }
     }
@@ -204,14 +209,18 @@ final class CollectionRunner implements ApplicationRunner {
                 }
                 long delaySeconds = backoffSeconds(attempt);
                 log.warn("ER API operation {} returned HTTP {}. Retrying attempt {}/5 in {}s",
-                        operation, exception.statusCode(), attempt + 1, delaySeconds);
+                        operation, exception.getStatusCode(), attempt + 1, delaySeconds);
                 sleep(delaySeconds);
             }
         }
         throw new IllegalStateException("Unreachable retry state");
     }
 
+    // ==========
+    // 헬퍼 함수
+    // ==========
     private void backoff(int attempts) {
+
         sleep(backoffSeconds(attempts));
     }
 

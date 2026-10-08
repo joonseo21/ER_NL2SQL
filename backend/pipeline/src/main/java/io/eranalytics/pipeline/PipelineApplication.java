@@ -1,5 +1,7 @@
 package io.eranalytics.pipeline;
 
+import io.eranalytics.pipeline.config.CollectionProperties;
+import io.eranalytics.pipeline.config.ErApiProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;

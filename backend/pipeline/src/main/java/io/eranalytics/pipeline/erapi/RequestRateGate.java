@@ -1,13 +1,14 @@
-package io.eranalytics.pipeline;
+package io.eranalytics.pipeline.erapi;
 
+import io.eranalytics.pipeline.config.ErApiProperties;
 import org.springframework.stereotype.Component;
 
 @Component
-final class RequestRateGate {
+public final class RequestRateGate {
     private final long intervalNanos;
     private long nextAllowedAt;
 
-    RequestRateGate(ErApiProperties properties) {
+    public RequestRateGate(ErApiProperties properties) {
         if (properties.requestsPerSecond() <= 0) {
             throw new IllegalArgumentException("er.api.requests-per-second must be positive");
         }
