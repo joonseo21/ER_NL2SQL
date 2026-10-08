@@ -21,3 +21,6 @@ Masked sample rows (these are context only; never filter by the masked nicknames
 Question:
 {question}
 """
+
+if __name__ == "__main__":
+    print(build_prompt("게임 수를 알려줘", {"games": [{"game_id": 1, "game_date": "2023-01-01"}]}))

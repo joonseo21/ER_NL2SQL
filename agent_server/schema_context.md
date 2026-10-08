@@ -22,10 +22,21 @@ Only the following PostgreSQL tables may be queried.
   - `player_kill`, `player_assistant`, `monster_kill`, `damage_to_player`: match metrics.
   - `mmr_before`, `mmr_gain`, `mmr_after`: nullable MMR fields.
   - `play_time`: play time in seconds.
-  - `is_ranker`: whether nickname matched the collected ranker snapshot; this can be inaccurate after nickname changes.
-- `rankers`: latest collected top-ranker snapshot (`uid`, `nickname`, `rank`, `mmr`, `season_id`).
 - `characters`: character code to Korean/English display name (`character_code`, `name_ko`, `name_en`).
 - `weapon_types`: weapon code to Korean display name (`code`, `name_ko`).
+
+Tier definitions:
+
+- Determine tier from each participant's `mmr_before` at match time, never from current MMR.
+- Platinum: 3600 <= MMR < 5000; Diamond: 5000 <= MMR < 6400;
+  Meteorite: 6400 <= MMR < 7600; Mithril or above: MMR >= 7600.
+- Subdivision lower bounds, from division 4 to division 1:
+  Platinum 3600, 3950, 4300, 4650; Diamond 5000, 5350, 5700, 6050;
+  Meteorite 6400, 6700, 7000, 7300. Each subdivision ends at the next lower bound.
+- Do not distinguish Demigod and Eternity: rank-based tier boundaries are unavailable.
+- MMR below 3600 is below the collection target; NULL MMR has unknown tier.
+  Never label either as Platinum. The policy for including these rows in default
+  aggregates is pending; no default exclusion policy is established here yet.
 
 Rules:
 

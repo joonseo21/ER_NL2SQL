@@ -22,7 +22,7 @@ def sample_rows(database_url: str) -> dict[str, Sequence[dict[str, Any]]]:
         "participants": """
             SELECT game_id, nickname, team_number, character_num, best_weapon,
                    game_rank, player_kill, player_assistant, damage_to_player,
-                   is_ranker
+                   mmr_before
             FROM participants ORDER BY game_id, nickname LIMIT 3
         """,
         "characters": "SELECT * FROM characters ORDER BY character_code LIMIT 3",
