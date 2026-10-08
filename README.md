@@ -1,64 +1,61 @@
-# ER Analytics MVP-0
+# ER Analytics
 
-이터널 리턴 상위 랭커의 스쿼드 경기 데이터를 수집하고, Gemini가 만든 PostgreSQL을 읽기 전용 계정으로 실행하는 walking skeleton이다.
+이터널 리턴 경기 데이터를 수집하고 한국어 질문을 SQL로 변환해 PostgreSQL 실행 결과를 제공하는 비영리 학술 프로젝트다. 중간보고서는 제출됐으며 MVP-1 범위는 확정됐다. 세부 결정과 초기 개발을 진행 중이다.
 
-현재 범위는 다음 한 바퀴뿐이다.
+## 문서 안내
 
-```text
-ER Open API → Spring Boot 수집기 → PostgreSQL → Python SQL guard → Gemini NL2SQL → 결과 행
-```
+| 문서 | 역할 |
+|---|---|
+| [CLAUDE.md](CLAUDE.md) | 개발 규칙과 검증·문서 갱신 책임 |
+| [docs/spec.md](docs/spec.md) | 현재 구현, 발견사항, MVP-1 요구사항과 기획·개발 전달 |
+| [docs/operations.md](docs/operations.md) | 환경 설정, 실행, 배포, 백업, 마이그레이션 |
+| [docs/api_findings.md](docs/api_findings.md) | API 실측 사실과 미확인 사항 |
 
-프론트엔드, Redis, FastAPI/LangGraph, 답변 문장 생성과 배포는 MVP-0 범위 밖이다. 상세 기준은 [MVP-0 개발 기획서](./MVP-0%20개발%20기획서.md), 작업 규칙은 [CLAUDE.md](./CLAUDE.md)를 따른다.
+기획 에이전트는 위 자료로 판단하고 개발 에이전트는 코드·실행 결과를 확인해 자료를 갱신한다. [docs/archive](docs/archive)의 과거 기획과 결과는 현재 요구사항으로 사용하지 않는다.
 
 ## 구성
 
-- `backend/pipeline`: Spring Boot 수집기
-  - DB 영속 큐, GAME 우선 단일 워커
-  - 설정 가능한 요청 속도(기본 1 RPS)
-  - 403/429/5xx 최대 5회 지수 백오프
-  - 경기/참가자 upsert와 원본 `jsonb` 보관
-  - API 상태코드와 지연시간 기록
-- `agent_server`: Python NL2SQL 실행기
-  - Gemini 모델명 환경변수화
-  - 스키마 설명과 마스킹된 샘플 행 프롬프트
-  - 단일 `SELECT`, 테이블 화이트리스트, `LIMIT 200` 가드
-  - `agent_ro` 읽기 전용 연결과 5초 timeout
-  - JSONL 실행 로그
-- `docs/schema_v1.sql`: 단일 스키마 계약
-- `docs/results`: 중간보고서에 옮길 실제 실행 근거
-
-## 로컬 실행 준비
-
-Java 21, Docker Desktop, Python 3.12 이상과 `uv`가 필요하다. Docker PostgreSQL은 호스트의 기존 PostgreSQL과 충돌하지 않도록 `localhost:5433`을 사용한다.
-
-```powershell
-Copy-Item .env.example .env
+```text
+ER Open API → Spring collector → PostgreSQL
+                                  ↑
+                         Python CLI ↔ Gemini
 ```
 
-`.env`에서 DB 비밀번호, `ER_API_KEY`, `ER_SEASON_ID`, `GEMINI_API_KEY`, `GEMINI_MODEL`을 채운다. 키와 비밀번호는 커밋하지 않는다.
+- `backend/pipeline/`: Java 21, Spring Boot 3.5.16, JdbcTemplate 기반 단일 워커. collection/erapi/config 패키지로 구성한다.
+- `agent_server/`: Python CLI, psycopg 3.x, sqlglot, python-dotenv.
+- `frontend/`: 미구현. 사용자용 Spring·Python HTTP API도 없다.
+- `compose.yaml`, `infra/`: PostgreSQL·collector Docker 실행과 EC2 설치.
+- `docs/schema_v1.sql`, `db/migrations/`: 최초 스키마와 후속 변경.
+- `agent_server/schema_context.md`: LLM 실행 입력으로 사용하는 DB 설명.
+
+EC2에 collector·DB를 운영하며 로컬 Python은 SSH 터널로 접근한다. 사용자가 확인한 운영 조건은 시즌 41, 상위 랭커 50명, 0.5 RPS, 사이클 종료 후 6시간 대기다. 현재 배포 설정은 새로 조회하지 않았다. 코드 기본 RPS는 1.0이므로 운영 `.env`에 `ER_REQUESTS_PER_SECOND=0.5`를 명시한다.
+
+## 빠른 시작
+
+Java 21, Docker, Python 3.12 이상, uv가 필요하다. 기존 `.env`가 없다면 `.env.example`을 복사하고 실제 환경값을 채운다. 비밀값은 Git에 넣지 않는다.
+
+저장소 루트에서:
 
 ```powershell
-docker-compose up -d
+docker compose up -d postgres
+docker compose ps
+```
 
+수집기 테스트와 로컬 단일 사이클:
+
+```powershell
 cd backend/pipeline
 .\gradlew.bat test
-$env:ER_COLLECTION_ENABLED = 'true'
-.\gradlew.bat bootRun
+.\gradlew.bat bootRun --args="--er.collection.enabled=true --er.collection.continuous=false"
+```
 
-cd ..\..\agent_server
+에이전트 테스트와 조회 (`agent_server/`에서):
+
+```powershell
 uv sync
 uv run pytest
 uv run er-agent manual game-count
 uv run er-agent ask "수집된 경기는 몇 판이야?"
 ```
 
-위 명령처럼 각 프로젝트 폴더에서 실행하면 Spring과 Python 모두 루트 `.env`를 읽는다. 운영체제 환경변수가 있으면 그 값을 우선 사용한다.
-
-## MVP-0 완료 전 남은 실제 검증
-
-- 실제 ER API 응답으로 시즌, 랭커 수, 페이지네이션, 참가자/사망/MMR 필드 확인
-- 랭커 50명 수집 후 처리량과 403/429 수치 기록
-- `agent_ro`의 SELECT 성공 및 INSERT 거부 확인
-- Gemini 테스트 질문 5개 이상 실행 및 실패 분류
-
-확인 전 수치는 추정해서 기록하지 않는다.
+실제 수집은 ER API 호출과 DB 쓰기를 수행하고 ask는 Gemini quota를 소비한다. 상세 설정과 배포는 [operations.md](docs/operations.md)를 따른다.
