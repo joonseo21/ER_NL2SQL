@@ -1,0 +1,36 @@
+package io.eranalytics.pipeline.erapi.dto;
+
+public record ParticipantCoreDto(
+        Long gameId,
+        String nickname,
+        Integer teamNumber,
+        Integer characterNum,
+        Integer bestWeapon,
+        Integer bestWeaponLevel,
+        Integer gameRank,
+        Integer playerKill,
+        Integer playerAssistant,
+        Integer monsterKill,
+        Integer damageToPlayer,
+        Integer mmrBefore,
+        Integer mmrGain,
+        Integer mmrAfter,
+        Integer playTime,
+        Integer victory,
+        Integer playerDeaths,
+        Integer teamKill,
+        Integer totalFieldKill,
+        Integer giveUp,
+        Integer escapeState,
+        Integer mmrGainInGame,
+        Integer mmrLossEntryCost,
+        Integer mmrGainGambit,
+        Integer watchTime,
+        Integer totalTime,
+        Integer duration,
+        Integer useEmoticonCount,
+        Boolean gambit,
+        Boolean kingsGambit,
+        Boolean killGamma
+) {
+}

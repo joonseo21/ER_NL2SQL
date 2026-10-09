@@ -1,101 +1,87 @@
 package io.eranalytics.pipeline.collection;
 
+import static io.eranalytics.pipeline.erapi.jackson.BattleJsonValues.invalid;
+
 import com.fasterxml.jackson.databind.JsonNode;
-import java.time.OffsetDateTime;
-import java.time.format.DateTimeParseException;
-import java.util.regex.Pattern;
+import io.eranalytics.pipeline.collection.mapping.DeathMapper;
+import io.eranalytics.pipeline.collection.mapping.EquipmentMapper;
+import io.eranalytics.pipeline.collection.mapping.MasteryMapper;
+import io.eranalytics.pipeline.collection.mapping.MatchupMapper;
+import io.eranalytics.pipeline.collection.mapping.RawFieldPolicy;
+import io.eranalytics.pipeline.collection.mapping.SqlColumnProjector;
+import io.eranalytics.pipeline.collection.mapping.TraitMapper;
+import io.eranalytics.pipeline.collection.model.MappedMatch;
+import io.eranalytics.pipeline.collection.model.MappedParticipant;
+import io.eranalytics.pipeline.config.BattleResultObjectMapperFactory;
+import io.eranalytics.pipeline.erapi.BattleUserResultReader;
+import io.eranalytics.pipeline.erapi.dto.BattleUserResultDto;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
-final class BattleUserResultMapper {
-    // ER API sends offsets without a colon (e.g. +0900), which OffsetDateTime.parse rejects.
-    private static final Pattern COMPACT_OFFSET = Pattern.compile("(?<=\\d)([+-]\\d{2})(\\d{2})$");
+/** Orchestrates typed response mapping; performs no database calls. */
+public final class BattleUserResultMapper {
+    private final BattleUserResultReader reader;
+    private final RawFieldPolicy rawPolicy;
 
-    private BattleUserResultMapper() {
+    public BattleUserResultMapper() {
+        this(new BattleUserResultReader(BattleResultObjectMapperFactory.create()));
     }
 
-    static ParticipantRow participant(JsonNode node) {
-        return new ParticipantRow(
-                requiredLong(node, "gameId"),
-                requiredText(node, "nickname"),
-                nullableInt(node, "teamNumber"),
-                nullableInt(node, "characterNum"),
-                nullableInt(node, "bestWeapon"),
-                nullableInt(node, "bestWeaponLevel"),
-                nullableInt(node, "gameRank"),
-                nullableInt(node, "playerKill"),
-                nullableInt(node, "playerAssistant"),
-                nullableInt(node, "monsterKill"),
-                nullableInt(node, "damageToPlayer"),
-                nullableInt(node, "mmrBefore"),
-                nullableInt(node, "mmrGain"),
-                nullableInt(node, "mmrAfter"),
-                nullableInt(node, "playTime"),
-                node
-        );
+    public BattleUserResultMapper(BattleUserResultReader reader) {
+        this.reader = reader;
+        this.rawPolicy = new RawFieldPolicy(reader);
     }
 
-    static GameRow game(JsonNode node) {
-        return new GameRow(
-                requiredLong(node, "gameId"),
-                nullableInt(node, "seasonId"),
-                nullableInt(node, "matchingMode"),
-                nullableInt(node, "matchingTeamMode"),
-                nullableInt(node, "versionSeason"),
-                nullableInt(node, "versionMajor"),
-                nullableInt(node, "versionMinor"),
-                nullableOffsetDateTime(node, "startDtm"),
-                nullableText(node, "serverName")
-        );
-    }
-
-    private static long requiredLong(JsonNode node, String field) {
-        if (!node.hasNonNull(field) || !node.get(field).canConvertToLong()) {
-            throw new IllegalArgumentException("Missing or invalid field: " + field);
+    public MappedMatch mapMatch(List<JsonNode> results, Map<String, Integer> characterCodesByName) {
+        if (results == null || results.isEmpty()) {
+            throw invalid("userGames");
         }
-        return node.get(field).longValue();
-    }
-
-    private static String requiredText(JsonNode node, String field) {
-        String value = nullableText(node, field);
-        if (value == null || value.isBlank()) {
-            throw new IllegalArgumentException("Missing or invalid field: " + field);
+        List<BattleUserResultDto> inputs = results.stream().map(reader::read).toList();
+        var game = inputs.getFirst().game();
+        Map<String, Integer> indexes = new HashMap<>();
+        Set<Integer> teams = new LinkedHashSet<>();
+        for (int index = 0; index < inputs.size(); index++) {
+            var input = inputs.get(index);
+            if (!game.equals(input.game())) {
+                throw invalid("shared game fields");
+            }
+            if (indexes.putIfAbsent(input.core().nickname(), index) != null) {
+                throw invalid("duplicate nickname");
+            }
+            if (input.core().teamNumber() != null) {
+                teams.add(input.core().teamNumber());
+            }
         }
-        return value;
-    }
-
-    private static Integer nullableInt(JsonNode node, String field) {
-        return node.hasNonNull(field) && node.get(field).canConvertToInt()
-                ? node.get(field).intValue()
-                : null;
-    }
-
-    private static String nullableText(JsonNode node, String field) {
-        return node.hasNonNull(field) ? node.get(field).asText(null) : null;
-    }
-
-    private static OffsetDateTime nullableOffsetDateTime(JsonNode node, String field) {
-        String value = nullableText(node, field);
-        if (value == null) {
-            return null;
+        Map<String, Object> gameColumns = SqlColumnProjector.project(game);
+        gameColumns.put("team_count", teams.size());
+        DeathMapper deathMapper = new DeathMapper(inputs, indexes, characterCodesByName);
+        List<MappedParticipant> participants = new ArrayList<>();
+        for (var input : inputs) {
+            Map<String, Object> columns = SqlColumnProjector.project(input.participantFields());
+            columns.put("version_major", game.versionMajor());
+            columns.put("version_minor", game.versionMinor());
+            participants.add(new MappedParticipant(immutable(columns),
+                    EquipmentMapper.map(input.equipment()),
+                    TraitMapper.map(input.loadout().traitFirstCore(), input.traits()),
+                    MasteryMapper.map(input.mastery()),
+                    MatchupMapper.map(input.core().characterNum(), input.matchup()),
+                    deathMapper.map(input.deaths()), rawPolicy.remaining(input.raw())));
         }
-        try {
-            return OffsetDateTime.parse(COMPACT_OFFSET.matcher(value.trim()).replaceFirst("$1:$2"));
-        } catch (DateTimeParseException exception) {
-            return null;
-        }
+        return new MappedMatch(immutable(gameColumns), List.copyOf(participants));
     }
 
-    record GameRow(
-            long gameId, Integer seasonId, Integer matchingMode, Integer matchingTeamMode,
-            Integer versionSeason, Integer versionMajor, Integer versionMinor,
-            OffsetDateTime startDtm, String serverName
-    ) {
+    public Set<String> movedRawKeys() {
+        return rawPolicy.movedKeys();
     }
 
-    record ParticipantRow(
-            long gameId, String nickname, Integer teamNumber, Integer characterNum,
-            Integer bestWeapon, Integer bestWeaponLevel, Integer gameRank, Integer playerKill,
-            Integer playerAssistant, Integer monsterKill, Integer damageToPlayer,
-            Integer mmrBefore, Integer mmrGain, Integer mmrAfter, Integer playTime, JsonNode raw
-    ) {
+    private static Map<String, Object> immutable(Map<String, Object> values) {
+        // Map.copyOf rejects nullable database values.
+        return Collections.unmodifiableMap(new LinkedHashMap<>(values));
     }
 }

@@ -3,6 +3,9 @@ package io.eranalytics.pipeline.collection;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.eranalytics.pipeline.collection.mapping.LegacyBattleUserResultMapper;
+import io.eranalytics.pipeline.collection.model.GameRow;
+import io.eranalytics.pipeline.collection.model.ParticipantRow;
 import java.util.List;
 import java.util.Optional;
 
@@ -92,7 +95,7 @@ public class CollectorRepository {
         if (results.isEmpty()) {
             throw new IllegalArgumentException("Game response contained no participants");
         }
-        BattleUserResultMapper.GameRow game = BattleUserResultMapper.game(results.getFirst());
+        GameRow game = LegacyBattleUserResultMapper.game(results.getFirst());
         jdbc.update("""
                 INSERT INTO games(game_id, season_id, matching_mode, matching_team_mode,
                   version_season, version_major, version_minor, start_dtm, server_name, fetched_at)
@@ -108,7 +111,7 @@ public class CollectorRepository {
                 game.serverName());
 
         for (JsonNode result : results) {
-            BattleUserResultMapper.ParticipantRow participant = BattleUserResultMapper.participant(result);
+            ParticipantRow participant = LegacyBattleUserResultMapper.participant(result);
             jdbc.update("""
                     INSERT INTO participants(game_id, nickname, team_number, character_num,
                       best_weapon, best_weapon_level, game_rank, player_kill, player_assistant,
