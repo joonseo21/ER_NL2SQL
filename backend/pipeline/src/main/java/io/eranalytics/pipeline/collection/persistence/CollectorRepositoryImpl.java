@@ -22,44 +22,35 @@ public class CollectorRepositoryImpl implements CollectorRepository {
     }
 
     @Override
-    @Transactional
-    public void upsertRankerAndQueue(String userId, String nickname, Integer rank, Integer mmr, int seasonId) {
-        jdbc.update("""
-                INSERT INTO rankers(uid, nickname, rank, mmr, season_id, fetched_at)
-                VALUES (?, ?, ?, ?, ?, now())
-                ON CONFLICT (uid) DO UPDATE SET
-                  nickname = EXCLUDED.nickname, rank = EXCLUDED.rank, mmr = EXCLUDED.mmr,
-                  season_id = EXCLUDED.season_id, fetched_at = now()
-                """, userId, nickname, rank, mmr, seasonId);
-        enqueueRefreshableUser(userId);
-    }
-
-    private void enqueueRefreshableUser(String userId) {
+    public void enqueueGame(long gameId) {
+        if (gameId <= 0) throw new IllegalArgumentException("Game id must be positive");
         jdbc.update("""
                 INSERT INTO collect_queue(job_type, target_key)
-                VALUES ('USER', ?)
-                ON CONFLICT (job_type, target_key) DO UPDATE SET
-                  status = 'PENDING', attempts = 0, last_error = NULL, updated_at = now()
-                """, userId);
-    }
-
-    @Override
-    public void enqueue(String jobType, String targetKey) {
-        jdbc.update("""
-                INSERT INTO collect_queue(job_type, target_key)
-                VALUES (?, ?)
+                VALUES ('GAME', ?)
                 ON CONFLICT (job_type, target_key) DO NOTHING
-                """, jobType, targetKey);
+                """, Long.toString(gameId));
+    }
+
+    @Override
+    public boolean gameExists(long gameId) {
+        return Boolean.TRUE.equals(jdbc.queryForObject(
+                "SELECT EXISTS (SELECT 1 FROM games WHERE game_id = ?)", Boolean.class, gameId));
     }
 
     @Override
     @Transactional
-    public Optional<QueueJob> claimNext() {
+    public Optional<QueueJob> claimNextGame() {
+        // A process restart cannot grant a sixth attempt to an exhausted pending job.
+        jdbc.update("""
+                UPDATE collect_queue SET status = 'FAILED', updated_at = now(),
+                  last_error = coalesce(last_error, 'Attempt budget exhausted before restart')
+                WHERE job_type = 'GAME' AND status IN ('PENDING', 'RETRY') AND attempts >= 5
+                """);
         List<QueueJob> jobs = jdbc.query("""
                 SELECT id, job_type, target_key, attempts
                 FROM collect_queue
-                WHERE status IN ('PENDING', 'RETRY')
-                ORDER BY CASE job_type WHEN 'GAME' THEN 0 ELSE 1 END, created_at
+                WHERE job_type = 'GAME' AND status IN ('PENDING', 'RETRY') AND attempts < 5
+                ORDER BY created_at, id
                 LIMIT 1
                 FOR UPDATE SKIP LOCKED
                 """, (rs, rowNum) -> new QueueJob(
@@ -75,12 +66,25 @@ public class CollectorRepositoryImpl implements CollectorRepository {
     }
 
     @Override
-    public void markDone(long id) {
+    public void recordAttempt(QueueJob job, int attempt) {
         jdbc.update("""
                 UPDATE collect_queue
-                SET status = 'DONE', last_error = NULL, updated_at = now()
+                SET attempts = ?, updated_at = now()
                 WHERE id = ?
-                """, id);
+                """, attempt, job.id());
+    }
+
+    @Override
+    @Transactional
+    public void completeGame(QueueJob job, List<JsonNode> results) {
+        if (!"GAME".equals(job.jobType()) || results.isEmpty()
+                || !results.getFirst().path("gameId").isIntegralNumber()
+                || !results.getFirst().path("gameId").canConvertToLong()
+                || results.getFirst().get("gameId").longValue() != Long.parseLong(job.targetKey())) {
+            throw new IllegalArgumentException("Game response does not match queue target");
+        }
+        upsertGame(results);
+        jdbc.update("DELETE FROM collect_queue WHERE id = ? AND job_type = 'GAME'", job.id());
     }
 
     @Override
@@ -88,9 +92,9 @@ public class CollectorRepositoryImpl implements CollectorRepository {
         String status = retryable && job.attempts() < 5 ? "RETRY" : "FAILED";
         jdbc.update("""
                 UPDATE collect_queue
-                SET status = ?, last_error = ?, updated_at = now()
+                SET status = ?, last_error = ?, attempts = ?, updated_at = now()
                 WHERE id = ?
-                """, status, abbreviate(error, 2000), job.id());
+                """, status, abbreviate(error, 2000), job.attempts(), job.id());
     }
 
     @Override
@@ -117,7 +121,8 @@ public class CollectorRepositoryImpl implements CollectorRepository {
                 INSERT INTO characters(character_code, name_ko, name_en)
                 VALUES (?, ?, ?)
                 ON CONFLICT (character_code) DO UPDATE SET
-                  name_ko = EXCLUDED.name_ko, name_en = EXCLUDED.name_en
+                  name_ko = coalesce(EXCLUDED.name_ko, characters.name_ko),
+                  name_en = coalesce(EXCLUDED.name_en, characters.name_en)
                 """, code, nameKo, nameEn);
     }
 

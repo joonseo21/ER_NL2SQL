@@ -9,7 +9,7 @@ public final class RequestRateGate {
     private long nextAllowedAt;
 
     public RequestRateGate(ErApiProperties properties) {
-        if (properties.requestsPerSecond() <= 0) {
+        if (!Double.isFinite(properties.requestsPerSecond()) || properties.requestsPerSecond() <= 0) {
             throw new IllegalArgumentException("er.api.requests-per-second must be positive");
         }
         this.intervalNanos = (long) (1_000_000_000D / properties.requestsPerSecond());

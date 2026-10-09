@@ -8,6 +8,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.eranalytics.pipeline.collection.BattleUserResultMapper;
 import io.eranalytics.pipeline.collection.CollectorRepository;
+import io.eranalytics.pipeline.collection.UserFrontierRepository;
+import io.eranalytics.pipeline.collection.model.CrawlUser;
+import io.eranalytics.pipeline.collection.model.SeedUser;
+import java.time.OffsetDateTime;
+import java.util.stream.IntStream;
 import io.eranalytics.pipeline.collection.model.DeathRow;
 import io.eranalytics.pipeline.collection.model.MappedMatch;
 import io.eranalytics.pipeline.collection.model.MappedParticipant;
@@ -50,6 +55,7 @@ class GamePersistenceIntegrationTest {
     @Autowired GamePersistenceService service;
     @Autowired BattleUserResultMapper mapper;
     @Autowired JdbcTemplate jdbc;
+    @Autowired UserFrontierRepository frontier;
 
     @DynamicPropertySource
     static void database(DynamicPropertyRegistry properties) throws Exception {
@@ -97,7 +103,7 @@ class GamePersistenceIntegrationTest {
     @BeforeEach
     void resetTestDatabase() throws Exception {
         try (Connection connection = admin(); Statement sql = connection.createStatement()) {
-            sql.execute("TRUNCATE games, users, characters, rankers RESTART IDENTITY CASCADE");
+            sql.execute("TRUNCATE games, users, characters, rankers, collect_queue, api_call_log RESTART IDENTITY CASCADE");
         }
         jdbc.update("INSERT INTO characters(character_code,name_en) VALUES (?,?),(?,?)",
                 137, "syntheticranger", 700, "SYNTHETICRANGER");
@@ -363,6 +369,199 @@ class GamePersistenceIntegrationTest {
         resetTestDatabase();
         collector.upsertGame(rows);
         assertThat(snapshot()).isEqualTo(migrated);
+    }
+
+    @Test
+    void seedsAll1000UsersOnlyForEmptySeasonAndPreservesExistingCrawlState() {
+        var seeds = IntStream.range(0, 1000).mapToObj(i -> new SeedUser("synthetic_seed_" + i, 8000)).toList();
+        frontier.seedIfEmpty(41, seeds);
+        assertThat(count("users")).isEqualTo(1000);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM users WHERE crawl_status='NEW' "
+                + "AND last_mmr=8000 AND tier='미스릴 이상'", Integer.class)).isEqualTo(1000);
+        assertThat(count("rankers")).isZero();
+        jdbc.update("UPDATE users SET crawl_status='NOT_FOUND' WHERE nickname='synthetic_seed_0'");
+        frontier.seedIfEmpty(41, List.of(new SeedUser("synthetic_added", 5000)));
+        assertThat(count("users")).isEqualTo(1000);
+        assertThat(jdbc.queryForObject("SELECT crawl_status FROM users WHERE nickname='synthetic_seed_0'",
+                String.class)).isEqualTo("NOT_FOUND");
+        assertThat(frontier.hasUsers(40)).isFalse();
+    }
+
+    @Test
+    void selectsByLatestPatchParticipantCountsWithinConfiguredSeasonRatherThanAllTime() {
+        seedCandidates();
+        sample(101, 41, 4, 1, "다이아몬드", 10);
+        sample(102, 41, 5, 1, "플래티넘", 4);
+        sample(103, 41, 5, 1, "다이아몬드", 1);
+        sample(104, 41, 5, 1, "메테오라이트", 2);
+        sample(105, 41, 5, 1, "미스릴 이상", 3);
+        sample(106, 40, 99, 1, "다이아몬드", 30);
+        sample(107, 41, 5, 0, "다이아몬드", 20);
+        assertThat(nextCandidate().nickname()).isEqualTo("synthetic_diamond");
+    }
+
+    @Test
+    void includesZeroSampleTierAndSkipsIneligibleCandidatesBeforeMovingToNextTier() {
+        seedCandidates();
+        sample(101, 41, 5, 1, "플래티넘", 1);
+        assertThat(nextCandidate().nickname()).isEqualTo("synthetic_diamond");
+        jdbc.update("UPDATE users SET crawl_status='NOT_FOUND' WHERE tier='다이아몬드'");
+        jdbc.update("UPDATE users SET crawl_status='ERROR' WHERE tier='메테오라이트'");
+        assertThat(nextCandidate().nickname()).isEqualTo("synthetic_mithril");
+        jdbc.update("UPDATE users SET crawl_status='DONE', last_crawled_at=now() WHERE tier='미스릴 이상'");
+        assertThat(nextCandidate().nickname()).isEqualTo("synthetic_platinum");
+        jdbc.update("UPDATE users SET last_mmr=3599 WHERE tier='플래티넘'");
+        assertThat(frontier.selectNext(41, 4, 3600, OffsetDateTime.now().minusHours(4))).isEmpty();
+    }
+
+    @Test
+    void choosesNewBeforeOldDoneAndThenOldestEligibleDone() {
+        frontier.seedIfEmpty(41, List.of(new SeedUser("synthetic_new", 5000),
+                new SeedUser("synthetic_old", 5000), new SeedUser("synthetic_recent", 5000)));
+        jdbc.update("UPDATE users SET crawl_status='DONE', last_crawled_at=now()-interval '8 hours' "
+                + "WHERE nickname='synthetic_old'");
+        jdbc.update("UPDATE users SET crawl_status='DONE', last_crawled_at=now()-interval '5 hours' "
+                + "WHERE nickname='synthetic_recent'");
+        assertThat(nextCandidate().nickname()).isEqualTo("synthetic_new");
+        jdbc.update("UPDATE users SET crawl_status='DONE', last_crawled_at=now() WHERE nickname='synthetic_new'");
+        assertThat(nextCandidate().nickname()).isEqualTo("synthetic_old");
+        jdbc.update("UPDATE users SET last_crawled_at=now() WHERE nickname='synthetic_old'");
+        assertThat(nextCandidate().nickname()).isEqualTo("synthetic_recent");
+        jdbc.update("UPDATE users SET last_crawled_at=now()");
+        assertThat(frontier.selectNext(41, 4, 3600, OffsetDateTime.now().minusHours(4))).isEmpty();
+    }
+
+    @Test
+    void crawlCompletionAndFailureKeepStatisticsAndPreviousMarkerWhenIncomplete() throws Exception {
+        collector.upsertGame(fixture());
+        jdbc.update("UPDATE users SET crawled_newest_game_id=100 WHERE nickname='synthetic_alpha'");
+        var row = jdbc.queryForMap("SELECT user_id,season_id,nickname FROM users WHERE nickname='synthetic_alpha'");
+        CrawlUser user = new CrawlUser(((Number)row.get("user_id")).longValue(), 41, "synthetic_alpha", 100L);
+        int mmr = jdbc.queryForObject("SELECT last_mmr FROM users WHERE user_id=?", Integer.class, user.userId());
+        frontier.complete(user, 200L, false);
+        assertThat(jdbc.queryForObject("SELECT crawled_newest_game_id FROM users WHERE user_id=?",
+                Long.class, user.userId())).isEqualTo(100L);
+        frontier.complete(user, 200L, true);
+        frontier.fail(user, false, "ER API code 503");
+        var result = jdbc.queryForMap("SELECT crawl_status,crawl_error,crawled_newest_game_id,last_mmr,games_seen "
+                + "FROM users WHERE user_id=?", user.userId());
+        assertThat(result).containsEntry("crawl_status", "ERROR").containsEntry("crawl_error", "ER API code 503")
+                .containsEntry("crawled_newest_game_id", 200L).containsEntry("last_mmr", mmr)
+                .containsEntry("games_seen", 1);
+        frontier.complete(user, null, true);
+        assertThat(jdbc.queryForObject("SELECT crawled_newest_game_id FROM users WHERE user_id=?",
+                Long.class, user.userId())).isEqualTo(200L);
+        frontier.fail(user, true, "ER API code 404");
+        assertThat(jdbc.queryForObject("SELECT crawl_status FROM users WHERE user_id=?",
+                String.class, user.userId())).isEqualTo("NOT_FOUND");
+    }
+
+    @Test
+    void processesOnlyGameQueueAndDeletesSuccessAtomicallyWithPersistence() throws Exception {
+        long gameId = fixture().getFirst().get("gameId").longValue();
+        jdbc.update("INSERT INTO collect_queue(job_type,target_key) VALUES ('USER','legacy-uid')");
+        collector.enqueueGame(gameId);
+        collector.enqueueGame(gameId);
+        var job = collector.claimNextGame().orElseThrow();
+        assertThat(job.attempts()).isEqualTo(1);
+        assertThat(job.jobType()).isEqualTo("GAME");
+        collector.completeGame(job, fixture());
+        assertThat(collector.gameExists(gameId)).isTrue();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM collect_queue WHERE job_type='GAME'", Integer.class)).isZero();
+        assertThat(collector.claimNextGame()).isEmpty();
+        assertThat(count("collect_queue")).isEqualTo(1);
+    }
+
+    @Test
+    void failedJobsKeepAttemptsAndReasonAndDoNotReenqueueOrBlockNextJob() {
+        collector.enqueueGame(200);
+        collector.enqueueGame(300);
+        var first = collector.claimNextGame().orElseThrow();
+        collector.recordAttempt(first, 5);
+        collector.markFailure(new io.eranalytics.pipeline.collection.QueueJob(first.id(), "GAME", "200", 5),
+                "ER API code 503", true);
+        collector.enqueueGame(200);
+        assertThat(jdbc.queryForMap("SELECT status,attempts,last_error FROM collect_queue WHERE id=?", first.id()))
+                .containsEntry("status", "FAILED").containsEntry("attempts", 5).containsEntry("last_error", "ER API code 503");
+        assertThat(collector.claimNextGame().orElseThrow().targetKey()).isEqualTo("300");
+    }
+
+    @Test
+    void restartFinalizesExhaustedPendingAttemptAndDoesNotGrantSixthTry() {
+        collector.enqueueGame(200);
+        var job = collector.claimNextGame().orElseThrow();
+        collector.recordAttempt(job, 5);
+        assertThat(collector.claimNextGame()).isEmpty();
+        assertThat(jdbc.queryForMap("SELECT status,attempts FROM collect_queue WHERE id=?", job.id()))
+                .containsEntry("status", "FAILED").containsEntry("attempts", 5);
+    }
+
+    @Test
+    void queueDeleteFailureRollsBackGameUsersParticipantsAndChildren() throws Exception {
+        long gameId = fixture().getFirst().get("gameId").longValue();
+        collector.enqueueGame(gameId);
+        var job = collector.claimNextGame().orElseThrow();
+        try (Connection connection = admin(); Statement sql = connection.createStatement()) {
+            sql.execute("""
+                    CREATE FUNCTION fail_test_queue_delete() RETURNS trigger LANGUAGE plpgsql AS $$
+                    BEGIN RAISE EXCEPTION 'synthetic queue delete failure'; END $$
+                    """);
+            sql.execute("CREATE TRIGGER fail_test_queue_delete BEFORE DELETE ON collect_queue "
+                    + "FOR EACH ROW EXECUTE FUNCTION fail_test_queue_delete()");
+        }
+        try {
+            assertThatThrownBy(() -> collector.completeGame(job, fixture())).isInstanceOf(RuntimeException.class);
+            assertThat(count("games")).isZero();
+            assertThat(count("users")).isZero();
+            assertThat(count("participants")).isZero();
+            for (String child : CHILDREN) assertThat(count(child)).isZero();
+            assertThat(count("collect_queue")).isEqualTo(1);
+        } finally {
+            try (Connection connection = admin(); Statement sql = connection.createStatement()) {
+                sql.execute("DROP TRIGGER fail_test_queue_delete ON collect_queue");
+                sql.execute("DROP FUNCTION fail_test_queue_delete()");
+            }
+        }
+    }
+
+    @Test
+    void incorrectGameResponseCannotDeleteTheQueuedJob() throws Exception {
+        long id = fixture().getFirst().get("gameId").longValue();
+        collector.enqueueGame(id + 1);
+        var job = collector.claimNextGame().orElseThrow();
+        assertThatThrownBy(() -> collector.completeGame(job, fixture()))
+                .isInstanceOf(org.springframework.dao.InvalidDataAccessApiUsageException.class)
+                .hasCauseInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Game response does not match queue target");
+        assertThat(count("games")).isZero();
+        assertThat(count("collect_queue")).isEqualTo(1);
+    }
+
+    @Test
+    void missingLocalizationDoesNotEraseExistingKoreanName() {
+        collector.upsertCharacter(1, "가상 실험체", "Synthetic");
+        collector.upsertCharacter(1, null, "Synthetic revised");
+        assertThat(jdbc.queryForMap("SELECT name_ko,name_en FROM characters WHERE character_code=1"))
+                .containsEntry("name_ko", "가상 실험체").containsEntry("name_en", "Synthetic revised");
+    }
+
+    private CrawlUser nextCandidate() {
+        return frontier.selectNext(41, 4, 3600, OffsetDateTime.now().minusHours(4)).orElseThrow();
+    }
+
+    private void seedCandidates() {
+        frontier.seedIfEmpty(41, List.of(new SeedUser("synthetic_platinum", 3600),
+                new SeedUser("synthetic_diamond", 5000), new SeedUser("synthetic_meteorite", 6400),
+                new SeedUser("synthetic_mithril", 7600), new SeedUser("synthetic_below", 3599)));
+    }
+
+    private void sample(long gameId, int season, int major, int minor, String tier, int count) {
+        jdbc.update("INSERT INTO games(game_id,season_id,matching_mode,matching_team_mode,version_major,version_minor) "
+                + "VALUES (?,?,3,3,?,?)", gameId, season, major, minor);
+        for (int i = 0; i < count; i++) {
+            jdbc.update("INSERT INTO participants(game_id,nickname,tier,version_major,version_minor,raw) "
+                    + "VALUES (?,?,?,?,?,'{}'::jsonb)", gameId, "synthetic_sample_" + i, tier, major, minor);
+        }
     }
 
     private static Integer integer(JsonNode row, String key) {

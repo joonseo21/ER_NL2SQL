@@ -29,10 +29,15 @@ er:
   api:
     base-url: https://open-api.bser.io
     key: ${ER_API_KEY:}
-    season-id: ${ER_SEASON_ID:12}
-    top-ranker-limit: ${ER_TOP_RANKER_LIMIT:50}
-    requests-per-second: ${ER_REQUESTS_PER_SECOND:1.0}
+    season-id: ${ER_SEASON_ID:41}
+    requests-per-second: ${ER_REQUESTS_PER_SECOND:0.5}
   collection:
     enabled: ${ER_COLLECTION_ENABLED:false}
     continuous: ${ER_COLLECTION_CONTINUOUS:false}
-    interval: ${ER_COLLECTION_INTERVAL:6h}
+    revisit-interval: ${ER_REVISIT_INTERVAL:4h}
+    max-pages-per-user: ${ER_MAX_PAGES_PER_USER:30}
+    idle-sleep: ${ER_IDLE_SLEEP:5m}
+    meta-refresh: ${ER_META_REFRESH:24h}
+    min-version-major: ${ER_MIN_VERSION_MAJOR:4}
+    min-seed-mmr: ${ER_MIN_SEED_MMR:3600}
+    balance-basis: ${ER_BALANCE_BASIS:LATEST_PATCH}

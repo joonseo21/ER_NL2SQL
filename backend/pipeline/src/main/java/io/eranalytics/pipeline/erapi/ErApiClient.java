@@ -2,9 +2,17 @@ package io.eranalytics.pipeline.erapi;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectReader;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.MapperFeature;
+import com.fasterxml.jackson.databind.json.JsonMapper;
+import io.eranalytics.pipeline.erapi.dto.UserGamesPage;
+import io.eranalytics.pipeline.collection.model.SeedUser;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Map;
+import java.util.List;
+import java.util.ArrayList;
 import java.util.function.Supplier;
 
 import io.eranalytics.pipeline.collection.CollectorRepository;
@@ -18,6 +26,7 @@ public class ErApiClient {
     private final RestClient restClient;
     private final RestClient publicRestClient;
     private final ObjectMapper objectMapper;
+    private final ObjectReader userPageReader;
     private final RequestRateGate rateGate;
     private final CollectorRepository repository;
 
@@ -33,6 +42,10 @@ public class ErApiClient {
                 .build();
         this.publicRestClient = RestClient.create();
         this.objectMapper = objectMapper;
+        this.userPageReader = JsonMapper.builder()
+                .disable(DeserializationFeature.ACCEPT_FLOAT_AS_INT)
+                .disable(MapperFeature.ALLOW_COERCION_OF_SCALARS)
+                .build().readerFor(UserGamesPage.class);
         this.rateGate = rateGate;
         this.repository = repository;
     }
@@ -47,6 +60,50 @@ public class ErApiClient {
 
     public JsonNode get(String uriTemplate, Map<String, ?> uriVariables, String logEndpoint) {
         return execute(() -> restClient.get().uri(uriTemplate, uriVariables), logEndpoint);
+    }
+
+    public String resolveUser(String nickname) {
+        JsonNode response = get("/v1/user/nickname?query={nickname}", Map.of("nickname", nickname),
+                "/v1/user/nickname");
+        String uid = response.path("user").path("userId").asText();
+        if (uid.isBlank()) throw new IllegalArgumentException("Nickname response is missing userId");
+        return uid;
+    }
+
+    public UserGamesPage userGames(String uid, Long next) {
+        String path = "/v1/user/games/uid/{uid}";
+        Map<String, ?> variables = next == null ? Map.of("uid", uid) : Map.of("uid", uid, "next", next);
+        JsonNode response = get(next == null ? path : path + "?next={next}", variables, path);
+        try {
+            return userPageReader.readValue(response);
+        } catch (IOException exception) {
+            throw new IllegalArgumentException("Invalid user games response");
+        }
+    }
+
+    public List<SeedUser> topUsers(int seasonId) {
+        JsonNode ranks = get("/v1/rank/top/{season}/3", Map.of("season", seasonId), "/v1/rank/top/{season}/3")
+                .path("topRanks");
+        if (!ranks.isArray() || ranks.isEmpty()) throw new IllegalArgumentException("Invalid top ranks response");
+        List<SeedUser> seeds = new ArrayList<>();
+        for (JsonNode rank : ranks) {
+            String nickname = rank.path("nickname").asText();
+            if (!rank.path("nickname").isTextual() || nickname.isBlank()
+                    || !rank.path("mmr").isIntegralNumber() || !rank.path("mmr").canConvertToInt()) {
+                throw new IllegalArgumentException("Invalid rank seed fields");
+            }
+            seeds.add(new SeedUser(nickname, rank.get("mmr").intValue()));
+        }
+        return List.copyOf(seeds);
+    }
+
+    public List<JsonNode> gameParticipants(String gameId) {
+        JsonNode results = get("/v1/games/{gameId}", Map.of("gameId", gameId), "/v1/games/{gameId}")
+                .path("userGames");
+        if (!results.isArray() || results.isEmpty()) throw new IllegalArgumentException("Invalid game response");
+        List<JsonNode> participants = new ArrayList<>();
+        results.forEach(participants::add);
+        return List.copyOf(participants);
     }
 
     private JsonNode execute(
@@ -72,7 +129,6 @@ public class ErApiClient {
                     }
                     return payload;
                 } catch (IOException exception) {
-                    repository.logApiCall(logEndpoint, status.value(), elapsedMillis(started));
                     throw new IllegalStateException("ER API response was not valid JSON", exception);
                 }
             });

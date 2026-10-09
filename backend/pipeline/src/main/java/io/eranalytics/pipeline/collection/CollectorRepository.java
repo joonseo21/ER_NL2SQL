@@ -6,13 +6,15 @@ import java.util.Optional;
 
 /** Storage operations used by the collection flow and API client. */
 public interface CollectorRepository {
-    void upsertRankerAndQueue(String userId, String nickname, Integer rank, Integer mmr, int seasonId);
+    void enqueueGame(long gameId);
 
-    void enqueue(String jobType, String targetKey);
+    boolean gameExists(long gameId);
 
-    Optional<QueueJob> claimNext();
+    Optional<QueueJob> claimNextGame();
 
-    void markDone(long id);
+    void recordAttempt(QueueJob job, int attempt);
+
+    void completeGame(QueueJob job, List<JsonNode> results);
 
     void markFailure(QueueJob job, String error, boolean retryable);
 

@@ -70,4 +70,24 @@ public class UserEntity {
         this.lastGameAt = latest.startedAt();
         this.tier = boundary == null ? null : boundary.getId().getTier();
     }
+
+    public void seed(int mmr, TierEntity boundary) {
+        this.lastMmr = mmr;
+        this.tier = boundary == null ? null : boundary.getId().getTier();
+    }
+
+    public void completeCrawl(OffsetDateTime now, Long newestGameId, boolean fullyScanned) {
+        this.crawlStatus = "DONE";
+        this.lastCrawledAt = now;
+        this.crawlError = null;
+        if (fullyScanned && newestGameId != null) {
+            this.crawledNewestGameId = newestGameId;
+        }
+    }
+
+    public void failCrawl(OffsetDateTime now, boolean notFound, String reason) {
+        this.crawlStatus = notFound ? "NOT_FOUND" : "ERROR";
+        this.lastCrawledAt = now;
+        this.crawlError = reason;
+    }
 }
