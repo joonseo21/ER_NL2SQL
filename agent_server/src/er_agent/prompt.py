@@ -15,7 +15,7 @@ def build_prompt(question: str, samples: dict[str, Any]) -> str:
 
 {schema_context}
 
-Masked sample rows (these are context only; never filter by the masked nicknames):
+Non-identifying sample rows from allowed columns (examples only; never filter by example IDs):
 {sample_json}
 
 Question:
