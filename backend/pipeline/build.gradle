@@ -22,6 +22,8 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.flywaydb:flyway-core'
+    runtimeOnly 'org.flywaydb:flyway-database-postgresql'
     runtimeOnly 'org.postgresql:postgresql'
 
     // Lombok 설정
@@ -33,6 +35,39 @@ dependencies {
     testAnnotationProcessor 'org.projectlombok:lombok'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+// Keep the original, psql-compatible SQL intact. Flyway must own the transaction,
+// including its history entry, so strip only the outer boundaries in build output.
+tasks.named('processResources') {
+    from('../../db/migrations') {
+        include 'V*__*.sql', 'R__*.sql'
+        into 'db/migration'
+        filteringCharset = 'UTF-8'
+        filter { String line ->
+            if (line == 'BEGIN;') return '-- Transaction started by Flyway.'
+            if (line == 'COMMIT;') return '-- Transaction committed by Flyway.'
+            return line
+        }
+    }
+}
+
+['Info', 'Validate', 'Migrate', 'Baseline'].each { operation ->
+    tasks.register("db${operation}", JavaExec) {
+        description = "Runs Flyway ${operation.toLowerCase()} using explicit MIGRATION_DATABASE_* credentials."
+        group = 'database'
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = 'io.eranalytics.pipeline.migration.DatabaseMigration'
+        javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
+        args operation.toLowerCase()
+        if (operation == 'Baseline') {
+            doFirst {
+                def version = providers.gradleProperty('baselineVersion').orNull
+                if (version == null) throw new GradleException('Supply the verified existing version with -PbaselineVersion=<version>')
+                args version
+            }
+        }
+    }
 }
 
 tasks.named('test') {

@@ -13,10 +13,6 @@ services:
       - "127.0.0.1:5433:5432"
     volumes:
       - er_postgres_data:/var/lib/postgresql/data
-      - ./docs/schema_v1.sql:/docker-entrypoint-initdb.d/010-schema.sql:ro
-      - ./db/migrations/V2__games_start_dtm_timestamptz.sql:/docker-entrypoint-initdb.d/015-v2-games-start-dtm.sql:ro
-      - ./db/migrations/V3__mvp1_users_and_participant_columns.sql:/docker-entrypoint-initdb.d/016-v3-users-and-participant-columns.sql:ro
-      - ./db/migrations/V4__mvp1_move_raw_to_columns.sql:/docker-entrypoint-initdb.d/017-v4-move-raw-to-columns.sql:ro
       - ./db/init/020-roles.sh:/docker-entrypoint-initdb.d/020-roles.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d ${POSTGRES_DB:-er_analytics}"]
@@ -26,8 +22,10 @@ services:
 
   collector:
     profiles: ["collector"]
+    image: er-analytics-pipeline:local
     build:
-      context: ./backend/pipeline
+      context: .
+      dockerfile: backend/pipeline/Dockerfile
     restart: unless-stopped
     depends_on:
       postgres:
@@ -42,6 +40,22 @@ services:
       ER_COLLECTION_ENABLED: "true"
       ER_COLLECTION_CONTINUOUS: ${ER_COLLECTION_CONTINUOUS:-true}
       ER_COLLECTION_INTERVAL: ${ER_COLLECTION_INTERVAL:-6h}
+
+  migrate:
+    profiles: ["migrate"]
+    image: er-analytics-pipeline:local
+    build:
+      context: .
+      dockerfile: backend/pipeline/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      MIGRATION_DATABASE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-er_analytics}
+      MIGRATION_DATABASE_USER: postgres
+      MIGRATION_DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    entrypoint: ["java", "-Dloader.main=io.eranalytics.pipeline.migration.DatabaseMigration", "-cp", "/app/app.jar", "org.springframework.boot.loader.launch.PropertiesLauncher"]
+    command: ["migrate"]
 
 volumes:
   er_postgres_data:

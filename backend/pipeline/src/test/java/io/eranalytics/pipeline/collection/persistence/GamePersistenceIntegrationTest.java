@@ -11,6 +11,7 @@ import io.eranalytics.pipeline.collection.CollectorRepository;
 import io.eranalytics.pipeline.collection.model.DeathRow;
 import io.eranalytics.pipeline.collection.model.MappedMatch;
 import io.eranalytics.pipeline.collection.model.MappedParticipant;
+import io.eranalytics.pipeline.migration.DatabaseMigration;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -70,26 +71,11 @@ class GamePersistenceIntegrationTest {
                         END IF;
                     END $$
                     """);
-            var exists = sql.executeQuery("SELECT to_regclass('public.users') IS NOT NULL");
-            exists.next();
-            if (exists.getBoolean(1)) {
-                sql.execute("TRUNCATE games, users, characters, rankers RESTART IDENTITY CASCADE");
-            }
-            for (String file : List.of("docs/schema_v1.sql",
-                    "db/migrations/V2__games_start_dtm_timestamptz.sql",
-                    "db/migrations/V3__mvp1_users_and_participant_columns.sql",
-                    "db/migrations/V4__mvp1_move_raw_to_columns.sql")) {
-                sql.execute(Files.readString(ROOT.resolve(file)));
-            }
-            sql.execute("GRANT USAGE ON SCHEMA public TO collector, agent_ro");
-            sql.execute("""
-                    GRANT SELECT, INSERT, UPDATE, DELETE ON
-                        rankers, collect_queue, games, participants, characters, weapon_types, api_call_log,
-                        users, tiers, participant_equipment, participant_traits, participant_mastery,
-                        participant_matchups, participant_deaths TO collector
-                    """);
-            sql.execute("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO collector");
+            // Only after the dedicated database identity check above.
+            sql.execute("DROP SCHEMA public CASCADE");
+            sql.execute("CREATE SCHEMA public");
         }
+        DatabaseMigration.configure(url, "stage2_test", "").load().migrate();
         properties.add("spring.datasource.url", () -> url);
         properties.add("spring.datasource.username", () -> "collector");
         properties.add("spring.datasource.password", () -> "");

@@ -1,0 +1,12 @@
+# The pipeline image needs only its source and canonical migrations.
+**
+!backend/
+!backend/pipeline/
+!backend/pipeline/build.gradle
+!backend/pipeline/settings.gradle
+!backend/pipeline/src/
+!backend/pipeline/src/main/
+!backend/pipeline/src/main/**
+!db/
+!db/migrations/
+!db/migrations/**

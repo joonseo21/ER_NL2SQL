@@ -25,7 +25,7 @@ ER Open API → Spring collector → PostgreSQL
 - `agent_server/`: Python CLI, psycopg 3.x, sqlglot, python-dotenv.
 - `frontend/`: 미구현. 사용자용 Spring·Python HTTP API도 없다.
 - `compose.yaml`, `infra/`: PostgreSQL·collector Docker 실행과 EC2 설치.
-- `docs/schema_v1.sql`, `db/migrations/`: 최초 스키마와 후속 변경.
+- `db/migrations/`: V1부터의 스키마·데이터 변경과 런타임 권한. Flyway로 적용 이력을 관리한다.
 - `agent_server/schema_context.md`: LLM 실행 입력으로 사용하는 DB 설명.
 
 EC2에 collector·DB를 운영하며 로컬 Python은 SSH 터널로 접근한다. 사용자가 확인한 운영 조건은 시즌 41, 상위 랭커 50명, 0.5 RPS, 사이클 종료 후 6시간 대기다. 현재 배포 설정은 새로 조회하지 않았다. 코드 기본 RPS는 1.0이므로 운영 `.env`에 `ER_REQUESTS_PER_SECOND=0.5`를 명시한다.
@@ -39,11 +39,15 @@ Java 21, Docker, Python 3.12 이상, uv가 필요하다. 기존 `.env`가 없다
 ```powershell
 docker compose up -d postgres
 docker compose ps
+docker compose --profile migrate build migrate
+docker compose --profile migrate run --rm migrate info
 ```
+
+새 빈 DB는 `docker compose --profile migrate run --rm migrate`로 초기화한다. 기존 볼륨은 현재 버전을 확인하고 [DB 변경 절차](docs/operations.md#db-변경과-배포)에 따라 명시적으로 baseline을 등록한다. 자동 baseline은 사용하지 않는다. PostgreSQL initdb는 계정만 생성하며 테이블은 Flyway가 만든다.
 
 수집기 테스트와 로컬 단일 사이클:
 
-새 경기 저장 코드는 V3·V4 적용 DB가 필요하며 시작 시 JPA가 스키마를 검증한다. 기존 볼륨의 마이그레이션과 별도 PostgreSQL 통합 테스트는 [operations.md](docs/operations.md)를 따른다.
+새 경기 저장 코드는 V3·V4 적용 DB가 필요하며 시작 시 JPA가 스키마를 검증한다. 수집기 시작 시 마이그레이션은 실행하지 않는다. 기존 볼륨의 마이그레이션과 별도 PostgreSQL 통합 테스트는 [operations.md](docs/operations.md)를 따른다.
 
 ```powershell
 cd backend/pipeline

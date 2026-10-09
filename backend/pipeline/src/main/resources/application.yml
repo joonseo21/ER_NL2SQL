@@ -11,6 +11,9 @@ spring:
     url: ${COLLECTOR_DATABASE_URL:jdbc:postgresql://localhost:5433/er_analytics}
     username: collector
     password: ${COLLECTOR_PASSWORD:}
+  flyway:
+    # Schema changes run through DatabaseMigration, never on collector startup.
+    enabled: false
   jpa:
     open-in-view: false
     hibernate:
