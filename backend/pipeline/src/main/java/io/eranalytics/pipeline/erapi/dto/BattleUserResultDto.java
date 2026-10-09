@@ -19,8 +19,4 @@ public record BattleUserResultDto(
         MatchupDto matchup,
         List<DeathDto> deaths,
         ObjectNode raw
-) {
-    public List<Object> participantFields() {
-        return List.of(core, combat, stats, credits, crafting, activity, loadout);
-    }
-}
+) {}

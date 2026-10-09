@@ -21,7 +21,7 @@ ER Open API → Spring collector → PostgreSQL
                          Python CLI ↔ Gemini
 ```
 
-- `backend/pipeline/`: Java 21, Spring Boot 3.5.16, JdbcTemplate 기반 단일 워커. collection/erapi/config 패키지로 구성한다.
+- `backend/pipeline/`: Java 21, Spring Boot 3.5.16 단일 워커. 경기·참가자·users·자식 데이터는 JPA로 저장하고 큐·메타데이터 등의 특수 SQL은 JdbcTemplate으로 처리한다. collection/erapi/config 패키지로 구성한다.
 - `agent_server/`: Python CLI, psycopg 3.x, sqlglot, python-dotenv.
 - `frontend/`: 미구현. 사용자용 Spring·Python HTTP API도 없다.
 - `compose.yaml`, `infra/`: PostgreSQL·collector Docker 실행과 EC2 설치.
@@ -42,6 +42,8 @@ docker compose ps
 ```
 
 수집기 테스트와 로컬 단일 사이클:
+
+새 경기 저장 코드는 V3·V4 적용 DB가 필요하며 시작 시 JPA가 스키마를 검증한다. 기존 볼륨의 마이그레이션과 별도 PostgreSQL 통합 테스트는 [operations.md](docs/operations.md)를 따른다.
 
 ```powershell
 cd backend/pipeline

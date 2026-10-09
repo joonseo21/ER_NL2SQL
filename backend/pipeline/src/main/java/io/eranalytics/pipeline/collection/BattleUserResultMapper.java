@@ -8,17 +8,16 @@ import io.eranalytics.pipeline.collection.mapping.EquipmentMapper;
 import io.eranalytics.pipeline.collection.mapping.MasteryMapper;
 import io.eranalytics.pipeline.collection.mapping.MatchupMapper;
 import io.eranalytics.pipeline.collection.mapping.RawFieldPolicy;
-import io.eranalytics.pipeline.collection.mapping.SqlColumnProjector;
 import io.eranalytics.pipeline.collection.mapping.TraitMapper;
 import io.eranalytics.pipeline.collection.model.MappedMatch;
 import io.eranalytics.pipeline.collection.model.MappedParticipant;
+import io.eranalytics.pipeline.collection.model.GameData;
+import io.eranalytics.pipeline.collection.model.ParticipantData;
 import io.eranalytics.pipeline.config.BattleResultObjectMapperFactory;
 import io.eranalytics.pipeline.erapi.BattleUserResultReader;
 import io.eranalytics.pipeline.erapi.dto.BattleUserResultDto;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -58,30 +57,24 @@ public final class BattleUserResultMapper {
                 teams.add(input.core().teamNumber());
             }
         }
-        Map<String, Object> gameColumns = SqlColumnProjector.project(game);
-        gameColumns.put("team_count", teams.size());
         DeathMapper deathMapper = new DeathMapper(inputs, indexes, characterCodesByName);
         List<MappedParticipant> participants = new ArrayList<>();
         for (var input : inputs) {
-            Map<String, Object> columns = SqlColumnProjector.project(input.participantFields());
-            columns.put("version_major", game.versionMajor());
-            columns.put("version_minor", game.versionMinor());
-            participants.add(new MappedParticipant(immutable(columns),
+            ParticipantData data = new ParticipantData(input.core(), input.combat(), input.stats(),
+                    input.credits(), input.crafting(), input.activity(), input.loadout(),
+                    game.versionMajor(), game.versionMinor());
+            participants.add(new MappedParticipant(data,
                     EquipmentMapper.map(input.equipment()),
                     TraitMapper.map(input.loadout().traitFirstCore(), input.traits()),
                     MasteryMapper.map(input.mastery()),
                     MatchupMapper.map(input.core().characterNum(), input.matchup()),
                     deathMapper.map(input.deaths()), rawPolicy.remaining(input.raw())));
         }
-        return new MappedMatch(immutable(gameColumns), List.copyOf(participants));
+        return new MappedMatch(new GameData(game, teams.size()), List.copyOf(participants));
     }
 
     public Set<String> movedRawKeys() {
         return rawPolicy.movedKeys();
     }
 
-    private static Map<String, Object> immutable(Map<String, Object> values) {
-        // Map.copyOf rejects nullable database values.
-        return Collections.unmodifiableMap(new LinkedHashMap<>(values));
-    }
 }
