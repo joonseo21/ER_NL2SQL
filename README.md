@@ -26,6 +26,7 @@ ER Open API → Spring collector → PostgreSQL
 - `frontend/`: 미구현. 사용자용 Spring·Python HTTP API도 없다.
 - `compose.yaml`, `infra/`: PostgreSQL·collector Docker 실행과 EC2 설치.
 - `db/migrations/`: V1부터의 스키마·데이터 변경과 런타임 권한. Flyway로 적용 이력을 관리한다.
+- `tools/`: 5단계 운영 복사본 준비·분석 계정 검증. 실제 API 비교는 Gradle `stage5Verification` 태스크이며 기본 테스트에서 제외된다. 실행은 [operations.md](docs/operations.md)의 5단계 절을 따른다.
 - `agent_server/schema_context.md`: LLM 실행 입력으로 사용하는 DB 설명.
 
 EC2에 collector·DB를 운영하며 로컬 Python은 SSH 터널로 접근한다. 기존 배포 기록은 시즌 41, 상위 랭커 50명, 0.5 RPS, 사이클 종료 후 6시간 대기다. 로컬 3단계 구현은 users 기반 연속 수집, 기본 0.5 RPS, 재방문 4시간·사람당 30페이지·유휴 5분·메타 갱신 24시간을 사용한다. 운영 적용은 3·4단계 검토 후 5단계에서 진행하며 현재 배포 설정은 새로 조회하지 않았다.

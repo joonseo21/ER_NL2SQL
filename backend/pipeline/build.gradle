@@ -70,12 +70,15 @@ tasks.named('processResources') {
     }
 }
 
+// 기본 테스트에서는 DB 테스트와 실제 API 테스트 제외
 tasks.named('test') {
     useJUnitPlatform {
         excludeTags 'postgres'
+        excludeTags 'live'
     }
 }
 
+// DB 테스트 태스크
 tasks.register('integrationTest', Test) {
     description = 'Verifies V1-V4 and JPA persistence in a dedicated PostgreSQL test database.'
     group = 'verification'
@@ -87,4 +90,14 @@ tasks.register('integrationTest', Test) {
     shouldRunAfter tasks.named('test')
     // A database's contents can change without any source file changing.
     outputs.upToDateWhen { false }
+}
+
+tasks.register('stage5Verification', Test) {
+    description = 'Bounded real-API verification on an explicitly prepared, isolated production copy.'
+    group = 'verification'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    useJUnitPlatform { includeTags 'live' }
+    outputs.upToDateWhen { false }
+    testLogging { showStandardStreams = true }
 }

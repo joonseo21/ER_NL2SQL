@@ -29,6 +29,10 @@ public class UserGameCrawler {
         this.retry = retry;
     }
 
+    /**
+     * 해당 사용자의 경기 목록 수집
+     * @param user
+     */
     public void crawl(CrawlUser user) {
         String uid;
         try {
