@@ -9,6 +9,9 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.eranalytics.pipeline.collection.BattleUserResultMapper;
 import io.eranalytics.pipeline.collection.CollectorRepository;
 import io.eranalytics.pipeline.collection.UserFrontierRepository;
+import io.eranalytics.pipeline.collection.metadata.*;
+import java.time.Instant;
+import java.util.EnumMap;
 import io.eranalytics.pipeline.collection.model.CrawlUser;
 import io.eranalytics.pipeline.collection.model.SeedUser;
 import java.time.OffsetDateTime;
@@ -56,6 +59,7 @@ class GamePersistenceIntegrationTest {
     @Autowired BattleUserResultMapper mapper;
     @Autowired JdbcTemplate jdbc;
     @Autowired UserFrontierRepository frontier;
+    @Autowired NameMetadataStore names;
 
     @DynamicPropertySource
     static void database(DynamicPropertyRegistry properties) throws Exception {
@@ -103,10 +107,63 @@ class GamePersistenceIntegrationTest {
     @BeforeEach
     void resetTestDatabase() throws Exception {
         try (Connection connection = admin(); Statement sql = connection.createStatement()) {
-            sql.execute("TRUNCATE games, users, characters, rankers, collect_queue, api_call_log RESTART IDENTITY CASCADE");
+            sql.execute("TRUNCATE games, users, characters, weapon_types, items, trait_names, tactical_skills, "
+                    + "skill_groups, areas, weather_types, rankers, collect_queue, api_call_log RESTART IDENTITY CASCADE");
         }
         jdbc.update("INSERT INTO characters(character_code,name_en) VALUES (?,?),(?,?)",
                 137, "syntheticranger", 700, "SYNTHETICRANGER");
+    }
+
+    @Test
+    void metadataSnapshotUpdatesLatestNamesAndKeepsRemovedCodesAndAttributes() {
+        Instant first = Instant.parse("2026-10-10T00:00:00Z");
+        names.save(NameMetadataMapper.map(MetadataFixture.tables(),
+                KoreanLocalization.parse(MetadataFixture.localization()),first));
+        assertThat(jdbc.queryForObject("SELECT name_ko FROM characters WHERE character_code=1",String.class))
+                .isEqualTo("가상 실험체");
+        assertThat(jdbc.queryForObject("SELECT item_grade FROM items WHERE code=100001",String.class)).isEqualTo("Epic");
+        assertThat(jdbc.queryForObject("SELECT trait_group FROM trait_names WHERE code=700001",String.class)).isEqualTo("Havoc");
+        assertThat(jdbc.queryForObject("SELECT skill_group_code FROM tactical_skills WHERE code=120",Integer.class)).isEqualTo(4114000);
+        var updated = new MetadataName(100001,"갱신 이름","fixture","Item/Name/100001",MetadataName.Details.EMPTY);
+        var batch = new NameMetadataBatch(first.plusSeconds(3600),Map.of(NameKind.ITEM,List.of(updated)),0);
+        names.save(batch);
+        names.save(batch);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM items",Integer.class)).isEqualTo(3);
+        assertThat(jdbc.queryForObject("SELECT name_ko FROM items WHERE code=100001",String.class)).isEqualTo("갱신 이름");
+        assertThat(jdbc.queryForObject("SELECT item_grade FROM items WHERE code=100001",String.class)).isEqualTo("Epic");
+        assertThat(jdbc.queryForObject("SELECT checked_at FROM items WHERE code=900001",OffsetDateTime.class).toInstant()).isEqualTo(first);
+        assertThat(jdbc.queryForObject("SELECT checked_at FROM items WHERE code=100001",OffsetDateTime.class).toInstant()).isEqualTo(batch.checkedAt());
+    }
+
+    @Test
+    void metadataFailureRollsBackOtherTablesInTheSameSnapshot() {
+        var values = new EnumMap<NameKind,List<MetadataName>>(NameKind.class);
+        values.put(NameKind.ITEM,List.of(new MetadataName(100001,"가상 이름","fixture","Item/Name/100001",MetadataName.Details.EMPTY)));
+        // No skill_group_code: the actual PostgreSQL NOT NULL constraint must fail.
+        values.put(NameKind.TACTICAL,List.of(new MetadataName(120,"가상 전술","fixture","Skill/Group/Name/4114000",MetadataName.Details.EMPTY)));
+        assertThatThrownBy(() -> names.save(new NameMetadataBatch(Instant.now(),values,0))).isInstanceOf(RuntimeException.class);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM items",Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM tactical_skills",Integer.class)).isZero();
+    }
+
+    @Test
+    @org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable(named="STAGE6_METADATA_CACHE_DIR",matches=".+")
+    void capturedOfficialMetadataMapsAndPersistsWithoutMoreApiCalls() throws Exception {
+        Path cache = Path.of(System.getenv("STAGE6_METADATA_CACHE_DIR"));
+        Map<String,JsonNode> tables = new LinkedHashMap<>();
+        for (String table : NameMetadataMapper.TABLES) tables.put(table,JSON.readTree(cache.resolve(table+".json").toFile()));
+        Map<String,String> localization = KoreanLocalization.parse(Files.readString(cache.resolve("Korean.txt")));
+        var batch = NameMetadataMapper.map(tables,localization,Instant.now());
+        names.save(batch);
+        names.save(batch);
+        Map<String,List<Integer>> contract = new LinkedHashMap<>();
+        batch.names().forEach((kind,rows) -> contract.put(kind.name(),rows.stream().map(MetadataName::code).sorted().toList()));
+        assertThat(contract.get("WEAPON")).hasSize(24);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM items WHERE item_type IS NOT NULL",Integer.class)).isEqualTo(672);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM areas",Integer.class)).isEqualTo(33);
+        assertThat(jdbc.queryForObject("SELECT name_ko FROM weapon_types WHERE code=16",String.class)).isEqualTo("양손검");
+        assertThat(jdbc.queryForObject("SELECT skill_group_code FROM tactical_skills WHERE code=120",Integer.class)).isEqualTo(4114000);
+        Files.writeString(cache.resolve("name-code-contract.json"),JSON.writerWithDefaultPrettyPrinter().writeValueAsString(contract));
     }
 
     @Test

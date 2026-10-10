@@ -1,4 +1,4 @@
-"""Explicit agent SELECT contract for V1-V4; never infer access from model SQL.
+"""Explicit agent SELECT contract for V1-V5; never infer access from model SQL.
 
 Update with schema_context and runtime grants when a later migration is approved.
 """
@@ -164,10 +164,12 @@ TABLE_COLUMNS: dict[str, tuple[str, ...]] = {
         "character_code",
         "name_ko",
         "name_en",
+        "source", "l10n_key", "checked_at",
     ),
     "weapon_types": (
         "code",
         "name_ko",
+        "type_key", "source", "l10n_key", "checked_at",
     ),
     "tiers": (
         "season_id",
@@ -211,6 +213,14 @@ TABLE_COLUMNS: dict[str, tuple[str, ...]] = {
         "cause_of_death",
         "place_of_death",
     ),
+    "items": ("code", "name_ko", "source", "l10n_key", "checked_at",
+              "item_type", "item_grade", "grade_name_ko", "equipment_type"),
+    "trait_names": ("code", "name_ko", "source", "l10n_key", "checked_at",
+                    "trait_type", "trait_group", "active"),
+    "tactical_skills": ("code", "name_ko", "source", "l10n_key", "checked_at", "skill_group_code"),
+    "skill_groups": ("code", "name_ko", "source", "l10n_key", "checked_at"),
+    "areas": ("code", "name_ko", "source", "l10n_key", "checked_at", "name_en"),
+    "weather_types": ("code", "name_ko", "source", "l10n_key", "checked_at"),
 }
 
 ALLOWED_TABLES = frozenset(TABLE_COLUMNS)

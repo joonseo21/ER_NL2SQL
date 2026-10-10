@@ -46,6 +46,12 @@ def sample_rows(database_url: str) -> dict[str, Sequence[dict[str, Any]]]:
         "participant_mastery": "SELECT participant_id, mastery_code, mastery_level FROM participant_mastery ORDER BY participant_id, mastery_code LIMIT 3",
         "participant_matchups": "SELECT participant_id, character_num, opponent_character_num, kills, deaths FROM participant_matchups ORDER BY participant_id, opponent_character_num LIMIT 3",
         "participant_deaths": "SELECT participant_id, death_seq, killer_type, killer_participant_id, killer_character_num, killer_name, killer_weapon, cause_of_death, place_of_death FROM participant_deaths ORDER BY participant_id, death_seq LIMIT 3",
+        "items": "SELECT code, name_ko, item_type, item_grade, grade_name_ko, equipment_type, checked_at FROM items ORDER BY code LIMIT 3",
+        "trait_names": "SELECT code, name_ko, trait_type, trait_group, active, checked_at FROM trait_names ORDER BY code LIMIT 3",
+        "tactical_skills": "SELECT code, name_ko, skill_group_code, checked_at FROM tactical_skills ORDER BY code LIMIT 3",
+        "skill_groups": "SELECT code, name_ko, checked_at FROM skill_groups ORDER BY code LIMIT 3",
+        "areas": "SELECT code, name_ko, name_en, checked_at FROM areas ORDER BY code LIMIT 3",
+        "weather_types": "SELECT code, name_ko, checked_at FROM weather_types ORDER BY code LIMIT 3",
     }
     samples: dict[str, Sequence[dict[str, Any]]] = {}
     for table, query in queries.items():

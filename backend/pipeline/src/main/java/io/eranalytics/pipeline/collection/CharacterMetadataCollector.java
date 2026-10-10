@@ -2,15 +2,19 @@ package io.eranalytics.pipeline.collection;
 
 import io.eranalytics.pipeline.config.CollectionProperties;
 import io.eranalytics.pipeline.erapi.ErApiClient;
+import io.eranalytics.pipeline.collection.metadata.KoreanLocalization;
+import io.eranalytics.pipeline.collection.metadata.NameMetadataMapper;
+import io.eranalytics.pipeline.collection.persistence.NameMetadataStore;
+import com.fasterxml.jackson.databind.JsonNode;
 import java.time.Clock;
 import java.time.Instant;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
-/** Current character/l10n loader. Other name-table loaders can be added separately in stage 6. */
+/** Retains the existing scheduler entry point; all names share one localization download. */
 @Component
 public class CharacterMetadataCollector {
     private static final Logger log = LoggerFactory.getLogger(CharacterMetadataCollector.class);
@@ -19,64 +23,59 @@ public class CharacterMetadataCollector {
     private final CollectionRetry retry;
     private final CollectionProperties settings;
     private final Clock clock;
+    private final NameMetadataStore names;
     private Instant lastAttempt;
 
     public CharacterMetadataCollector(ErApiClient api, CollectorRepository repository, CollectionRetry retry,
-                                      CollectionProperties settings, Clock clock) {
+                                      CollectionProperties settings, Clock clock, NameMetadataStore names) {
         this.api = api;
         this.repository = repository;
         this.retry = retry;
         this.settings = settings;
         this.clock = clock;
+        this.names = names;
     }
 
-    /**
-     * 실험체·한국어 이름을 갱신하고 24시간 갱신 시점을 관리.
-     */
     public void refreshIfDue() {
         Instant now = clock.instant();
+        // 갱신 시간 확인
         if (lastAttempt != null && now.isBefore(lastAttempt.plus(settings.metaRefresh()))) return;
-        // Includes failed refreshes so an outage does not trigger metadata on every game.
         lastAttempt = now;
         try {
-            var characters = retry.call("character metadata", () -> api.get("/v2/data/Character"));
-            Map<Integer, String> korean;
+            JsonNode characters = retry.call("character metadata", () -> api.get("/v2/data/Character"));
+            Map<String,String> korean;
             try {
-                korean = koreanNames();
+                var response = retry.call("Korean localization", () -> api.get("/v1/l10n/Korean"));
+                String path = response.path("data").path("l10Path").asText();
+                if (path.isBlank()) throw new IllegalArgumentException("Korean localization path missing");
+                String text = retry.call("Korean localization download",
+                        () -> api.getPublicText(path,"l10n/Korean/download"));
+                korean = KoreanLocalization.parse(text);
             } catch (CollectionInterruptedException exception) {
                 throw exception;
             } catch (RuntimeException error) {
-                log.warn("Korean character names unavailable ({})", CollectionRetry.reason(error));
-                korean = Map.of();
+                log.warn("Korean names unavailable ({})",CollectionRetry.reason(error));
+                // Keep old Korean names/timestamps while retaining the existing English fallback.
+                for (var row : characters.path("data")) {
+                    if (row.path("code").isIntegralNumber() && row.path("code").canConvertToInt())
+                        repository.upsertCharacter(row.get("code").intValue(),null,row.path("name").asText(null));
+                }
+                return;
             }
-            for (var character : characters.path("data")) {
-                if (!character.path("code").isIntegralNumber() || !character.path("code").canConvertToInt()) continue;
-                int code = character.get("code").intValue();
-                repository.upsertCharacter(code, korean.get(code), character.path("name").asText(null));
+            Map<String,JsonNode> tables = new LinkedHashMap<>();
+            tables.put("Character",characters);
+            for (String table : NameMetadataMapper.TABLES) {
+                if (!table.equals("Character")) tables.put(table,
+                        retry.call("name metadata", () -> api.get("/v2/data/"+table)));
             }
+            var batch = NameMetadataMapper.map(tables,korean,now);
+            names.save(batch);
+            log.info("Name metadata refreshed; resolved={}, unresolved={}",
+                    batch.names().values().stream().mapToInt(java.util.List::size).sum(),batch.unresolved());
         } catch (CollectionInterruptedException exception) {
             throw exception;
         } catch (RuntimeException error) {
-            log.warn("Character metadata refresh failed ({})", CollectionRetry.reason(error));
+            log.warn("Name metadata refresh failed ({})",CollectionRetry.reason(error));
         }
-    }
-
-    private Map<Integer, String> koreanNames() {
-        var response = retry.call("Korean localization", () -> api.get("/v1/l10n/Korean"));
-        String path = response.path("data").path("l10Path").asText();
-        if (path.isBlank()) throw new IllegalArgumentException("Korean localization path missing");
-        String text = retry.call("Korean localization download", () -> api.getPublicText(path, "l10n/Korean/download"));
-        Map<Integer, String> names = new HashMap<>();
-        for (String line : text.lines().toList()) {
-            int separator = line.indexOf('┃');
-            if (separator < 0 || !line.startsWith("Character/Name/")) continue;
-            try {
-                int code = Integer.parseInt(line.substring("Character/Name/".length(), separator));
-                names.put(code, line.substring(separator + 1));
-            } catch (NumberFormatException ignored) {
-                // Malformed/unrelated localization keys are not character names.
-            }
-        }
-        return names;
     }
 }

@@ -27,3 +27,16 @@ END
 $$;
 ALTER ROLE agent_ro SET default_transaction_read_only = on;
 ALTER ROLE agent_ro SET statement_timeout = '5s';
+
+-- Targeted older-version tests may run this before V5 exists.
+DO $$
+DECLARE name_table text;
+BEGIN
+    FOREACH name_table IN ARRAY ARRAY['items','trait_names','tactical_skills','skill_groups','areas','weather_types']
+    LOOP
+        IF to_regclass('public.' || name_table) IS NOT NULL THEN
+            EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON %I TO collector', name_table);
+            EXECUTE format('GRANT SELECT ON %I TO agent_ro', name_table);
+        END IF;
+    END LOOP;
+END $$;

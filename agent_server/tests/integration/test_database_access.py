@@ -24,7 +24,7 @@ PRIVATE_NICKNAMES = tuple(f"stage4_private_player_{i}" for i in range(5))
 def database() -> dict[str, str]:
     url = os.getenv("STAGE4_TEST_DATABASE_URL")
     if not url:
-        pytest.skip("Set STAGE4_TEST_DATABASE_URL for the dedicated V4 integration database")
+        pytest.skip("Set STAGE4_TEST_DATABASE_URL for the dedicated V5 integration database")
     settings = conninfo_to_dict(url)
     # This fixture writes synthetic rows. Never accept an ordinary/forwarded DB URL.
     assert settings.get("host") in {"127.0.0.1", "localhost"}
@@ -35,7 +35,7 @@ def database() -> dict[str, str]:
         identity = owner.execute("SELECT current_database() AS db, current_user AS role").fetchone()
         assert identity == {"db": "er_stage4_test", "role": "stage4_test"}
         applied = owner.execute("SELECT max(version::integer) AS v FROM flyway_schema_history WHERE success AND version IS NOT NULL").fetchone()
-        assert applied["v"] == 4, "Prepare V1-V4 with the existing independent Flyway runner"
+        assert applied["v"] == 5, "Prepare V1-V5 with the existing independent Flyway runner"
         owner.execute("DELETE FROM games WHERE game_id = ANY(%s)", (list(GAME_IDS),))
         owner.execute("""
             INSERT INTO games(game_id, season_id, matching_mode, matching_team_mode,
@@ -67,8 +67,14 @@ def database() -> dict[str, str]:
                   5 if index < 4 else 4, tier, 4 if tier == "다이아몬드" else 0,
                   json.dumps({"killDetail": PRIVATE_NICKNAMES[0]}))).fetchone()
             participant_ids.append(participant["participant_id"])
-        owner.execute("INSERT INTO characters VALUES (1,'합성 실험체 A','SyntheticA'),(2,'합성 실험체 B','SyntheticB') ON CONFLICT DO NOTHING")
-        owner.execute("INSERT INTO weapon_types VALUES (16,'합성 무기') ON CONFLICT DO NOTHING")
+        owner.execute("INSERT INTO characters(character_code,name_ko,name_en) VALUES (1,'합성 실험체 A','SyntheticA'),(2,'합성 실험체 B','SyntheticB') ON CONFLICT DO NOTHING")
+        owner.execute("INSERT INTO weapon_types(code,name_ko) VALUES (16,'합성 무기') ON CONFLICT DO NOTHING")
+        for table in ("items", "trait_names", "tactical_skills", "skill_groups", "areas", "weather_types"):
+            # Identifiers are a fixed test allowlist; no user input is interpolated.
+            extra_columns = ",skill_group_code" if table == "tactical_skills" else ""
+            extra_values = ",123" if table == "tactical_skills" else ""
+            owner.execute(f"INSERT INTO {table}(code,name_ko,source,l10n_key,checked_at{extra_columns}) "
+                          f"VALUES (123,'합성 이름','fixture','fixture/name',now(){extra_values}) ON CONFLICT DO NOTHING")
         # Two child rows per participant exercise aggregation without join inflation.
         for participant_id in participant_ids:
             owner.execute("INSERT INTO participant_equipment VALUES (%s,'FINAL',0,100001,4),(%s,'FINAL',1,100002,4)", (participant_id, participant_id))
@@ -98,6 +104,28 @@ def test_column_contract_matches_database_grants(database: dict[str,str]) -> Non
     assert {table:set(columns) for table,columns in found.items()} == {
         table:set(columns) for table,columns in TABLE_COLUMNS.items()
     }
+
+
+def test_name_left_join_preserves_codes_without_names(database: dict[str,str]) -> None:
+    rows = execute_select(database["agent"], """
+        SELECT e.item_code,i.name_ko,count(DISTINCT e.participant_id) AS samples
+        FROM participant_equipment e LEFT JOIN items i ON i.code=e.item_code
+        GROUP BY e.item_code,i.name_ko ORDER BY e.item_code
+    """)
+    assert [(row["item_code"],row["name_ko"],row["samples"]) for row in rows] == [
+        (100001,None,5),(100002,None,5)]
+
+
+def test_named_trait_cte_counts_participants_once(database: dict[str,str]) -> None:
+    rows = execute_select(database["agent"], """
+        WITH picks AS (
+            SELECT t.trait_code,count(DISTINCT t.participant_id) AS samples
+            FROM participant_traits t GROUP BY t.trait_code
+        )
+        SELECT p.trait_code,n.name_ko,p.samples FROM picks p
+        LEFT JOIN trait_names n ON n.code=p.trait_code
+    """)
+    assert rows == [{"trait_code":123,"name_ko":"합성 이름","samples":5}]
 
 
 @pytest.mark.parametrize("sql", [

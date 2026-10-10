@@ -7,6 +7,8 @@ import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import io.eranalytics.pipeline.collection.metadata.MetadataName;
+import java.time.Instant;
 
 @Entity
 @Table(name = "characters")
@@ -22,4 +24,21 @@ public class CharacterEntity {
 
     @Column(name = "name_en", columnDefinition = "text")
     private String nameEn;
+
+    @Column(columnDefinition = "text")
+    private String source;
+    @Column(name = "l10n_key", columnDefinition = "text")
+    private String l10nKey;
+    @Column(name = "checked_at")
+    private Instant checkedAt;
+
+    public CharacterEntity(int code) { this.characterCode = code; }
+
+    public void applyMetadata(MetadataName row, Instant checkedAt) {
+        this.nameKo = row.nameKo();
+        if (row.details().type() != null) this.nameEn = row.details().type();
+        this.source = row.source();
+        this.l10nKey = row.l10nKey();
+        this.checkedAt = checkedAt;
+    }
 }

@@ -1,4 +1,4 @@
-# ER analytics query schema (V4)
+# ER analytics query schema (V5)
 
 Only the tables and columns below may be used. SQL runs as agent_ro with a 5-second statement timeout and at most 200 returned rows.
 
@@ -43,17 +43,59 @@ Allowed columns:
 
 ## `characters`
 
-Character code to Korean/English official names. Join participants.character_num or opponent/killer character codes to character_code. Names may be NULL.
+Character code to Korean/English official names. Join participants.character_num or opponent/killer character codes to character_code. Names may be NULL. All name tables hold the latest confirmed names; removed codes retain their last names. source and l10n_key identify name provenance; checked_at is the confirmation time, not match time. They do not guarantee names or stats at a historical patch.
 
 Allowed columns:
-- `character_code`, `name_ko`, `name_en`
+- `character_code`, `name_ko`, `name_en`, `source`, `l10n_key`, `checked_at`
 
 ## `weapon_types`
 
-Weapon mastery code to official Korean name. Metadata may be empty until step 6; preserve codes when a name is unavailable.
+Weapon mastery code to official Korean name. Join best_weapon to code; 16 is TwoHandSword, 12 is not a weapon. type_key is the API weapon type. Preserve codes when a name is unavailable. Other mastery codes include crafting, searching, movement, defense and hunting; do not label them as weapons.
 
 Allowed columns:
-- `code`, `name_ko`
+- `code`, `name_ko`, `type_key`, `source`, `l10n_key`, `checked_at`
+
+## `items`
+
+Join participant_equipment.item_code to code. Includes current equipment and older/non-equipment item names. item_type is Weapon/Armor for current equipment; item_grade is its current metadata grade, and grade_name_ko is the official grade label. equipment_type is the weapon type or armor slot type. Attributes can be NULL for old or non-equipment codes. Historical FINAL grade remains participant_equipment.grade; do not replace it with the current item_grade. Use LEFT JOIN to preserve unnamed codes.
+
+Allowed columns:
+- `code`, `name_ko`, `source`, `l10n_key`, `checked_at`, `item_type`, `item_grade`, `grade_name_ko`, `equipment_type`
+
+## `trait_names`
+
+Join participant_traits.trait_code or participants.trait_first_core to code. trait_type (for example Core), trait_group (for example Havoc), and active describe current API metadata. Older names may lack attributes. Child joins can multiply participant counts.
+
+Allowed columns:
+- `code`, `name_ko`, `source`, `l10n_key`, `checked_at`, `trait_type`, `trait_group`, `active`
+
+## `tactical_skills`
+
+Join participants.tactical_skill_group to code. skill_group_code is the verified localization skill group for that tactical group. Some ambiguous/currently unnamed source groups are absent; preserve numeric codes through LEFT JOIN. Do not derive names from icon identifiers.
+
+Allowed columns:
+- `code`, `name_ko`, `source`, `l10n_key`, `checked_at`, `skill_group_code`
+
+## `skill_groups`
+
+Join an unnested participants.skill_order element to code exactly. No universal suffix trimming or code-to-name guessing is valid. Array order and repeated level-up entries are meaningful; count distinct participants when measuring skill usage.
+
+Allowed columns:
+- `code`, `name_ko`, `source`, `l10n_key`, `checked_at`
+
+## `areas`
+
+Join participants.place_of_start or participant_deaths.place_of_death to code. name_en is the API area enum; name_ko is the official localized name.
+
+Allowed columns:
+- `code`, `name_ko`, `source`, `l10n_key`, `checked_at`, `name_en`
+
+## `weather_types`
+
+Join games.main_weather or games.sub_weather to code. Zero/missing weather codes remain unknown; do not fabricate a name.
+
+Allowed columns:
+- `code`, `name_ko`, `source`, `l10n_key`, `checked_at`
 
 ## `tiers`
 
@@ -114,6 +156,6 @@ Allowed columns:
 1. Return one PostgreSQL SELECT statement in one SQL code block, with no prose. Non-recursive WITH clauses containing SELECT only are allowed; recursive/data-changing CTEs are forbidden.
 2. Use explicit allowed columns and qualified references for joins. SELECT * and whole-row references are forbidden; COUNT(*) is allowed.
 3. Use NULLIF for division by zero. Use only ordinary analytics functions (aggregates, arithmetic, CASE, dates, strings, arrays and JSON from allowed columns). SQL-string execution, session, file and system functions are forbidden.
-4. Display official character names by joining characters; keep numeric codes when metadata is absent. Items/traits/skills/regions/weather name tables are not available yet; do not invent tables.
+4. Display official names through the name tables below; preserve numeric codes when a name is absent. Metadata holds the latest confirmed name, not the name/stats at the match patch. Do not guess skill aliases or invent tables.
 5. For a KST date/hour use (start_dtm AT TIME ZONE 'Asia/Seoul')::date or EXTRACT(HOUR FROM start_dtm AT TIME ZONE 'Asia/Seoul'). Never cast start_dtm directly to date.
 6. Only data-backed aggregate questions are in scope. Individual player history and nickname lookup are out of scope. Samples are examples; never filter by their anonymous IDs.

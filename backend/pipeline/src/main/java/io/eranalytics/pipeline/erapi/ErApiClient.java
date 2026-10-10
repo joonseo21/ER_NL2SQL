@@ -141,6 +141,7 @@ public class ErApiClient {
     }
 
     public String getPublicText(String absoluteUrl, String logName) {
+        rateGate.awaitTurn();
         long started = System.nanoTime();
         try {
             return publicRestClient.get().uri(absoluteUrl).exchange((request, response) -> {

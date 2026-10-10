@@ -60,10 +60,10 @@ class FlywayMigrationIntegrationTest {
 
     @Test
     void initializesEmptyDatabaseAndDoesNotRepeatAppliedMigrations() {
-        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(5);
+        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(6);
         assertThat(jdbc.queryForList("SELECT version FROM flyway_schema_history WHERE version IS NOT NULL "
-                + "ORDER BY installed_rank", String.class)).containsExactly("1", "2", "3", "4");
-        assertThat(flyway().info().current().getVersion().toString()).isEqualTo("4");
+                + "ORDER BY installed_rank", String.class)).containsExactly("1", "2", "3", "4", "5");
+        assertThat(flyway().info().current().getVersion().toString()).isEqualTo("5");
         flyway().validate();
         assertThat(flyway().migrate().migrationsExecuted).isZero();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM tiers", Integer.class)).isEqualTo(14);
@@ -79,7 +79,7 @@ class FlywayMigrationIntegrationTest {
         assertThat(jdbc.queryForObject("SELECT count(*) FROM participants", Integer.class)).isEqualTo(3);
 
         DatabaseMigration.configure(url, "stage2_test", "").baselineVersion("2").load().baseline();
-        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(3);
+        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(4);
         assertThat(jdbc.queryForObject("SELECT type FROM flyway_schema_history WHERE version='2'", String.class))
                 .isEqualTo("BASELINE");
         assertThat(jdbc.queryForObject("SELECT count(*) FROM participants", Integer.class)).isEqualTo(3);
@@ -123,7 +123,7 @@ class FlywayMigrationIntegrationTest {
         flyway().migrate();
         for (String file : List.of("V1__initial_schema.sql", "V2__games_start_dtm_timestamptz.sql",
                 "V3__mvp1_users_and_participant_columns.sql", "V4__mvp1_move_raw_to_columns.sql",
-                "R__runtime_privileges.sql")) {
+                "V5__name_metadata.sql", "R__runtime_privileges.sql")) {
             try (var resource = getClass().getResourceAsStream("/db/migration/" + file)) {
                 Files.copy(resource, changed.resolve(file));
             }
@@ -161,6 +161,17 @@ class FlywayMigrationIntegrationTest {
 
     private Flyway flyway() {
         return DatabaseMigration.configure(url, "stage2_test", "").load();
+    }
+
+    @Test
+    void upgradeAfterRepeatableWasAppliedAtV4GrantsNewNameTables() {
+        DatabaseMigration.configure(url,"stage2_test","").target("4").load().migrate();
+        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(1);
+        for (String table : List.of("items","trait_names","tactical_skills","skill_groups","areas","weather_types")) {
+            assertThat(jdbc.queryForObject("SELECT has_table_privilege('agent_ro',?,'SELECT')",Boolean.class,table)).isTrue();
+            assertThat(jdbc.queryForObject("SELECT has_table_privilege('agent_ro',?,'INSERT')",Boolean.class,table)).isFalse();
+            assertThat(jdbc.queryForObject("SELECT has_table_privilege('collector',?,'INSERT')",Boolean.class,table)).isTrue();
+        }
     }
 
     private void applyOriginal(String file) throws Exception {

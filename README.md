@@ -48,7 +48,7 @@ docker compose --profile migrate run --rm migrate info
 
 수집기 테스트와 로컬 수집 실행:
 
-새 경기 저장 코드는 V3·V4 적용 DB가 필요하며 시작 시 JPA가 스키마를 검증한다. 수집기 시작 시 마이그레이션은 실행하지 않는다. 기존 볼륨의 마이그레이션과 별도 PostgreSQL 통합 테스트는 [operations.md](docs/operations.md)를 따른다.
+현재 로컬 코드는 이름 메타데이터까지 포함한 V5 적용 DB가 필요하며 시작 시 JPA가 스키마를 검증한다. 수집기 시작 시 마이그레이션은 실행하지 않는다. 운영에는 V4까지 적용되어 있고 6단계 V5는 검토·운영 적용 전이다. 기존 볼륨의 마이그레이션과 별도 PostgreSQL 통합 테스트는 [operations.md](docs/operations.md)를 따른다.
 
 ```powershell
 cd backend/pipeline

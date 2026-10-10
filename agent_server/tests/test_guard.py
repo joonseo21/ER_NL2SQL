@@ -123,6 +123,13 @@ def test_blocks_private_columns_and_bypasses(sql: str) -> None:
     "SELECT 'literal; not another statement' AS note",
     "SELECT game_id FROM games LIMIT 0",
     "SELECT game_id FROM games LIMIT ALL",
+    "SELECT p.best_weapon,w.name_ko FROM participants p LEFT JOIN weapon_types w ON w.code=p.best_weapon",
+    "SELECT e.item_code,i.name_ko,i.grade_name_ko FROM participant_equipment e LEFT JOIN items i ON i.code=e.item_code",
+    "SELECT t.trait_code,n.name_ko FROM participant_traits t LEFT JOIN trait_names n ON n.code=t.trait_code",
+    "SELECT p.tactical_skill_group,t.name_ko FROM participants p LEFT JOIN tactical_skills t ON t.code=p.tactical_skill_group",
+    "SELECT x.code,s.name_ko FROM participants p CROSS JOIN LATERAL unnest(p.skill_order) x(code) LEFT JOIN skill_groups s ON s.code=x.code",
+    "SELECT g.main_weather,w.name_ko FROM games g LEFT JOIN weather_types w ON w.code=g.main_weather",
+    "SELECT p.place_of_start,a.name_ko FROM participants p LEFT JOIN areas a ON a.code=p.place_of_start",
 ])
 def test_allows_safe_v4_analytics(sql: str) -> None:
     guarded = guard_sql(sql)
@@ -143,3 +150,14 @@ def test_cte_limit_applies_to_final_result() -> None:
     parsed = parse_one(guarded.sql, dialect="postgres")
     assert int(parsed.args["limit"].expression.this) == 200
     assert int(parsed.args["with_"].expressions[0].this.args["limit"].expression.this) == 1000
+
+
+@pytest.mark.parametrize("sql", [
+    "SELECT nickname FROM items",
+    "SELECT raw FROM skill_groups",
+    "SELECT attack_power FROM items",
+    "WITH x AS (SELECT raw FROM participants) SELECT i.name_ko FROM x JOIN items i ON i.code=1",
+])
+def test_name_tables_do_not_expand_private_or_stat_columns(sql: str) -> None:
+    with pytest.raises(SqlGuardError):
+        guard_sql(sql)
