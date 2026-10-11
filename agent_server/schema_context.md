@@ -140,16 +140,11 @@ Allowed columns:
 - `participant_id`, `death_seq`, `killer_type`, `killer_participant_id`, `killer_character_num`, `killer_name`
 - `killer_weapon`, `cause_of_death`, `place_of_death`
 
-## Tier and metric rules
+## Metric and terminology definitions
 
-- Determine participant tier from mmr_before at match time, using the saved tier/tier_division or the season-specific tiers table. Do not use current/latest player MMR.
-- Platinum: 3600 <= MMR < 5000; Diamond: 5000 <= MMR < 6400; Meteorite: 6400 <= MMR < 7600; Mithril or above: MMR >= 7600.
-- Division 4 to 1 lower bounds: Platinum 3600/3950/4300/4650; Diamond 5000/5350/5700/6050; Meteorite 6400/6700/7000/7300. Demigod/Eternity cannot be separated by MMR.
-- MMR below 3600 is stored as 플래티넘 미만. NULL MMR has unknown tier. Both remain in aggregates without a tier condition; do not silently exclude them.
-- A win is game_rank=1; TOP 3 is game_rank<=3. Rates use participant appearances as the denominator for participant/character statistics. For team-level questions, first deduplicate (game_id, team_number) and disclose that counting unit.
-- Average rank is unnormalized. When comparing average rank, also return win rate and TOP 3 rate; actual teams may number seven or eight.
-- Include the sample size. Warn for fewer than 30 participant appearances. Avoid counting a participant repeatedly after a one-to-many child join.
-- Patch means a version inside a ranked season, not season_id. Preserve version_major and version_minor when comparing patches.
+The prompt supplies metrics.md as the authoritative metric definitions. Follow its
+pick-rate denominator, win/TOP 3 rates, tier boundaries, patch scope and sample rules.
+This schema file describes storage and access; metric policy is maintained in metrics.md.
 
 ## SQL output rules
 

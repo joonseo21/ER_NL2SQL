@@ -48,7 +48,7 @@ docker compose --profile migrate run --rm migrate info
 
 수집기 테스트와 로컬 수집 실행:
 
-현재 로컬 코드는 이름 메타데이터까지 포함한 V5 적용 DB가 필요하며 시작 시 JPA가 스키마를 검증한다. 수집기 시작 시 마이그레이션은 실행하지 않는다. 운영에는 V4까지 적용되어 있고 6단계 V5는 검토·운영 적용 전이다. 기존 볼륨의 마이그레이션과 별도 PostgreSQL 통합 테스트는 [operations.md](docs/operations.md)를 따른다.
+현재 로컬 코드는 이름 메타데이터까지 포함한 V5 적용 DB가 필요하며 시작 시 JPA가 스키마를 검증한다. 수집기 시작 시 마이그레이션은 실행하지 않는다. 운영에는 V4까지 적용되어 있고 6단계 V5는 로컬 검토·커밋 후 운영 적용 대기다. 기존 볼륨의 마이그레이션과 별도 PostgreSQL 통합 테스트는 [operations.md](docs/operations.md)를 따른다.
 
 ```powershell
 cd backend/pipeline
@@ -68,3 +68,5 @@ uv run er-agent ask "수집된 경기는 몇 판이야?"
 ```
 
 실제 수집은 ER API 호출과 DB 쓰기를 수행하고 ask는 Gemini quota를 소비한다. 상세 설정과 배포는 [operations.md](docs/operations.md)를 따른다.
+
+SQL 생성에는 [metrics.md](agent_server/metrics.md)의 지표·용어 정의가 함께 들어간다. 7-1에서 만든 입력/출력 계약은 이후 질의 흐름에 연결할 검토본이며 현재 CLI 출력 형식은 유지한다.
