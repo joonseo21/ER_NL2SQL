@@ -12,6 +12,11 @@ class Settings:
     database_url: str
     gemini_api_key: str
     gemini_model: str
+    season_id: int = 41
+
+    def __post_init__(self) -> None:
+        if type(self.season_id) is not int or self.season_id <= 0:
+            raise ValueError("ER_SEASON_ID must be a positive integer")
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -21,6 +26,7 @@ class Settings:
             database_url=os.getenv("AGENT_DATABASE_URL", ""),
             gemini_api_key=os.getenv("GEMINI_API_KEY", ""),
             gemini_model=os.getenv("GEMINI_MODEL", ""),
+            season_id=int(os.getenv("ER_SEASON_ID", "41")),
         )
 
     def require_database(self) -> None:

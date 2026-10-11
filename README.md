@@ -71,4 +71,4 @@ uv run er-agent ask "수집된 경기는 몇 판이야?"
 
 실제 수집은 ER API 호출과 DB 쓰기를 수행하고 ask는 Gemini quota를 소비한다. 상세 설정과 배포는 [operations.md](docs/operations.md)를 따른다.
 
-SQL 생성에는 [metrics.md](agent_server/metrics.md)의 지표·용어 정의가 함께 들어간다. 7-1에서 만든 입력/출력 계약은 이후 질의 흐름에 연결할 검토본이며 현재 CLI 출력 형식은 유지한다.
+SQL 생성에는 [metrics.md](agent_server/metrics.md)의 지표·용어 정의가 함께 들어간다. 7-3에서 질문 의미와 SQL 초안을 한 호출로 받고 공식 이름·조회 범위를 검증한 뒤 실행하며, 가드/SQL 실행 오류는 한 번만 수정한다. 호출별 기록과 바인딩한 조회 범위를 포함한 내부 응답 계약은 [operations의 7-3 절](docs/operations.md#7-3-gemini-호출sql-실행1회-수정)을 따른다. CLI는 성공 시 결과 행 배열을 출력하며 안내·이름 확인은 메시지와 종료 코드 1로 전달한다. 요약과 전체 응답 계약의 CLI 연결은 7-4에 남아 있다.

@@ -3,9 +3,11 @@ from __future__ import annotations
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from typing import Any
+from uuid import uuid4
 
 import psycopg
 from psycopg.rows import dict_row
+from sqlglot import exp, parse_one
 
 from .context import ContextSnapshot, ScopeBucket, TierSelection
 from .contracts import NameCandidate, NameCategory, PatchVersion
@@ -14,11 +16,29 @@ from .names import NameCatalog
 from .query_schema import MAX_ROWS
 
 
-def execute_select(database_url: str, sql: str) -> list[dict[str, Any]]:
+def execute_select(
+    database_url: str, sql: str, parameters: dict[str, Any] | None = None
+) -> list[dict[str, Any]]:
     guarded = guard_sql(sql)
+    query = _parameter_query(guarded.sql) if parameters is not None else guarded.sql
     with _analytics_connection(database_url) as connection:
-        rows = connection.execute(guarded.sql).fetchmany(MAX_ROWS)
+        rows = connection.execute(query, parameters).fetchmany(MAX_ROWS)
         return [dict(row) for row in rows]
+
+
+def _parameter_query(sql: str) -> str:
+    """Escape percent literals/operators without changing real pyformat placeholders."""
+    statement = parse_one(sql, dialect="postgres")
+    markers: dict[str, str] = {}
+    prefix = "__er_bind_" + uuid4().hex
+    for index, placeholder in enumerate(list(statement.find_all(exp.Placeholder))):
+        marker = f"{prefix}_{index}__"
+        markers[marker] = placeholder.sql(dialect="postgres")
+        placeholder.replace(exp.Var(this=marker))
+    query = statement.sql(dialect="postgres").replace("%", "%%")
+    for marker, placeholder_sql in markers.items():
+        query = query.replace(marker, placeholder_sql)
+    return query
 
 
 @contextmanager

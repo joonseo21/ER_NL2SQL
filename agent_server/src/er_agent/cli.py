@@ -4,11 +4,9 @@ import argparse
 import json
 import sys
 
-from google.genai import errors as genai_errors
-
 from .database import execute_select
 from .guard import guard_sql
-from .nl2sql import run_question
+from .nl2sql import QueryFailed, run_question
 from .settings import Settings
 
 MANUAL_QUERIES = {
@@ -45,11 +43,8 @@ def main() -> None:
     if arguments.command == "ask":
         try:
             result = run_question(arguments.question, settings)
-        except genai_errors.APIError as exception:
-            print(
-                f"Gemini API error ({exception.code} {exception.status}): {exception.message}",
-                file=sys.stderr,
-            )
+        except QueryFailed as exception:
+            print(str(exception), file=sys.stderr)
             raise SystemExit(1) from None
     elif arguments.command == "manual":
         settings.require_database()
