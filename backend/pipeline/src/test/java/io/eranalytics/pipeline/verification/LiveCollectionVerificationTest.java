@@ -9,18 +9,19 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import io.eranalytics.pipeline.collection.CharacterMetadataCollector;
-import io.eranalytics.pipeline.collection.CollectionRetry;
-import io.eranalytics.pipeline.collection.CollectorRepository;
-import io.eranalytics.pipeline.collection.GameJobProcessor;
-import io.eranalytics.pipeline.collection.QueueJob;
-import io.eranalytics.pipeline.collection.UserFrontierRepository;
-import io.eranalytics.pipeline.collection.UserGameCrawler;
+import io.eranalytics.pipeline.collection.game.CollectedGameStore;
+import io.eranalytics.pipeline.collection.game.GameCollectionJob;
+import io.eranalytics.pipeline.collection.game.GameCollectionProcessor;
+import io.eranalytics.pipeline.collection.game.GameQueueRepository;
 import io.eranalytics.pipeline.collection.mapping.RawFieldPolicy;
-import io.eranalytics.pipeline.collection.model.CrawlUser;
-import io.eranalytics.pipeline.erapi.ApiException;
+import io.eranalytics.pipeline.collection.metadata.NameMetadataRefresher;
+import io.eranalytics.pipeline.collection.retry.CollectionRetryExecutor;
+import io.eranalytics.pipeline.collection.user.UserCollectionCandidate;
+import io.eranalytics.pipeline.collection.user.UserCollectionRepository;
+import io.eranalytics.pipeline.collection.user.UserGameDiscovery;
 import io.eranalytics.pipeline.erapi.BattleUserResultReader;
 import io.eranalytics.pipeline.erapi.ErApiClient;
+import io.eranalytics.pipeline.erapi.ErApiException;
 import io.eranalytics.pipeline.erapi.dto.UserGamesPage;
 import io.eranalytics.pipeline.migration.DatabaseMigration;
 import java.nio.file.Files;
@@ -60,12 +61,13 @@ class LiveCollectionVerificationTest {
     private static final int MAX_USERS = 3;
     private static final int MAX_GAMES = 2;
     @MockitoSpyBean ErApiClient api;
-    @Autowired CollectorRepository collector;
-    @Autowired UserFrontierRepository frontier;
-    @Autowired UserGameCrawler crawler;
-    @Autowired GameJobProcessor processor;
-    @Autowired CharacterMetadataCollector metadata;
-    @Autowired CollectionRetry retry;
+    @Autowired GameQueueRepository queue;
+    @Autowired CollectedGameStore collectedGames;
+    @Autowired UserCollectionRepository frontier;
+    @Autowired UserGameDiscovery crawler;
+    @Autowired GameCollectionProcessor processor;
+    @Autowired NameMetadataRefresher metadata;
+    @Autowired CollectionRetryExecutor retry;
     @Autowired JdbcTemplate source;
     private final Map<Long, List<JsonNode>> inputs = new LinkedHashMap<>();
     private final Set<Long> seenGames = new LinkedHashSet<>();
@@ -169,7 +171,7 @@ class LiveCollectionVerificationTest {
         require(frontier.hasUsers(41), "The production copy must seed users through V4");
         int usersVisited = 0;
         while (attemptedGames.size() < MAX_GAMES && usersVisited < MAX_USERS) {
-            Optional<CrawlUser> user =
+            Optional<UserCollectionCandidate> user =
                     frontier.selectNext(41, 4, 3600, OffsetDateTime.now().minusHours(4));
             if (user.isEmpty()) break;
             crawler.crawl(user.get());
@@ -190,7 +192,7 @@ class LiveCollectionVerificationTest {
                 statement.setString(1, Long.toString(id));
                 statement.executeUpdate();
             }
-            collector.enqueueGame(id);
+            queue.enqueueGame(id);
             drainBoundedQueue();
             replayJobs++;
         }
@@ -199,7 +201,7 @@ class LiveCollectionVerificationTest {
         List<Long> ids = List.copyOf(inputs.keySet());
         for (long id : ids) {
             require(
-                    collector.gameExists(id),
+                    collectedGames.gameExists(id),
                     "Captured game was not persisted; inspect sanitized queue status");
             require(
                     source.queryForObject(
@@ -216,7 +218,7 @@ class LiveCollectionVerificationTest {
         Stage5Reference.compare(expected, Stage5Reference.snapshot(source, ids, false));
         Stage5Reference.verifyUserStatistics(source, ids);
         Map<String, List<JsonNode>> beforeReplay = Stage5Reference.snapshot(source, ids, true);
-        for (List<JsonNode> rows : inputs.values()) collector.upsertGame(rows);
+        for (List<JsonNode> rows : inputs.values()) collectedGames.upsertGame(rows);
         Stage5Reference.compare(beforeReplay, Stage5Reference.snapshot(source, ids, true));
         Stage5Reference.verifyUserStatistics(source, ids);
 
@@ -230,7 +232,7 @@ class LiveCollectionVerificationTest {
                 statement.setLong(1, id);
                 statement.executeUpdate();
             }
-            collector.upsertGame(inputs.get(id));
+            collectedGames.upsertGame(inputs.get(id));
         }
         // The obsolete ranker flag defaults false on a new row; preserve it in the independent V1
         // reference.
@@ -258,7 +260,7 @@ class LiveCollectionVerificationTest {
             try {
                 retry.call(
                         "stage5 list end probe", () -> api.userGames(resolvedIds.getFirst(), 1L));
-            } catch (ApiException error) {
+            } catch (ErApiException error) {
                 require(error.getStatusCode() == 404, "Unexpected list end probe API code");
                 end404 = true;
             }
@@ -304,7 +306,7 @@ class LiveCollectionVerificationTest {
 
     private void drainBoundedQueue() {
         while (attemptedGames.size() < MAX_GAMES) {
-            Optional<QueueJob> job = collector.claimNextGame();
+            Optional<GameCollectionJob> job = queue.claimNextGame();
             if (job.isEmpty()) return;
             processor.process(job.get());
         }

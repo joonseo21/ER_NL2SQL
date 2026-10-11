@@ -6,9 +6,8 @@ import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectReader;
 import com.fasterxml.jackson.databind.json.JsonMapper;
-import io.eranalytics.pipeline.collection.CollectorRepository;
-import io.eranalytics.pipeline.collection.model.SeedUser;
 import io.eranalytics.pipeline.config.ErApiProperties;
+import io.eranalytics.pipeline.erapi.dto.RankedUser;
 import io.eranalytics.pipeline.erapi.dto.UserGamesPage;
 import java.io.IOException;
 import java.time.Duration;
@@ -26,14 +25,14 @@ public class ErApiClient {
     private final RestClient publicRestClient;
     private final ObjectMapper objectMapper;
     private final ObjectReader userPageReader;
-    private final RequestRateGate rateGate;
-    private final CollectorRepository repository;
+    private final ErApiRateLimiter rateGate;
+    private final ApiCallLog callLog;
 
     public ErApiClient(
             RestClient.Builder builder,
             ObjectMapper objectMapper,
-            RequestRateGate rateGate,
-            CollectorRepository repository,
+            ErApiRateLimiter rateGate,
+            ApiCallLog callLog,
             ErApiProperties properties) {
         this.restClient =
                 builder.baseUrl(properties.baseUrl())
@@ -48,7 +47,7 @@ public class ErApiClient {
                         .build()
                         .readerFor(UserGamesPage.class);
         this.rateGate = rateGate;
-        this.repository = repository;
+        this.callLog = callLog;
     }
 
     public JsonNode get(String endpoint) {
@@ -88,7 +87,7 @@ public class ErApiClient {
         }
     }
 
-    public List<SeedUser> topUsers(int seasonId) {
+    public List<RankedUser> topUsers(int seasonId) {
         JsonNode ranks =
                 get(
                                 "/v1/rank/top/{season}/3",
@@ -98,7 +97,7 @@ public class ErApiClient {
         if (!ranks.isArray() || ranks.isEmpty()) {
             throw new IllegalArgumentException("Invalid top ranks response");
         }
-        List<SeedUser> seeds = new ArrayList<>();
+        List<RankedUser> seeds = new ArrayList<>();
         for (JsonNode rank : ranks) {
             String nickname = rank.path("nickname").asText();
             if (!rank.path("nickname").isTextual()
@@ -107,7 +106,7 @@ public class ErApiClient {
                     || !rank.path("mmr").canConvertToInt()) {
                 throw new IllegalArgumentException("Invalid rank seed fields");
             }
-            seeds.add(new SeedUser(nickname, rank.get("mmr").intValue()));
+            seeds.add(new RankedUser(nickname, rank.get("mmr").intValue()));
         }
         return List.copyOf(seeds);
     }
@@ -136,19 +135,19 @@ public class ErApiClient {
                                 HttpStatusCode status = response.getStatusCode();
                                 byte[] body = response.getBody().readAllBytes();
                                 if (status.isError()) {
-                                    repository.logApiCall(
+                                    callLog.logApiCall(
                                             logEndpoint, status.value(), elapsedMillis(started));
-                                    throw new ApiException(
+                                    throw new ErApiException(
                                             status.value(),
                                             "ER API returned HTTP " + status.value());
                                 }
                                 try {
                                     JsonNode payload = objectMapper.readTree(body);
                                     int code = payload.path("code").asInt(status.value());
-                                    repository.logApiCall(
-                                            logEndpoint, code, elapsedMillis(started));
+                                    callLog.logApiCall(logEndpoint, code, elapsedMillis(started));
                                     if (code >= 400) {
-                                        throw new ApiException(code, "ER API payload code " + code);
+                                        throw new ErApiException(
+                                                code, "ER API payload code " + code);
                                     }
                                     return payload;
                                 } catch (IOException exception) {
@@ -156,10 +155,10 @@ public class ErApiClient {
                                             "ER API response was not valid JSON", exception);
                                 }
                             });
-        } catch (ApiException exception) {
+        } catch (ErApiException exception) {
             throw exception;
         } catch (RuntimeException exception) {
-            repository.logApiCall(logEndpoint, 0, elapsedMillis(started));
+            callLog.logApiCall(logEndpoint, 0, elapsedMillis(started));
             throw exception;
         }
     }
@@ -174,19 +173,19 @@ public class ErApiClient {
                     .exchange(
                             (request, response) -> {
                                 int status = response.getStatusCode().value();
-                                repository.logApiCall(logName, status, elapsedMillis(started));
+                                callLog.logApiCall(logName, status, elapsedMillis(started));
                                 if (response.getStatusCode().isError()) {
-                                    throw new ApiException(
+                                    throw new ErApiException(
                                             status, "Public data download returned HTTP " + status);
                                 }
                                 return new String(
                                         response.getBody().readAllBytes(),
                                         java.nio.charset.StandardCharsets.UTF_8);
                             });
-        } catch (ApiException exception) {
+        } catch (ErApiException exception) {
             throw exception;
         } catch (RuntimeException exception) {
-            repository.logApiCall(logName, 0, elapsedMillis(started));
+            callLog.logApiCall(logName, 0, elapsedMillis(started));
             throw exception;
         }
     }

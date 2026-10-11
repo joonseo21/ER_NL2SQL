@@ -21,7 +21,7 @@ ER Open API → Spring collector → PostgreSQL
                          Python CLI ↔ Gemini
 ```
 
-- `backend/pipeline/`: Java 21, Spring Boot 3.5.16 단일 워커. GAME 큐 처리→users의 티어별 후보 선택→경기 목록 페이지 조회를 반복한다. 경기·참가자·users·자식 데이터는 JPA로 저장하고 큐 등의 특수 연산은 SQL로 처리한다. 수집 흐름·사용자 선택·재시도·메타데이터 갱신은 각각 분리되어 있다.
+- `backend/pipeline/`: Java 21, Spring Boot 3.5.16 단일 워커. GAME 큐 처리→users의 티어별 후보 선택→경기 목록 페이지 조회를 반복한다. `collection/`은 수집 기능과 저장 인터페이스, `erapi/`는 API 통신·입력 DTO, `persistence/`는 JPA·SQL 구현을 담당한다. 경기 저장과 성공 GAME 삭제는 한 트랜잭션이다. 자세한 패키지·클래스 역할은 [spec의 pipeline 리팩토링 결과](docs/spec.md#pipeline-리팩토링-결과-2026-10-11-로컬-검증-완료--검토커밋-대기)를 따른다.
 - `agent_server/`: Python CLI, psycopg 3.x, sqlglot, python-dotenv.
 - `frontend/`: 미구현. 사용자용 Spring·Python HTTP API도 없다.
 - `compose.yaml`, `infra/`: PostgreSQL·collector Docker 실행과 EC2 설치.

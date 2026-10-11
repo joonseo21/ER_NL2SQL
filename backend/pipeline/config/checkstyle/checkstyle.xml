@@ -29,6 +29,12 @@
         <module name="UnusedImports"/>
         <module name="RedundantImport"/>
 
+        <!-- 수집 흐름은 DB 구현을, API 클라이언트는 수집 흐름·DB 구현을 직접 참조하지 않는다. -->
+        <module name="ImportControl">
+            <property name="file" value="${config_loc}/import-control.xml"/>
+            <property name="path" value=".*[\\/]src[\\/]main[\\/]java[\\/].*"/>
+        </module>
+
         <!-- 이름 규칙 -->
         <module name="PackageName"/>
         <module name="TypeName"/>

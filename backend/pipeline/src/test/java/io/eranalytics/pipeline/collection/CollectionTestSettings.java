@@ -4,8 +4,8 @@ import io.eranalytics.pipeline.config.BalanceBasis;
 import io.eranalytics.pipeline.config.CollectionProperties;
 import java.time.Duration;
 
-final class CollectionTestSettings {
-    static CollectionProperties settings(int pages, boolean continuous) {
+public final class CollectionTestSettings {
+    public static CollectionProperties settings(int pages, boolean continuous) {
         return new CollectionProperties(
                 true,
                 continuous,

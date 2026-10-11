@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<!DOCTYPE import-control PUBLIC
+    "-//Checkstyle//DTD ImportControl Configuration 1.4//EN"
+    "https://checkstyle.org/dtds/import_control_1_4.dtd">
+
+<!-- 구현 기술의 의존 경계만 검사한다. 클래스 이름의 의미는 코드 리뷰로 판단한다. -->
+<import-control pkg="io.eranalytics.pipeline" strategyOnMismatch="allowed">
+    <subpackage name="collection">
+        <disallow pkg="io.eranalytics.pipeline.persistence"/>
+        <disallow pkg="java.sql"/>
+        <disallow pkg="jakarta.persistence"/>
+        <disallow pkg="org.springframework.jdbc"/>
+        <disallow pkg="org.springframework.data.jpa"/>
+    </subpackage>
+    <subpackage name="erapi">
+        <disallow pkg="io.eranalytics.pipeline.collection"/>
+        <disallow pkg="io.eranalytics.pipeline.persistence"/>
+        <disallow pkg="java.sql"/>
+        <disallow pkg="jakarta.persistence"/>
+        <disallow pkg="org.springframework.jdbc"/>
+        <disallow pkg="org.springframework.data.jpa"/>
+    </subpackage>
+    <subpackage name="persistence">
+        <disallow class="io.eranalytics.pipeline.erapi.ErApiClient"/>
+        <disallow pkg="io.eranalytics.pipeline.collection.runtime"/>
+        <disallow class="io.eranalytics.pipeline.collection.game.GameCollectionProcessor"/>
+        <disallow class="io.eranalytics.pipeline.collection.user.UserCollectionCoordinator"/>
+        <disallow class="io.eranalytics.pipeline.collection.user.UserGameDiscovery"/>
+        <disallow class="io.eranalytics.pipeline.collection.user.RankedUserSeeder"/>
+        <disallow class="io.eranalytics.pipeline.collection.metadata.NameMetadataRefresher"/>
+    </subpackage>
+</import-control>

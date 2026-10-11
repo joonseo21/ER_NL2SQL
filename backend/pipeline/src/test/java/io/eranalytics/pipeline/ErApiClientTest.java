@@ -11,11 +11,11 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import io.eranalytics.pipeline.collection.CollectorRepository;
 import io.eranalytics.pipeline.config.ErApiProperties;
-import io.eranalytics.pipeline.erapi.ApiException;
+import io.eranalytics.pipeline.erapi.ApiCallLog;
 import io.eranalytics.pipeline.erapi.ErApiClient;
-import io.eranalytics.pipeline.erapi.RequestRateGate;
+import io.eranalytics.pipeline.erapi.ErApiException;
+import io.eranalytics.pipeline.erapi.ErApiRateLimiter;
 import io.eranalytics.pipeline.erapi.dto.UserGamesPage;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
@@ -28,18 +28,17 @@ import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
 class ErApiClientTest {
-    private record Setup(
-            MockRestServiceServer server, ErApiClient client, CollectorRepository repository) {}
+    private record Setup(MockRestServiceServer server, ErApiClient client, ApiCallLog repository) {}
 
     private Setup setup() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        CollectorRepository repository = mock(CollectorRepository.class);
+        ApiCallLog repository = mock(ApiCallLog.class);
         ErApiClient client =
                 new ErApiClient(
                         builder,
                         new ObjectMapper(),
-                        mock(RequestRateGate.class),
+                        mock(ErApiRateLimiter.class),
                         repository,
                         new ErApiProperties(
                                 "https://open-api.bser.io", "synthetic-key", 41, 1000.0));
@@ -74,7 +73,7 @@ class ErApiClientTest {
                 .andRespond(withSuccess("{\"code\":404}", MediaType.APPLICATION_JSON));
         assertThatThrownBy(() -> setup.client().userGames("42", 1L))
                 .isInstanceOfSatisfying(
-                        ApiException.class,
+                        ErApiException.class,
                         error -> assertThat(error.getStatusCode()).isEqualTo(404));
         verify(setup.repository()).logApiCall(eq("/v1/user/games/uid/{uid}"), eq(404), anyLong());
         setup.server().verify();
@@ -139,8 +138,8 @@ class ErApiClientTest {
                 new ErApiClient(
                         builder,
                         new ObjectMapper(),
-                        new RequestRateGate(properties),
-                        mock(CollectorRepository.class),
+                        new ErApiRateLimiter(properties),
+                        mock(ApiCallLog.class),
                         properties);
 
         server.expect(

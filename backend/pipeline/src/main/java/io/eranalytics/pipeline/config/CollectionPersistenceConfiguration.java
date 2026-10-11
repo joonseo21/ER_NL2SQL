@@ -1,6 +1,6 @@
 package io.eranalytics.pipeline.config;
 
-import io.eranalytics.pipeline.collection.BattleUserResultMapper;
+import io.eranalytics.pipeline.collection.mapping.BattleUserResultMapper;
 import java.time.Clock;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
