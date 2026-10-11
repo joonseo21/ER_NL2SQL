@@ -14,8 +14,7 @@ import lombok.NoArgsConstructor;
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class EquipmentEntity extends AssignedIdEntity<EquipmentId> {
-    @EmbeddedId
-    private EquipmentId id;
+    @EmbeddedId private EquipmentId id;
 
     @Column(name = "grade")
     private Short grade;

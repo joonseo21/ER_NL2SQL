@@ -12,6 +12,4 @@ public record CraftDto(
         Integer campFireCraftRare,
         Integer campFireCraftEpic,
         Integer campFireCraftLegendary,
-        List<Integer> foodCraftCount
-) {
-}
+        List<Integer> foodCraftCount) {}

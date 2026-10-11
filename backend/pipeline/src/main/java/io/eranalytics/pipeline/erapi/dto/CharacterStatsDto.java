@@ -16,6 +16,4 @@ public record CharacterStatsDto(
         Double criticalStrikeChance,
         Double lifeSteal,
         Double attackRange,
-        Double sightRange
-) {
-}
+        Double sightRange) {}

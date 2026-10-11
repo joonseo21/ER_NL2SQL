@@ -6,6 +6,4 @@ import java.util.Map;
 public record EquipmentDto(
         Map<Short, Integer> equipment,
         Map<Short, Short> equipmentGrade,
-        Map<Short, List<Integer>> equipFirstItemForLog
-) {
-}
+        Map<Short, List<Integer>> equipFirstItemForLog) {}

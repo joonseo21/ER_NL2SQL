@@ -1,9 +1,11 @@
 package io.eranalytics.pipeline.collection;
 
+import io.eranalytics.pipeline.collection.model.CrawlUser;
 import io.eranalytics.pipeline.config.CollectionProperties;
 import io.eranalytics.pipeline.config.ErApiProperties;
 import java.time.Clock;
 import java.time.OffsetDateTime;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
@@ -29,9 +31,17 @@ final class CollectionRunner implements ApplicationRunner {
     private final CollectionProperties settings;
     private final Clock clock;
 
-    CollectionRunner(CollectorRepository games, UserFrontierRepository frontier, UserSeedBootstrap bootstrap,
-                     UserGameCrawler crawler, GameJobProcessor processor, CharacterMetadataCollector metadata,
-                     CollectionSleeper sleeper, ErApiProperties apiSettings, CollectionProperties settings, Clock clock) {
+    CollectionRunner(
+            CollectorRepository games,
+            UserFrontierRepository frontier,
+            UserSeedBootstrap bootstrap,
+            UserGameCrawler crawler,
+            GameJobProcessor processor,
+            CharacterMetadataCollector metadata,
+            CollectionSleeper sleeper,
+            ErApiProperties apiSettings,
+            CollectionProperties settings,
+            Clock clock) {
         this.games = games;
         this.frontier = frontier;
         this.bootstrap = bootstrap;
@@ -47,20 +57,27 @@ final class CollectionRunner implements ApplicationRunner {
     @Override
     public void run(ApplicationArguments args) {
         settings.validate();
-        if (apiSettings.seasonId() <= 0 || apiSettings.key() == null || apiSettings.key().isBlank()) {
-            throw new IllegalStateException("ER_SEASON_ID and ER_API_KEY must be set when collection is enabled");
+        if (apiSettings.seasonId() <= 0
+                || apiSettings.key() == null
+                || apiSettings.key().isBlank()) {
+            throw new IllegalStateException(
+                    "ER_SEASON_ID and ER_API_KEY must be set when collection is enabled");
         }
         try {
             while (!Thread.currentThread().isInterrupted()) {
                 metadata.refreshIfDue();
-                var job = games.claimNextGame();
+                Optional<QueueJob> job = games.claimNextGame();
                 if (job.isPresent()) {
                     processor.process(job.get());
                     continue;
                 }
                 if (bootstrap.ensureUsers()) {
-                    var user = frontier.selectNext(apiSettings.seasonId(), settings.minVersionMajor(),
-                            settings.minSeedMmr(), OffsetDateTime.now(clock).minus(settings.revisitInterval()));
+                    Optional<CrawlUser> user =
+                            frontier.selectNext(
+                                    apiSettings.seasonId(),
+                                    settings.minVersionMajor(),
+                                    settings.minSeedMmr(),
+                                    OffsetDateTime.now(clock).minus(settings.revisitInterval()));
                     if (user.isPresent()) {
                         crawler.crawl(user.get());
                         continue;

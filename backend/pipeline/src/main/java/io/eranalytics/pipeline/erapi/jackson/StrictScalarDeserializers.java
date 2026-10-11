@@ -12,8 +12,7 @@ import java.io.IOException;
 
 /** Jackson's usual number/string coercions would silently change V4 values. */
 public final class StrictScalarDeserializers {
-    private StrictScalarDeserializers() {
-    }
+    private StrictScalarDeserializers() {}
 
     private abstract static class Scalar<T> extends JsonDeserializer<T> {
         abstract T value(JsonNode node);
@@ -30,13 +29,15 @@ public final class StrictScalarDeserializers {
     }
 
     public static final class IntegerValue extends Scalar<Integer> {
-        @Override Integer value(JsonNode node) {
+        @Override
+        Integer value(JsonNode node) {
             return integer(node, "value");
         }
     }
 
     public static final class LongValue extends Scalar<Long> {
-        @Override Long value(JsonNode node) {
+        @Override
+        Long value(JsonNode node) {
             if (!node.isNumber()) {
                 throw invalid("value");
             }
@@ -49,32 +50,37 @@ public final class StrictScalarDeserializers {
     }
 
     public static final class ShortValue extends Scalar<Short> {
-        @Override Short value(JsonNode node) {
+        @Override
+        Short value(JsonNode node) {
             return smallint(node, "value");
         }
     }
 
     public static final class DoubleValue extends Scalar<Double> {
-        @Override Double value(JsonNode node) {
+        @Override
+        Double value(JsonNode node) {
             return decimal(node, "value");
         }
     }
 
     public static final class BooleanValue extends Scalar<Boolean> {
-        @Override Boolean value(JsonNode node) {
+        @Override
+        Boolean value(JsonNode node) {
             return bool(node, "value");
         }
     }
 
     public static final class StringValue extends Scalar<String> {
-        @Override String value(JsonNode node) {
+        @Override
+        String value(JsonNode node) {
             return text(node, "value");
         }
     }
 
     public static final class IntegerKey extends KeyDeserializer {
         @Override
-        public Integer deserializeKey(String key, DeserializationContext context) throws IOException {
+        public Integer deserializeKey(String key, DeserializationContext context)
+                throws IOException {
             try {
                 return integerKey(key, "key");
             } catch (IllegalArgumentException exception) {

@@ -1,7 +1,9 @@
 package io.eranalytics.pipeline.collection;
 
+import io.eranalytics.pipeline.collection.model.SeedUser;
 import io.eranalytics.pipeline.config.ErApiProperties;
 import io.eranalytics.pipeline.erapi.ErApiClient;
+import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -14,21 +16,23 @@ public class UserSeedBootstrap {
     private final ErApiProperties settings;
     private final CollectionRetry retry;
 
-    public UserSeedBootstrap(ErApiClient api, UserFrontierRepository frontier,
-                             ErApiProperties settings, CollectionRetry retry) {
+    public UserSeedBootstrap(
+            ErApiClient api,
+            UserFrontierRepository frontier,
+            ErApiProperties settings,
+            CollectionRetry retry) {
         this.api = api;
         this.frontier = frontier;
         this.settings = settings;
         this.retry = retry;
     }
 
-    /**
-     * 해당 시즌의 users가 비었을 때 랭킹 목록 전체로 첫 시드 생성
-      */
+    /** 해당 시즌의 users가 비었을 때 랭킹 목록 전체로 첫 시드 생성 */
     public boolean ensureUsers() {
         if (frontier.hasUsers(settings.seasonId())) return true;
         try {
-            var seeds = retry.call("initial rank seeds", () -> api.topUsers(settings.seasonId()));
+            List<SeedUser> seeds =
+                    retry.call("initial rank seeds", () -> api.topUsers(settings.seasonId()));
             frontier.seedIfEmpty(settings.seasonId(), seeds);
             log.info("Initial rank seeds processed: {}", seeds.size());
             return frontier.hasUsers(settings.seasonId());

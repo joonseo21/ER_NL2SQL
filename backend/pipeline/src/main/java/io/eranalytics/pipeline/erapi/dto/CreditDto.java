@@ -24,6 +24,4 @@ public record CreditDto(
         @JsonProperty("killItemBountyGainVFCredit") Integer killItemBountyGainVfCredit,
         @JsonProperty("totalVFCredits") List<Integer> totalVfCredits,
         @JsonProperty("usedVFCredits") List<Integer> usedVfCredits,
-        @JsonProperty("totalTKPerMin") List<Integer> totalTkPerMin
-) {
-}
+        @JsonProperty("totalTKPerMin") List<Integer> totalTkPerMin) {}

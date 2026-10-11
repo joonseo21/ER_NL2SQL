@@ -15,8 +15,7 @@ import org.hibernate.annotations.Immutable;
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class TierEntity {
-    @EmbeddedId
-    private TierId id;
+    @EmbeddedId private TierId id;
 
     @Column(name = "min_mmr", nullable = false)
     private Integer minMmr;

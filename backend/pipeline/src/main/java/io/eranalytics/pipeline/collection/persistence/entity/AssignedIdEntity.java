@@ -9,8 +9,7 @@ import org.springframework.data.domain.Persistable;
 /** Avoid merge/select for freshly constructed rows with assigned composite IDs. */
 @MappedSuperclass
 public abstract class AssignedIdEntity<K> implements Persistable<K> {
-    @Transient
-    private boolean newEntity = true;
+    @Transient private boolean newEntity = true;
 
     @Override
     public boolean isNew() {

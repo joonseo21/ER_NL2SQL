@@ -1,11 +1,12 @@
 package io.eranalytics.pipeline.collection;
 
-import io.eranalytics.pipeline.config.CollectionProperties;
-import io.eranalytics.pipeline.erapi.ErApiClient;
+import com.fasterxml.jackson.databind.JsonNode;
 import io.eranalytics.pipeline.collection.metadata.KoreanLocalization;
+import io.eranalytics.pipeline.collection.metadata.NameMetadataBatch;
 import io.eranalytics.pipeline.collection.metadata.NameMetadataMapper;
 import io.eranalytics.pipeline.collection.persistence.NameMetadataStore;
-import com.fasterxml.jackson.databind.JsonNode;
+import io.eranalytics.pipeline.config.CollectionProperties;
+import io.eranalytics.pipeline.erapi.ErApiClient;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -26,8 +27,13 @@ public class CharacterMetadataCollector {
     private final NameMetadataStore names;
     private Instant lastAttempt;
 
-    public CharacterMetadataCollector(ErApiClient api, CollectorRepository repository, CollectionRetry retry,
-                                      CollectionProperties settings, Clock clock, NameMetadataStore names) {
+    public CharacterMetadataCollector(
+            ErApiClient api,
+            CollectorRepository repository,
+            CollectionRetry retry,
+            CollectionProperties settings,
+            Clock clock,
+            NameMetadataStore names) {
         this.api = api;
         this.repository = repository;
         this.retry = retry;
@@ -42,40 +48,52 @@ public class CharacterMetadataCollector {
         if (lastAttempt != null && now.isBefore(lastAttempt.plus(settings.metaRefresh()))) return;
         lastAttempt = now;
         try {
-            JsonNode characters = retry.call("character metadata", () -> api.get("/v2/data/Character"));
-            Map<String,String> korean;
+            JsonNode characters =
+                    retry.call("character metadata", () -> api.get("/v2/data/Character"));
+            Map<String, String> korean;
             try {
-                var response = retry.call("Korean localization", () -> api.get("/v1/l10n/Korean"));
+                JsonNode response =
+                        retry.call("Korean localization", () -> api.get("/v1/l10n/Korean"));
                 String path = response.path("data").path("l10Path").asText();
-                if (path.isBlank()) throw new IllegalArgumentException("Korean localization path missing");
-                String text = retry.call("Korean localization download",
-                        () -> api.getPublicText(path,"l10n/Korean/download"));
+                if (path.isBlank()) {
+                    throw new IllegalArgumentException("Korean localization path missing");
+                }
+                String text =
+                        retry.call(
+                                "Korean localization download",
+                                () -> api.getPublicText(path, "l10n/Korean/download"));
                 korean = KoreanLocalization.parse(text);
             } catch (CollectionInterruptedException exception) {
                 throw exception;
             } catch (RuntimeException error) {
-                log.warn("Korean names unavailable ({})",CollectionRetry.reason(error));
+                log.warn("Korean names unavailable ({})", CollectionRetry.reason(error));
                 // Keep old Korean names/timestamps while retaining the existing English fallback.
-                for (var row : characters.path("data")) {
-                    if (row.path("code").isIntegralNumber() && row.path("code").canConvertToInt())
-                        repository.upsertCharacter(row.get("code").intValue(),null,row.path("name").asText(null));
+                for (JsonNode row : characters.path("data")) {
+                    if (row.path("code").isIntegralNumber() && row.path("code").canConvertToInt()) {
+                        repository.upsertCharacter(
+                                row.get("code").intValue(), null, row.path("name").asText(null));
+                    }
                 }
                 return;
             }
-            Map<String,JsonNode> tables = new LinkedHashMap<>();
-            tables.put("Character",characters);
+            Map<String, JsonNode> tables = new LinkedHashMap<>();
+            tables.put("Character", characters);
             for (String table : NameMetadataMapper.TABLES) {
-                if (!table.equals("Character")) tables.put(table,
-                        retry.call("name metadata", () -> api.get("/v2/data/"+table)));
+                if (!table.equals("Character")) {
+                    tables.put(
+                            table, retry.call("name metadata", () -> api.get("/v2/data/" + table)));
+                }
             }
-            var batch = NameMetadataMapper.map(tables,korean,now);
+            NameMetadataBatch batch = NameMetadataMapper.map(tables, korean, now);
             names.save(batch);
-            log.info("Name metadata refreshed; resolved={}, unresolved={}",
-                    batch.names().values().stream().mapToInt(java.util.List::size).sum(),batch.unresolved());
+            log.info(
+                    "Name metadata refreshed; resolved={}, unresolved={}",
+                    batch.names().values().stream().mapToInt(java.util.List::size).sum(),
+                    batch.unresolved());
         } catch (CollectionInterruptedException exception) {
             throw exception;
         } catch (RuntimeException error) {
-            log.warn("Name metadata refresh failed ({})",CollectionRetry.reason(error));
+            log.warn("Name metadata refresh failed ({})", CollectionRetry.reason(error));
         }
     }
 }

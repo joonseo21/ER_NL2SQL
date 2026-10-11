@@ -12,8 +12,13 @@ public class GameWriteLock {
 
     public void acquire(String key) {
         // Select an integer instead of PostgreSQL's void result type.
-        entityManager.createNativeQuery("""
+        entityManager
+                .createNativeQuery(
+                        """
                 SELECT 1 FROM pg_advisory_xact_lock(hashtextextended(:key, 0))
-                """, Integer.class).setParameter("key", key).getSingleResult();
+                """,
+                        Integer.class)
+                .setParameter("key", key)
+                .getSingleResult();
     }
 }

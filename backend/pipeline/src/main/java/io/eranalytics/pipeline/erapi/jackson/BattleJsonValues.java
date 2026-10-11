@@ -4,8 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 
 /** Value checks shared by the battle DTO deserializers. Errors contain no raw values. */
 public final class BattleJsonValues {
-    private BattleJsonValues() {
-    }
+    private BattleJsonValues() {}
 
     public static Integer integer(JsonNode node, String key) {
         if (!present(node)) {
@@ -127,7 +126,7 @@ public final class BattleJsonValues {
 
     public static IllegalArgumentException invalid(String key) {
         // Never include raw values, especially nicknames, in collector errors.
-        return new IllegalArgumentException("Missing, invalid or non-reconstructable field: " + key);
+        return new IllegalArgumentException(
+                "Missing, invalid or non-reconstructable field: " + key);
     }
-
 }

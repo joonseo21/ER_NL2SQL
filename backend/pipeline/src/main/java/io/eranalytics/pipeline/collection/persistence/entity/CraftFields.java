@@ -54,6 +54,9 @@ public class CraftFields {
         this.campFireCraftRare = data.campFireCraftRare();
         this.campFireCraftEpic = data.campFireCraftEpic();
         this.campFireCraftLegendary = data.campFireCraftLegendary();
-        this.foodCraftCount = data.foodCraftCount() == null ? null : data.foodCraftCount().toArray(Integer[]::new);
+        this.foodCraftCount =
+                data.foodCraftCount() == null
+                        ? null
+                        : data.foodCraftCount().toArray(Integer[]::new);
     }
 }

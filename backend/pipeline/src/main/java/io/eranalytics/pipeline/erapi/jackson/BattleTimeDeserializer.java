@@ -14,11 +14,13 @@ public final class BattleTimeDeserializer extends JsonDeserializer<OffsetDateTim
     private static final Pattern COMPACT_OFFSET = Pattern.compile("(?<=\\d)([+-]\\d{2})(\\d{2})$");
 
     @Override
-    public OffsetDateTime deserialize(JsonParser parser, DeserializationContext context) throws IOException {
+    public OffsetDateTime deserialize(JsonParser parser, DeserializationContext context)
+            throws IOException {
         try {
             String value = BattleJsonValues.text(parser.readValueAsTree(), "startDtm");
             return OffsetDateTime.parse(COMPACT_OFFSET.matcher(value.trim()).replaceFirst("$1:$2"))
-                    .toInstant().atOffset(ZoneOffset.UTC);
+                    .toInstant()
+                    .atOffset(ZoneOffset.UTC);
         } catch (IllegalArgumentException | DateTimeParseException exception) {
             throw JsonMappingException.from(parser, "Invalid battle timestamp");
         }

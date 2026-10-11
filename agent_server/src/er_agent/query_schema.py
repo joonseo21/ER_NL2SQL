@@ -5,7 +5,6 @@ Update with schema_context and runtime grants when a later migration is approved
 
 from __future__ import annotations
 
-
 MAX_ROWS = 200
 BLOCKED_COLUMNS = frozenset({"nickname", "raw", "is_ranker"})
 
@@ -164,12 +163,17 @@ TABLE_COLUMNS: dict[str, tuple[str, ...]] = {
         "character_code",
         "name_ko",
         "name_en",
-        "source", "l10n_key", "checked_at",
+        "source",
+        "l10n_key",
+        "checked_at",
     ),
     "weapon_types": (
         "code",
         "name_ko",
-        "type_key", "source", "l10n_key", "checked_at",
+        "type_key",
+        "source",
+        "l10n_key",
+        "checked_at",
     ),
     "tiers": (
         "season_id",
@@ -213,10 +217,27 @@ TABLE_COLUMNS: dict[str, tuple[str, ...]] = {
         "cause_of_death",
         "place_of_death",
     ),
-    "items": ("code", "name_ko", "source", "l10n_key", "checked_at",
-              "item_type", "item_grade", "grade_name_ko", "equipment_type"),
-    "trait_names": ("code", "name_ko", "source", "l10n_key", "checked_at",
-                    "trait_type", "trait_group", "active"),
+    "items": (
+        "code",
+        "name_ko",
+        "source",
+        "l10n_key",
+        "checked_at",
+        "item_type",
+        "item_grade",
+        "grade_name_ko",
+        "equipment_type",
+    ),
+    "trait_names": (
+        "code",
+        "name_ko",
+        "source",
+        "l10n_key",
+        "checked_at",
+        "trait_type",
+        "trait_group",
+        "active",
+    ),
     "tactical_skills": ("code", "name_ko", "source", "l10n_key", "checked_at", "skill_group_code"),
     "skill_groups": ("code", "name_ko", "source", "l10n_key", "checked_at"),
     "areas": ("code", "name_ko", "source", "l10n_key", "checked_at", "name_en"),

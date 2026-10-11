@@ -8,7 +8,8 @@ import java.io.IOException;
 
 public final class TextIntegerDeserializer extends JsonDeserializer<Integer> {
     @Override
-    public Integer deserialize(JsonParser parser, DeserializationContext context) throws IOException {
+    public Integer deserialize(JsonParser parser, DeserializationContext context)
+            throws IOException {
         try {
             return BattleJsonValues.textInteger(parser.readValueAsTree(), "value");
         } catch (IllegalArgumentException exception) {

@@ -1,14 +1,42 @@
 package io.eranalytics.pipeline.verification;
 
+import static io.eranalytics.pipeline.verification.Stage5Reference.require;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.Mockito.doAnswer;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.eranalytics.pipeline.collection.*;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.eranalytics.pipeline.collection.CharacterMetadataCollector;
+import io.eranalytics.pipeline.collection.CollectionRetry;
+import io.eranalytics.pipeline.collection.CollectorRepository;
+import io.eranalytics.pipeline.collection.GameJobProcessor;
+import io.eranalytics.pipeline.collection.QueueJob;
+import io.eranalytics.pipeline.collection.UserFrontierRepository;
+import io.eranalytics.pipeline.collection.UserGameCrawler;
 import io.eranalytics.pipeline.collection.mapping.RawFieldPolicy;
+import io.eranalytics.pipeline.collection.model.CrawlUser;
 import io.eranalytics.pipeline.erapi.ApiException;
 import io.eranalytics.pipeline.erapi.BattleUserResultReader;
 import io.eranalytics.pipeline.erapi.ErApiClient;
 import io.eranalytics.pipeline.erapi.dto.UserGamesPage;
 import io.eranalytics.pipeline.migration.DatabaseMigration;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.Statement;
+import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,21 +46,15 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
-import java.nio.file.Files;
-import java.time.OffsetDateTime;
-import java.util.*;
-
-import static io.eranalytics.pipeline.verification.Stage5Reference.require;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.nullable;
-import static org.mockito.Mockito.doAnswer;
-
 /** Opt-in only. At most three users, two pages each and two game response targets, at 0.5 RPS. */
 @Tag("live")
-@SpringBootTest(properties = {
-        "er.collection.enabled=false", "er.collection.max-pages-per-user=2", "er.api.requests-per-second=0.5",
-        "logging.level.org.hibernate.engine.jdbc.spi.SqlExceptionHelper=OFF"
-})
+@SpringBootTest(
+        properties = {
+            "er.collection.enabled=false",
+            "er.collection.max-pages-per-user=2",
+            "er.api.requests-per-second=0.5",
+            "logging.level.org.hibernate.engine.jdbc.spi.SqlExceptionHelper=OFF"
+        })
 class LiveCollectionVerificationTest {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final int MAX_USERS = 3;
@@ -45,7 +67,7 @@ class LiveCollectionVerificationTest {
     @Autowired CharacterMetadataCollector metadata;
     @Autowired CollectionRetry retry;
     @Autowired JdbcTemplate source;
-    private final Map<Long,List<JsonNode>> inputs = new LinkedHashMap<>();
+    private final Map<Long, List<JsonNode>> inputs = new LinkedHashMap<>();
     private final Set<Long> seenGames = new LinkedHashSet<>();
     private final Set<String> attemptedGames = new LinkedHashSet<>();
     private final List<String> resolvedIds = new ArrayList<>();
@@ -56,13 +78,18 @@ class LiveCollectionVerificationTest {
     static void database(DynamicPropertyRegistry properties) throws Exception {
         String url = Stage5DatabaseGuard.copyUrl();
         Stage5DatabaseGuard.captures();
-        try (var connection = Stage5DatabaseGuard.copyOwner(); var sql = connection.createStatement()) {
-            var result = sql.executeQuery("SELECT max(version::integer) FROM flyway_schema_history "
-                    + "WHERE success AND version IS NOT NULL");
+        try (Connection connection = Stage5DatabaseGuard.copyOwner();
+                Statement sql = connection.createStatement()) {
+            ResultSet result =
+                    sql.executeQuery(
+                            "SELECT max(version::integer) FROM flyway_schema_history "
+                                    + "WHERE success AND version IS NOT NULL");
             result.next();
             require(result.getInt(1) == 4, "Prepare and validate the copied DB with V4 first");
         }
-        try (var ignored = Stage5DatabaseGuard.referenceOwner()) { /* Verify before any reference writes. */ }
+        try (Connection ignored = Stage5DatabaseGuard.referenceOwner()) {
+            /* Verify before any reference writes. */
+        }
         DatabaseMigration.configure(url, Stage5DatabaseGuard.OWNER, "").load().validate();
         properties.add("spring.datasource.url", () -> url);
         properties.add("spring.datasource.username", () -> "collector");
@@ -75,62 +102,91 @@ class LiveCollectionVerificationTest {
         require(apiKeyConfigured(), "Set ER_API_KEY privately before live verification");
         long originalGames = count("games");
         long originalParticipants = count("participants");
-        long firstLog = source.queryForObject("SELECT coalesce(max(id),0) FROM api_call_log", Long.class);
-        // Isolate copied work from the validation budget. Only copy statuses change; source data stays intact.
+        long firstLog =
+                source.queryForObject("SELECT coalesce(max(id),0) FROM api_call_log", Long.class);
+        // Isolate copied work from the validation budget. Only copy statuses change; source data
+        // stays intact.
         int pausedJobs;
-        try (var owner = Stage5DatabaseGuard.copyOwner(); var sql = owner.createStatement()) {
-            pausedJobs = sql.executeUpdate("UPDATE collect_queue SET status='DONE' "
-                    + "WHERE status IN ('PENDING','RETRY')");
+        try (Connection owner = Stage5DatabaseGuard.copyOwner();
+                Statement sql = owner.createStatement()) {
+            pausedJobs =
+                    sql.executeUpdate(
+                            "UPDATE collect_queue SET status='DONE' "
+                                    + "WHERE status IN ('PENDING','RETRY')");
         }
-        var privateDirectory = Stage5DatabaseGuard.captures();
-        doAnswer(invocation -> {
-            String uid = (String) invocation.callRealMethod();
-            resolvedIds.add(uid);
-            return uid;
-        }).when(api).resolveUser(anyString());
-        doAnswer(invocation -> {
-            if (invocation.getArgument(1) != null) nextRequests++;
-            UserGamesPage page = (UserGamesPage) invocation.callRealMethod();
-            pages++;
-            page.userGames().stream().filter(game -> game.seasonId() == 41 && game.matchingMode() == 3
-                    && game.matchingTeamMode() == 3 && game.versionMajor() >= 4)
-                    .forEach(game -> seenGames.add(game.gameId()));
-            return page;
-        }).when(api).userGames(anyString(), nullable(Long.class));
-        doAnswer(invocation -> {
-            String target = invocation.getArgument(0);
-            require(attemptedGames.contains(target) || attemptedGames.size() < MAX_GAMES,
-                    "Game request target budget exceeded");
-            attemptedGames.add(target);
-            List<JsonNode> rows = (List<JsonNode>) invocation.callRealMethod();
-            long gameId = rows.getFirst().path("gameId").longValue();
-            require(inputs.containsKey(gameId) || inputs.size() < MAX_GAMES, "Game response budget exceeded");
-            inputs.put(gameId, rows);
-            var payload = JSON.createObjectNode();
-            var array = payload.putArray("userGames");
-            rows.forEach(array::add);
-            Files.writeString(privateDirectory.resolve("game-" + gameId + ".json"), payload.toString());
-            return rows;
-        }).when(api).gameParticipants(anyString());
+        Path privateDirectory = Stage5DatabaseGuard.captures();
+        doAnswer(
+                        invocation -> {
+                            String uid = (String) invocation.callRealMethod();
+                            resolvedIds.add(uid);
+                            return uid;
+                        })
+                .when(api)
+                .resolveUser(anyString());
+        doAnswer(
+                        invocation -> {
+                            if (invocation.getArgument(1) != null) nextRequests++;
+                            UserGamesPage page = (UserGamesPage) invocation.callRealMethod();
+                            pages++;
+                            page.userGames().stream()
+                                    .filter(
+                                            game ->
+                                                    game.seasonId() == 41
+                                                            && game.matchingMode() == 3
+                                                            && game.matchingTeamMode() == 3
+                                                            && game.versionMajor() >= 4)
+                                    .forEach(game -> seenGames.add(game.gameId()));
+                            return page;
+                        })
+                .when(api)
+                .userGames(anyString(), nullable(Long.class));
+        doAnswer(
+                        invocation -> {
+                            String target = invocation.getArgument(0);
+                            require(
+                                    attemptedGames.contains(target)
+                                            || attemptedGames.size() < MAX_GAMES,
+                                    "Game request target budget exceeded");
+                            attemptedGames.add(target);
+                            List<JsonNode> rows = (List<JsonNode>) invocation.callRealMethod();
+                            long gameId = rows.getFirst().path("gameId").longValue();
+                            require(
+                                    inputs.containsKey(gameId) || inputs.size() < MAX_GAMES,
+                                    "Game response budget exceeded");
+                            inputs.put(gameId, rows);
+                            ObjectNode payload = JSON.createObjectNode();
+                            ArrayNode array = payload.putArray("userGames");
+                            rows.forEach(array::add);
+                            Files.writeString(
+                                    privateDirectory.resolve("game-" + gameId + ".json"),
+                                    payload.toString());
+                            return rows;
+                        })
+                .when(api)
+                .gameParticipants(anyString());
 
         metadata.refreshIfDue();
         require(frontier.hasUsers(41), "The production copy must seed users through V4");
         int usersVisited = 0;
         while (attemptedGames.size() < MAX_GAMES && usersVisited < MAX_USERS) {
-            var user = frontier.selectNext(41, 4, 3600, OffsetDateTime.now().minusHours(4));
+            Optional<CrawlUser> user =
+                    frontier.selectNext(41, 4, 3600, OffsetDateTime.now().minusHours(4));
             if (user.isEmpty()) break;
             crawler.crawl(user.get());
             usersVisited++;
             drainBoundedQueue();
         }
-        // If all observed games already existed in the snapshot, validate their real responses as explicit
+        // If all observed games already existed in the snapshot, validate their real responses as
+        // explicit
         // replay jobs on the copy. This does not change the production discovery/enqueue policy.
         int replayJobs = 0;
         for (long id : seenGames) {
             if (attemptedGames.size() >= MAX_GAMES) break;
             if (inputs.containsKey(id)) continue;
-            try (var owner = Stage5DatabaseGuard.copyOwner(); var statement = owner.prepareStatement(
-                    "DELETE FROM collect_queue WHERE job_type='GAME' AND target_key=?")) {
+            try (Connection owner = Stage5DatabaseGuard.copyOwner();
+                    PreparedStatement statement =
+                            owner.prepareStatement(
+                                    "DELETE FROM collect_queue WHERE job_type='GAME' AND target_key=?")) {
                 statement.setString(1, Long.toString(id));
                 statement.executeUpdate();
             }
@@ -140,43 +196,58 @@ class LiveCollectionVerificationTest {
         }
         require(!inputs.isEmpty(), "No bounded real game responses collected");
         require(pages <= MAX_USERS * 2, "User page budget exceeded");
-        var ids = List.copyOf(inputs.keySet());
+        List<Long> ids = List.copyOf(inputs.keySet());
         for (long id : ids) {
-            require(collector.gameExists(id), "Captured game was not persisted; inspect sanitized queue status");
-            require(source.queryForObject("SELECT count(*) FROM collect_queue WHERE job_type='GAME' AND target_key=?",
-                    Integer.class, Long.toString(id)) == 0, "Successful game job was not deleted");
+            require(
+                    collector.gameExists(id),
+                    "Captured game was not persisted; inspect sanitized queue status");
+            require(
+                    source.queryForObject(
+                                    "SELECT count(*) FROM collect_queue WHERE job_type='GAME' AND target_key=?",
+                                    Integer.class,
+                                    Long.toString(id))
+                            == 0,
+                    "Successful game job was not deleted");
         }
 
         Stage5Reference.prepare(inputs, source);
-        var expected = Stage5Reference.snapshot(Stage5Reference.referenceJdbc(), ids, false);
+        Map<String, List<JsonNode>> expected =
+                Stage5Reference.snapshot(Stage5Reference.referenceJdbc(), ids, false);
         Stage5Reference.compare(expected, Stage5Reference.snapshot(source, ids, false));
         Stage5Reference.verifyUserStatistics(source, ids);
-        var beforeReplay = Stage5Reference.snapshot(source, ids, true);
-        for (var rows : inputs.values()) collector.upsertGame(rows);
+        Map<String, List<JsonNode>> beforeReplay = Stage5Reference.snapshot(source, ids, true);
+        for (List<JsonNode> rows : inputs.values()) collector.upsertGame(rows);
         Stage5Reference.compare(beforeReplay, Stage5Reference.snapshot(source, ids, true));
         Stage5Reference.verifyUserStatistics(source, ids);
 
         // Exercise brand-new participant/child insertion using the same real API payloads.
-        // Only these <=2 games in the isolated copy are removed; users and unrelated copied games stay.
+        // Only these <=2 games in the isolated copy are removed; users and unrelated copied games
+        // stay.
         for (long id : ids) {
-            try (var owner = Stage5DatabaseGuard.copyOwner(); var statement = owner.prepareStatement(
-                    "DELETE FROM games WHERE game_id=?")) {
+            try (Connection owner = Stage5DatabaseGuard.copyOwner();
+                    PreparedStatement statement =
+                            owner.prepareStatement("DELETE FROM games WHERE game_id=?")) {
                 statement.setLong(1, id);
                 statement.executeUpdate();
             }
             collector.upsertGame(inputs.get(id));
         }
-        // The obsolete ranker flag defaults false on a new row; preserve it in the independent V1 reference.
+        // The obsolete ranker flag defaults false on a new row; preserve it in the independent V1
+        // reference.
         Stage5Reference.referenceJdbc().update("UPDATE participants SET is_ranker=false");
         expected = Stage5Reference.snapshot(Stage5Reference.referenceJdbc(), ids, false);
         Stage5Reference.compare(expected, Stage5Reference.snapshot(source, ids, false));
         Stage5Reference.verifyUserStatistics(source, ids);
 
-        var moved = new RawFieldPolicy(new BattleUserResultReader(JSON)).movedKeys();
+        Set<String> moved = new RawFieldPolicy(new BattleUserResultReader(JSON)).movedKeys();
         require(moved.size() == 161, "Moved raw key contract changed");
         int participantRows = 0;
         for (long id : ids) {
-            for (String raw : source.queryForList("SELECT raw::text FROM participants WHERE game_id=?", String.class, id)) {
+            for (String raw :
+                    source.queryForList(
+                            "SELECT raw::text FROM participants WHERE game_id=?",
+                            String.class,
+                            id)) {
                 JsonNode node = JSON.readTree(raw);
                 require(moved.stream().noneMatch(node::has), "A promoted key remains in fresh raw");
                 participantRows++;
@@ -185,13 +256,14 @@ class LiveCollectionVerificationTest {
         boolean end404 = false;
         if (!resolvedIds.isEmpty()) {
             try {
-                retry.call("stage5 list end probe", () -> api.userGames(resolvedIds.getFirst(), 1L));
+                retry.call(
+                        "stage5 list end probe", () -> api.userGames(resolvedIds.getFirst(), 1L));
             } catch (ApiException error) {
                 require(error.getStatusCode() == 404, "Unexpected list end probe API code");
                 end404 = true;
             }
         }
-        var report = JSON.createObjectNode();
+        ObjectNode report = JSON.createObjectNode();
         report.put("status", "PASS");
         report.put("original_games", originalGames);
         report.put("original_participants", originalParticipants);
@@ -211,11 +283,17 @@ class LiveCollectionVerificationTest {
         report.put("user_statistics", true);
         report.put("final_games", count("games"));
         report.put("final_participants", count("participants"));
-        report.set("calls", JSON.valueToTree(source.queryForList("""
+        report.set(
+                "calls",
+                JSON.valueToTree(
+                        source.queryForList(
+                                """
                 SELECT endpoint,status_code,count(*) AS calls FROM api_call_log WHERE id>?
                 GROUP BY endpoint,status_code ORDER BY endpoint,status_code
-                """, firstLog)));
-        Files.writeString(privateDirectory.resolve("verification-summary.json"), report.toPrettyString());
+                """,
+                                firstLog)));
+        Files.writeString(
+                privateDirectory.resolve("verification-summary.json"), report.toPrettyString());
         System.out.println(report.toPrettyString());
     }
 
@@ -226,7 +304,7 @@ class LiveCollectionVerificationTest {
 
     private void drainBoundedQueue() {
         while (attemptedGames.size() < MAX_GAMES) {
-            var job = collector.claimNextGame();
+            Optional<QueueJob> job = collector.claimNextGame();
             if (job.isEmpty()) return;
             processor.process(job.get());
         }

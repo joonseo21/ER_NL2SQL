@@ -14,7 +14,8 @@ import java.util.Map;
 
 public final class CountMapDeserializer extends JsonDeserializer<Map<Integer, Integer>> {
     @Override
-    public Map<Integer, Integer> deserialize(JsonParser parser, DeserializationContext context) throws IOException {
+    public Map<Integer, Integer> deserialize(JsonParser parser, DeserializationContext context)
+            throws IOException {
         try {
             return countMap(parser.readValueAsTree(), "value", parser.getCodec());
         } catch (IllegalArgumentException exception) {
@@ -36,15 +37,17 @@ public final class CountMapDeserializer extends JsonDeserializer<Map<Integer, In
         }
         requireObject(parsed, key);
         Map<Integer, Integer> counts = new LinkedHashMap<>();
-        parsed.properties().forEach(entry -> {
-            int code = integerKey(entry.getKey(), key);
-            int count = requiredInteger(entry.getValue(), key);
-            // V4 reconstructs only nonzero matchup counts. A zero-valued key would be lost.
-            if (count == 0 || counts.putIfAbsent(code, count) != null) {
-                throw invalid(key);
-            }
-        });
+        parsed.properties()
+                .forEach(
+                        entry -> {
+                            int code = integerKey(entry.getKey(), key);
+                            int count = requiredInteger(entry.getValue(), key);
+                            // V4 reconstructs only nonzero matchup counts. A zero-valued key would
+                            // be lost.
+                            if (count == 0 || counts.putIfAbsent(code, count) != null) {
+                                throw invalid(key);
+                            }
+                        });
         return counts;
     }
-
 }

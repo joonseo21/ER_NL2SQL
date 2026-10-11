@@ -4,6 +4,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.Statement;
 
 final class Stage5DatabaseGuard {
     static final String OWNER = "stage5_test";
@@ -14,24 +16,33 @@ final class Stage5DatabaseGuard {
             throw new IllegalStateException("Explicit STAGE5_LIVE_API=true is required");
         }
         String url = System.getenv("STAGE5_TEST_DATABASE_URL");
-        if (url == null || !url.matches("jdbc:postgresql://(127\\.0\\.0\\.1|localhost):15445/er_stage5_copy")) {
+        if (url == null
+                || !url.matches(
+                        "jdbc:postgresql://(127\\.0\\.0\\.1|localhost):15445/er_stage5_copy")) {
             throw new IllegalStateException("Use the dedicated local stage5 copy on port 15445");
         }
         return url;
     }
 
-    static String referenceUrl() { return copyUrl().replace("/er_stage5_copy", "/er_stage5_reference"); }
+    static String referenceUrl() {
+        return copyUrl().replace("/er_stage5_copy", "/er_stage5_reference");
+    }
 
     static Connection owner(String url, String database, String marker) throws Exception {
         Connection connection = DriverManager.getConnection(url, OWNER, "");
-        try (var sql = connection.createStatement(); var result = sql.executeQuery("""
+        try (Statement sql = connection.createStatement();
+                ResultSet result =
+                        sql.executeQuery(
+                                """
                 SELECT current_database(), current_user,
                        shobj_description(oid, 'pg_database') FROM pg_database WHERE datname=current_database()
                 """)) {
             result.next();
-            if (!database.equals(result.getString(1)) || !OWNER.equals(result.getString(2))
+            if (!database.equals(result.getString(1))
+                    || !OWNER.equals(result.getString(2))
                     || !marker.equals(result.getString(3))) {
-                throw new IllegalStateException("Dedicated verification database identity/marker required");
+                throw new IllegalStateException(
+                        "Dedicated verification database identity/marker required");
             }
             return connection;
         } catch (Exception error) {
@@ -51,7 +62,8 @@ final class Stage5DatabaseGuard {
     static Path captures() throws Exception {
         String configured = System.getenv("STAGE5_CAPTURE_DIRECTORY");
         if (configured == null || !Path.of(configured).isAbsolute()) {
-            throw new IllegalStateException("An absolute, private capture directory outside the repository is required");
+            throw new IllegalStateException(
+                    "An absolute, private capture directory outside the repository is required");
         }
         Path directory = Files.createDirectories(Path.of(configured)).toRealPath();
         if (directory.startsWith(ROOT.toRealPath())) {

@@ -14,8 +14,7 @@ import lombok.NoArgsConstructor;
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class MatchupEntity extends AssignedIdEntity<MatchupId> {
-    @EmbeddedId
-    private MatchupId id;
+    @EmbeddedId private MatchupId id;
 
     @Column(name = "character_num")
     private Integer characterNum;

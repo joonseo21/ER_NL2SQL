@@ -2,6 +2,7 @@ package io.eranalytics.pipeline.collection.persistence.entity;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.eranalytics.pipeline.collection.model.MappedParticipant;
+import io.eranalytics.pipeline.collection.model.ParticipantData;
 import jakarta.persistence.Column;
 import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
@@ -48,33 +49,26 @@ public class ParticipantEntity {
     @Column(name = "raw", nullable = false, columnDefinition = "jsonb")
     private ObjectNode raw;
 
-    @Embedded
-    private ParticipantCoreFields core;
+    @Embedded private ParticipantCoreFields core;
 
-    @Embedded
-    private CombatFields combat;
+    @Embedded private CombatFields combat;
 
-    @Embedded
-    private CharacterStatsFields stats;
+    @Embedded private CharacterStatsFields stats;
 
-    @Embedded
-    private CreditFields credits;
+    @Embedded private CreditFields credits;
 
-    @Embedded
-    private CraftFields crafting;
+    @Embedded private CraftFields crafting;
 
-    @Embedded
-    private ActivityFields activity;
+    @Embedded private ActivityFields activity;
 
-    @Embedded
-    private LoadoutFields loadout;
+    @Embedded private LoadoutFields loadout;
 
     public ParticipantEntity(MappedParticipant mapped, long userId, TierEntity boundary) {
         apply(mapped, userId, boundary);
     }
 
     public void apply(MappedParticipant mapped, long userId, TierEntity boundary) {
-        var data = mapped.data();
+        ParticipantData data = mapped.data();
         this.userId = userId;
         this.versionMajor = data.versionMajor();
         this.versionMinor = data.versionMinor();

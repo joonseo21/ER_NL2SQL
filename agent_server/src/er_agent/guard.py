@@ -11,21 +11,87 @@ from sqlglot.optimizer.scope import traverse_scope
 
 from .query_schema import ALLOWED_TABLES, BLOCKED_COLUMNS, MAX_ROWS, TABLE_COLUMNS
 
-
-# 분석 전용: SQL 문자열을 실행하거나, 파일/설정을 읽거나, 세션 상태를 수정하는 함수는 사용하지 않는다. 쿼리 계약에 따라 의도적으로 수정하기.
-ALLOWED_FUNCTIONS = frozenset({
-    "ABS", "AND", "ARRAY", "ARRAY_AGG", "ARRAY_LENGTH", "ARRAY_SIZE", "AVG", "BOOL_AND", "BOOL_OR",
-    "CARDINALITY", "CASE", "CAST", "CEIL", "COALESCE", "CONCAT", "CONCAT_WS", "COUNT",
-    "CURRENT_DATE", "CURRENT_TIMESTAMP", "DATE_TRUNC", "DENSE_RANK", "EXISTS", "EXTRACT", "FILTER",
-    "FLOOR", "GREATEST", "GROUP_CONCAT", "IF", "JSON_AGG", "JSON_BUILD_ARRAY", "JSON_BUILD_OBJECT",
-    "JSON_EXTRACT", "JSON_EXTRACT_SCALAR", "JSONB_AGG", "JSONB_ARRAY_LENGTH", "JSONB_BUILD_ARRAY", "JSONB_BUILD_OBJECT",
-    "JSONB_EACH", "JSONB_EACH_TEXT", "JSONB_EXTRACT_PATH", "JSONB_EXTRACT_PATH_TEXT",
-    "LAG", "LEAD", "LEAST", "LENGTH", "LOWER", "MAX", "MIN", "NOT", "NOW", "NULLIF", "OR",
-    "PERCENTILE_CONT", "PERCENTILE_DISC", "RANK", "ROUND", "ROW_NUMBER", "ROW_TO_JSON",
-    "STDDEV", "STDDEV_POP", "STDDEV_SAMP", "STRING_AGG", "SUBSTRING", "SUM",
-    "TIME_TO_STR", "TIMESTAMP_TRUNC", "TO_CHAR", "TO_JSON", "TO_JSONB", "TRIM",
-    "UNNEST", "UPPER", "VAR_POP", "VAR_SAMP", "VARIANCE",
-})
+# 분석 전용: SQL 문자열을 실행하거나, 파일/설정을 읽거나, 세션 상태를 수정하는 함수는
+# 사용하지 않는다. 쿼리 계약에 따라 의도적으로 수정하기.
+ALLOWED_FUNCTIONS = frozenset(
+    {
+        "ABS",
+        "AND",
+        "ARRAY",
+        "ARRAY_AGG",
+        "ARRAY_LENGTH",
+        "ARRAY_SIZE",
+        "AVG",
+        "BOOL_AND",
+        "BOOL_OR",
+        "CARDINALITY",
+        "CASE",
+        "CAST",
+        "CEIL",
+        "COALESCE",
+        "CONCAT",
+        "CONCAT_WS",
+        "COUNT",
+        "CURRENT_DATE",
+        "CURRENT_TIMESTAMP",
+        "DATE_TRUNC",
+        "DENSE_RANK",
+        "EXISTS",
+        "EXTRACT",
+        "FILTER",
+        "FLOOR",
+        "GREATEST",
+        "GROUP_CONCAT",
+        "IF",
+        "JSON_AGG",
+        "JSON_BUILD_ARRAY",
+        "JSON_BUILD_OBJECT",
+        "JSON_EXTRACT",
+        "JSON_EXTRACT_SCALAR",
+        "JSONB_AGG",
+        "JSONB_ARRAY_LENGTH",
+        "JSONB_BUILD_ARRAY",
+        "JSONB_BUILD_OBJECT",
+        "JSONB_EACH",
+        "JSONB_EACH_TEXT",
+        "JSONB_EXTRACT_PATH",
+        "JSONB_EXTRACT_PATH_TEXT",
+        "LAG",
+        "LEAD",
+        "LEAST",
+        "LENGTH",
+        "LOWER",
+        "MAX",
+        "MIN",
+        "NOT",
+        "NOW",
+        "NULLIF",
+        "OR",
+        "PERCENTILE_CONT",
+        "PERCENTILE_DISC",
+        "RANK",
+        "ROUND",
+        "ROW_NUMBER",
+        "ROW_TO_JSON",
+        "STDDEV",
+        "STDDEV_POP",
+        "STDDEV_SAMP",
+        "STRING_AGG",
+        "SUBSTRING",
+        "SUM",
+        "TIME_TO_STR",
+        "TIMESTAMP_TRUNC",
+        "TO_CHAR",
+        "TO_JSON",
+        "TO_JSONB",
+        "TRIM",
+        "UNNEST",
+        "UPPER",
+        "VAR_POP",
+        "VAR_SAMP",
+        "VARIANCE",
+    }
+)
 
 
 class SqlGuardError(ValueError):
@@ -78,7 +144,9 @@ def guard_sql(model_text: str, max_rows: int = MAX_ROWS) -> GuardedSql:
     try:
         statement = qualify(statement, dialect="postgres", schema=schema, infer_schema=False)
     except OptimizeError as exception:
-        raise SqlGuardError("Columns could not be resolved against the allowed schema") from exception
+        raise SqlGuardError(
+            "Columns could not be resolved against the allowed schema"
+        ) from exception
     _reject_whole_rows(statement)
 
     return GuardedSql(sql=statement.sql(dialect="postgres", pretty=True), limit_added=limit_added)
@@ -120,7 +188,9 @@ def _validate_sources(statement: exp.Select) -> None:
                     # columns. They must never be mapped onto our reduced schema.
                     raise SqlGuardError("Renaming base-table columns by position is not allowed")
             if isinstance(source, exp.Table) and (
-                source.catalog or source.db not in {"", "public"} or source.name not in ALLOWED_TABLES
+                source.catalog
+                or source.db not in {"", "public"}
+                or source.name not in ALLOWED_TABLES
             ):
                 raise SqlGuardError(f"Table is not allowed: {source.name}")
 

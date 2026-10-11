@@ -9,13 +9,14 @@ import io.eranalytics.pipeline.collection.mapping.MasteryMapper;
 import io.eranalytics.pipeline.collection.mapping.MatchupMapper;
 import io.eranalytics.pipeline.collection.mapping.RawFieldPolicy;
 import io.eranalytics.pipeline.collection.mapping.TraitMapper;
+import io.eranalytics.pipeline.collection.model.GameData;
 import io.eranalytics.pipeline.collection.model.MappedMatch;
 import io.eranalytics.pipeline.collection.model.MappedParticipant;
-import io.eranalytics.pipeline.collection.model.GameData;
 import io.eranalytics.pipeline.collection.model.ParticipantData;
 import io.eranalytics.pipeline.config.BattleResultObjectMapperFactory;
 import io.eranalytics.pipeline.erapi.BattleUserResultReader;
 import io.eranalytics.pipeline.erapi.dto.BattleUserResultDto;
+import io.eranalytics.pipeline.erapi.dto.GameResultDto;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -42,11 +43,11 @@ public final class BattleUserResultMapper {
             throw invalid("userGames");
         }
         List<BattleUserResultDto> inputs = results.stream().map(reader::read).toList();
-        var game = inputs.getFirst().game();
+        GameResultDto game = inputs.getFirst().game();
         Map<String, Integer> indexes = new HashMap<>();
         Set<Integer> teams = new LinkedHashSet<>();
         for (int index = 0; index < inputs.size(); index++) {
-            var input = inputs.get(index);
+            BattleUserResultDto input = inputs.get(index);
             if (!game.equals(input.game())) {
                 throw invalid("shared game fields");
             }
@@ -59,16 +60,27 @@ public final class BattleUserResultMapper {
         }
         DeathMapper deathMapper = new DeathMapper(inputs, indexes, characterCodesByName);
         List<MappedParticipant> participants = new ArrayList<>();
-        for (var input : inputs) {
-            ParticipantData data = new ParticipantData(input.core(), input.combat(), input.stats(),
-                    input.credits(), input.crafting(), input.activity(), input.loadout(),
-                    game.versionMajor(), game.versionMinor());
-            participants.add(new MappedParticipant(data,
-                    EquipmentMapper.map(input.equipment()),
-                    TraitMapper.map(input.loadout().traitFirstCore(), input.traits()),
-                    MasteryMapper.map(input.mastery()),
-                    MatchupMapper.map(input.core().characterNum(), input.matchup()),
-                    deathMapper.map(input.deaths()), rawPolicy.remaining(input.raw())));
+        for (BattleUserResultDto input : inputs) {
+            ParticipantData data =
+                    new ParticipantData(
+                            input.core(),
+                            input.combat(),
+                            input.stats(),
+                            input.credits(),
+                            input.crafting(),
+                            input.activity(),
+                            input.loadout(),
+                            game.versionMajor(),
+                            game.versionMinor());
+            participants.add(
+                    new MappedParticipant(
+                            data,
+                            EquipmentMapper.map(input.equipment()),
+                            TraitMapper.map(input.loadout().traitFirstCore(), input.traits()),
+                            MasteryMapper.map(input.mastery()),
+                            MatchupMapper.map(input.core().characterNum(), input.matchup()),
+                            deathMapper.map(input.deaths()),
+                            rawPolicy.remaining(input.raw())));
         }
         return new MappedMatch(new GameData(game, teams.size()), List.copyOf(participants));
     }
@@ -76,5 +88,4 @@ public final class BattleUserResultMapper {
     public Set<String> movedRawKeys() {
         return rawPolicy.movedKeys();
     }
-
 }

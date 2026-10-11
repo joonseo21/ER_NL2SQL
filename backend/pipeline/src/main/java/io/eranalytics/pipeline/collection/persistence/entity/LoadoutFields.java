@@ -50,10 +50,12 @@ public class LoadoutFields {
         this.tacticalSkillGroup = data.tacticalSkillGroup();
         this.tacticalSkillLevel = data.tacticalSkillLevel();
         this.routeIdOfStart = data.routeIdOfStart();
-        this.skillLevelInfo = data.skillLevelInfo() == null ? null : data.skillLevelInfo().deepCopy();
+        this.skillLevelInfo =
+                data.skillLevelInfo() == null ? null : data.skillLevelInfo().deepCopy();
         this.creditSource = data.creditSource() == null ? null : data.creditSource().deepCopy();
         this.killMonsters = data.killMonsters() == null ? null : data.killMonsters().deepCopy();
         this.placeOfStart = data.placeOfStart();
-        this.skillOrder = data.skillOrder() == null ? null : data.skillOrder().toArray(Integer[]::new);
+        this.skillOrder =
+                data.skillOrder() == null ? null : data.skillOrder().toArray(Integer[]::new);
     }
 }

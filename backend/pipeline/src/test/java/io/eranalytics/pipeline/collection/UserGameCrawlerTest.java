@@ -11,6 +11,7 @@ import io.eranalytics.pipeline.erapi.dto.UserGamesPage;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 
 class UserGameCrawlerTest {
     private final ErApiClient api = mock(ErApiClient.class);
@@ -27,10 +28,14 @@ class UserGameCrawlerTest {
     }
 
     private UserGameCrawler crawler(int pages) {
-        return new UserGameCrawler(api, games, frontier, settings(pages, false), new CollectionRetry(sleeper));
+        return new UserGameCrawler(
+                api, games, frontier, settings(pages, false), new CollectionRetry(sleeper));
     }
 
-    private static UserGameSummary game(long id) { return new UserGameSummary(id, 41, 3, 3, 4); }
+    private static UserGameSummary game(long id) {
+        return new UserGameSummary(id, 41, 3, 3, 4);
+    }
+
     private static UserGamesPage page(Long next, UserGameSummary... games) {
         return new UserGamesPage(List.of(games), next);
     }
@@ -41,7 +46,7 @@ class UserGameCrawlerTest {
         when(games.gameExists(190)).thenReturn(true);
         when(api.userGames("uid", 180L)).thenReturn(page(null, game(170), game(100), game(90)));
         crawler.crawl(user);
-        var order = inOrder(api, games, frontier);
+        InOrder order = inOrder(api, games, frontier);
         order.verify(api).resolveUser(user.nickname());
         order.verify(api).userGames("uid", null);
         order.verify(games).gameExists(200);
@@ -87,9 +92,14 @@ class UserGameCrawlerTest {
 
     @Test
     void skipsOtherModesBeforeCheckingScopeAndRemembersFirstGame() {
-        when(api.userGames("uid", null)).thenReturn(page(120L,
-                new UserGameSummary(200L, 40, 2, 3, 2), game(190),
-                new UserGameSummary(180L, 41, 3, 3, 3), game(170)));
+        when(api.userGames("uid", null))
+                .thenReturn(
+                        page(
+                                120L,
+                                new UserGameSummary(200L, 40, 2, 3, 2),
+                                game(190),
+                                new UserGameSummary(180L, 41, 3, 3, 3),
+                                game(170)));
         crawler.crawl(user);
         verify(games).enqueueGame(190);
         verify(games, never()).gameExists(200);
@@ -100,7 +110,8 @@ class UserGameCrawlerTest {
 
     @Test
     void previousSeasonStopsBeforeEnqueue() {
-        when(api.userGames("uid", null)).thenReturn(page(null, new UserGameSummary(200L, 40, 3, 3, 4)));
+        when(api.userGames("uid", null))
+                .thenReturn(page(null, new UserGameSummary(200L, 40, 3, 3, 4)));
         crawler.crawl(user);
         verifyNoInteractions(games);
         verify(frontier).complete(user, 200L, true);

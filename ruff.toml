@@ -1,0 +1,25 @@
+# agent_server와 tools의 Python 코드에 공통 적용한다.
+# 실행: agent_server에서 `uv run ruff check . ../tools`, `uv run ruff format . ../tools`
+target-version = "py312"
+line-length = 100
+src = ["agent_server/src", "agent_server/tests", "tools"]
+
+[lint]
+select = [
+    "E",   # pycodestyle 오류: 기본 문법 스타일
+    "W",   # pycodestyle 경고: 공백 등
+    "F",   # pyflakes: 미사용 import·변수, 정의되지 않은 이름
+    "I",   # isort: import 순서
+    "B",   # bugbear: 버그로 이어지기 쉬운 패턴
+    "UP",  # pyupgrade: 현재 Python 버전의 문법 사용
+    "SIM", # simplify: 더 단순하게 쓸 수 있는 구문
+    "ANN", # annotations: 함수의 인자와 반환 타입 표기 (지역 변수는 요구하지 않는다)
+]
+ignore = [
+    "ANN401", # Any 금지: DB 행처럼 값 타입이 정해지지 않은 곳에서 Any를 허용
+]
+
+[lint.per-file-ignores]
+# 가드 허용·거부 사례는 SQL 한 건을 한 줄로 두어야 비교하기 쉽다.
+# 테스트 함수에는 타입 표기를 요구하지 않는다.
+"agent_server/tests/**" = ["E501", "ANN"]

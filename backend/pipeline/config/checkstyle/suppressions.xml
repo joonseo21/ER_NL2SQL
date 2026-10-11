@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<!DOCTYPE suppressions PUBLIC
+    "-//Checkstyle//DTD SuppressionFilter Configuration 1.2//EN"
+    "https://checkstyle.org/dtds/suppressions_1_2.dtd">
+
+<!--
+  2026-10-11 린터 도입 시점의 기준선이다. 이미 검증된 수집기 코드를 린터 때문에
+  다시 쓰지 않으려고 기존 위반만 파일 단위로 제외했다.
+  해당 메서드를 나누면 그 줄을 지운다. 새 파일은 추가하지 않는다.
+-->
+<suppressions>
+    <!-- 분기가 많은 메서드 (기준 10) -->
+    <suppress checks="CyclomaticComplexity" files="CharacterMetadataCollector\.java"/>  <!-- 13 -->
+    <suppress checks="CyclomaticComplexity" files="DeathMapper\.java"/>                 <!-- 12 -->
+    <suppress checks="CyclomaticComplexity" files="EquipmentMapper\.java"/>             <!-- 14 -->
+    <suppress checks="CyclomaticComplexity" files="GamePersistenceService\.java"/>      <!-- 13 -->
+    <suppress checks="CyclomaticComplexity" files="NameMetadataMapper\.java"/>          <!-- 17 -->
+    <suppress checks="CyclomaticComplexity" files="UserGameCrawler\.java"/>             <!-- 17 -->
+
+    <!-- 긴 메서드 (기준 60줄) -->
+    <suppress checks="MethodLength" files="GamePersistenceService\.java"/>              <!-- persist 106줄 -->
+    <suppress checks="MethodLength" files="NameMetadataMapper\.java"/>                  <!-- map 143줄 -->
+    <suppress checks="MethodLength" files="ParticipantData\.java"/>                     <!-- 생성자 64줄 -->
+
+    <!-- 인자가 많은 메서드·생성자 (기준 7개) -->
+    <suppress checks="ParameterNumber" files="CollectionRunner\.java"/>                 <!-- 생성자 10개 -->
+    <suppress checks="ParameterNumber" files="NameMetadataMapper\.java"/>               <!-- 8개 -->
+
+    <!-- 테스트는 준비·실행·검증이 한 메서드에 모이므로 크기 규칙을 적용하지 않는다 -->
+    <suppress checks="MethodLength|CyclomaticComplexity" files="[\\/]src[\\/]test[\\/]"/>
+</suppressions>

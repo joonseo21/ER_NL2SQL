@@ -10,8 +10,7 @@ import java.time.OffsetDateTime;
 
 /** Dedicated to battle DTOs; leaves Spring's HTTP/JSON mapper settings unchanged. */
 public final class BattleResultObjectMapperFactory {
-    private BattleResultObjectMapperFactory() {
-    }
+    private BattleResultObjectMapperFactory() {}
 
     public static ObjectMapper create() {
         SimpleModule module = new SimpleModule("battle-result-values");

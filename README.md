@@ -67,6 +67,8 @@ uv run er-agent manual game-count
 uv run er-agent ask "수집된 경기는 몇 판이야?"
 ```
 
+커밋 전 스타일 검사는 `agent_server/`에서 `uv run ruff check . ../tools`와 `uv run ruff format --check . ../tools`, `backend/pipeline/`에서 `.\gradlew.bat check`다. 자동 수정과 에디터 설정은 [operations.md](docs/operations.md)의 코드 스타일 검사 절을 따른다.
+
 실제 수집은 ER API 호출과 DB 쓰기를 수행하고 ask는 Gemini quota를 소비한다. 상세 설정과 배포는 [operations.md](docs/operations.md)를 따른다.
 
 SQL 생성에는 [metrics.md](agent_server/metrics.md)의 지표·용어 정의가 함께 들어간다. 7-1에서 만든 입력/출력 계약은 이후 질의 흐름에 연결할 검토본이며 현재 CLI 출력 형식은 유지한다.

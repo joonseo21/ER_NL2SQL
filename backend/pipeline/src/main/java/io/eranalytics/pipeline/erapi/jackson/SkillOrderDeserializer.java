@@ -16,7 +16,8 @@ import java.util.TreeMap;
 
 public final class SkillOrderDeserializer extends JsonDeserializer<List<Integer>> {
     @Override
-    public List<Integer> deserialize(JsonParser parser, DeserializationContext context) throws IOException {
+    public List<Integer> deserialize(JsonParser parser, DeserializationContext context)
+            throws IOException {
         try {
             return skillOrder(parser.readValueAsTree());
         } catch (IllegalArgumentException exception) {
@@ -30,14 +31,15 @@ public final class SkillOrderDeserializer extends JsonDeserializer<List<Integer>
             return null;
         }
         Map<Integer, Integer> entries = new TreeMap<>();
-        order.properties().forEach(entry -> {
-            int position = integerKey(entry.getKey(), "skillOrderInfo");
-            if (entries.containsKey(position)) {
-                throw invalid("skillOrderInfo");
-            }
-            entries.put(position, integer(entry.getValue(), "skillOrderInfo"));
-        });
+        order.properties()
+                .forEach(
+                        entry -> {
+                            int position = integerKey(entry.getKey(), "skillOrderInfo");
+                            if (entries.containsKey(position)) {
+                                throw invalid("skillOrderInfo");
+                            }
+                            entries.put(position, integer(entry.getValue(), "skillOrderInfo"));
+                        });
         return Collections.unmodifiableList(new ArrayList<>(entries.values()));
     }
-
 }

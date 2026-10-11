@@ -11,8 +11,7 @@ import java.util.regex.Pattern;
 public final class LegacyBattleUserResultMapper {
     private static final Pattern COMPACT_OFFSET = Pattern.compile("(?<=\\d)([+-]\\d{2})(\\d{2})$");
 
-    private LegacyBattleUserResultMapper() {
-    }
+    private LegacyBattleUserResultMapper() {}
 
     public static ParticipantRow participant(JsonNode node) {
         return new ParticipantRow(
@@ -28,10 +27,14 @@ public final class LegacyBattleUserResultMapper {
 
     public static GameRow game(JsonNode node) {
         return new GameRow(
-                requiredLong(node, "gameId"), nullableInt(node, "seasonId"),
-                nullableInt(node, "matchingMode"), nullableInt(node, "matchingTeamMode"),
-                nullableInt(node, "versionSeason"), nullableInt(node, "versionMajor"),
-                nullableInt(node, "versionMinor"), nullableOffsetDateTime(node, "startDtm"),
+                requiredLong(node, "gameId"),
+                nullableInt(node, "seasonId"),
+                nullableInt(node, "matchingMode"),
+                nullableInt(node, "matchingTeamMode"),
+                nullableInt(node, "versionSeason"),
+                nullableInt(node, "versionMajor"),
+                nullableInt(node, "versionMinor"),
+                nullableOffsetDateTime(node, "startDtm"),
                 nullableText(node, "serverName"));
     }
 
@@ -52,7 +55,8 @@ public final class LegacyBattleUserResultMapper {
 
     private static Integer nullableInt(JsonNode node, String field) {
         return node.hasNonNull(field) && node.get(field).canConvertToInt()
-                ? node.get(field).intValue() : null;
+                ? node.get(field).intValue()
+                : null;
     }
 
     private static String nullableText(JsonNode node, String field) {
@@ -70,5 +74,4 @@ public final class LegacyBattleUserResultMapper {
             return null;
         }
     }
-
 }

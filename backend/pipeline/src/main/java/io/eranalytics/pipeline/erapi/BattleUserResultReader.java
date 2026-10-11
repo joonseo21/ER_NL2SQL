@@ -8,7 +8,20 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectReader;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import io.eranalytics.pipeline.erapi.dto.*;
+import io.eranalytics.pipeline.erapi.dto.ActivityDto;
+import io.eranalytics.pipeline.erapi.dto.BattleUserResultDto;
+import io.eranalytics.pipeline.erapi.dto.CharacterStatsDto;
+import io.eranalytics.pipeline.erapi.dto.CombatDto;
+import io.eranalytics.pipeline.erapi.dto.CraftDto;
+import io.eranalytics.pipeline.erapi.dto.CreditDto;
+import io.eranalytics.pipeline.erapi.dto.DeathDto;
+import io.eranalytics.pipeline.erapi.dto.EquipmentDto;
+import io.eranalytics.pipeline.erapi.dto.GameResultDto;
+import io.eranalytics.pipeline.erapi.dto.LoadoutDto;
+import io.eranalytics.pipeline.erapi.dto.MasteryDto;
+import io.eranalytics.pipeline.erapi.dto.MatchupDto;
+import io.eranalytics.pipeline.erapi.dto.ParticipantCoreDto;
+import io.eranalytics.pipeline.erapi.dto.TraitsDto;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -21,11 +34,21 @@ import java.util.stream.Collectors;
 
 /** Decodes flat response fields into typed groups without discarding original JSON. */
 public final class BattleUserResultReader {
-    private static final List<Class<?>> FIELD_TYPES = List.of(
-            GameResultDto.class, ParticipantCoreDto.class, CombatDto.class,
-            CharacterStatsDto.class, CreditDto.class, CraftDto.class, ActivityDto.class,
-            LoadoutDto.class, EquipmentDto.class, TraitsDto.class, MasteryDto.class,
-            MatchupDto.class, DeathDto.class);
+    private static final List<Class<?>> FIELD_TYPES =
+            List.of(
+                    GameResultDto.class,
+                    ParticipantCoreDto.class,
+                    CombatDto.class,
+                    CharacterStatsDto.class,
+                    CreditDto.class,
+                    CraftDto.class,
+                    ActivityDto.class,
+                    LoadoutDto.class,
+                    EquipmentDto.class,
+                    TraitsDto.class,
+                    MasteryDto.class,
+                    MatchupDto.class,
+                    DeathDto.class);
 
     private final Map<Class<?>, ObjectReader> readers;
     private final Map<Class<?>, Set<String>> fieldNames;
@@ -33,19 +56,30 @@ public final class BattleUserResultReader {
     public BattleUserResultReader(ObjectMapper mapper) {
         // Snapshot the configuration so subsequent caller changes cannot change mapping.
         ObjectMapper json = mapper.copy();
-        readers = FIELD_TYPES.stream().collect(Collectors.toUnmodifiableMap(
-                Function.identity(), json::readerFor));
-        fieldNames = FIELD_TYPES.stream().collect(Collectors.toUnmodifiableMap(
-                Function.identity(), type -> {
-                    Set<String> names = new LinkedHashSet<>();
-                    json.getDeserializationConfig().introspect(json.constructType(type))
-                            .findProperties().forEach(property -> names.add(property.getName()));
-                    return Collections.unmodifiableSet(names);
-                }));
+        readers =
+                FIELD_TYPES.stream()
+                        .collect(
+                                Collectors.toUnmodifiableMap(Function.identity(), json::readerFor));
+        fieldNames =
+                FIELD_TYPES.stream()
+                        .collect(
+                                Collectors.toUnmodifiableMap(
+                                        Function.identity(),
+                                        type -> {
+                                            Set<String> names = new LinkedHashSet<>();
+                                            json.getDeserializationConfig()
+                                                    .introspect(json.constructType(type))
+                                                    .findProperties()
+                                                    .forEach(
+                                                            property ->
+                                                                    names.add(property.getName()));
+                                            return Collections.unmodifiableSet(names);
+                                        }));
     }
 
     /**
      * BattleUserResult api response json을 BattleUserResultDto로 매핑
+     *
      * @param node
      * @return
      */
@@ -59,7 +93,9 @@ public final class BattleUserResultReader {
         if (core.nickname() == null || core.nickname().isBlank()) {
             throw invalid("nickname");
         }
-        return new BattleUserResultDto(game, core,
+        return new BattleUserResultDto(
+                game,
+                core,
                 read(node, CombatDto.class, ""),
                 read(node, CharacterStatsDto.class, ""),
                 read(node, CreditDto.class, ""),
@@ -70,12 +106,14 @@ public final class BattleUserResultReader {
                 read(node, TraitsDto.class, ""),
                 read(node, MasteryDto.class, ""),
                 read(node, MatchupDto.class, ""),
-                deaths((ObjectNode) node), (ObjectNode) node);
+                deaths((ObjectNode) node),
+                (ObjectNode) node);
     }
 
     public Set<String> resultFieldNames() {
         Set<String> names = new LinkedHashSet<>();
-        FIELD_TYPES.stream().filter(type -> type != DeathDto.class)
+        FIELD_TYPES.stream()
+                .filter(type -> type != DeathDto.class)
                 .forEach(type -> names.addAll(fieldNames.get(type)));
         return Collections.unmodifiableSet(names);
     }
@@ -112,8 +150,12 @@ public final class BattleUserResultReader {
             String field = "userGames";
             if (exception instanceof JsonMappingException mapping) {
                 // Only the top-level field is safe to log; never echo values or map keys.
-                field = mapping.getPath().stream().map(JsonMappingException.Reference::getFieldName)
-                        .filter(name -> name != null).findFirst().orElse(field);
+                field =
+                        mapping.getPath().stream()
+                                .map(JsonMappingException.Reference::getFieldName)
+                                .filter(name -> name != null)
+                                .findFirst()
+                                .orElse(field);
             }
             throw invalid(field + suffix);
         }

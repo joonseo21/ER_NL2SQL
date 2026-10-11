@@ -10,18 +10,25 @@ import java.util.Map;
 
 /** Test-only column views keep the independent V4 contract assertions readable. */
 public final class StoredColumnAssertions {
-    private StoredColumnAssertions() {
-    }
+    private StoredColumnAssertions() {}
 
     public static Map<String, Object> game(GameData game) {
-        var values = fields(List.of(game.fields()));
+        Map<String, Object> values = fields(List.of(game.fields()));
         values.put("team_count", game.teamCount());
         return values;
     }
 
     public static Map<String, Object> participant(ParticipantData data) {
-        var values = fields(List.of(data.core(), data.combat(), data.stats(), data.credits(),
-                data.crafting(), data.activity(), data.loadout()));
+        Map<String, Object> values =
+                fields(
+                        List.of(
+                                data.core(),
+                                data.combat(),
+                                data.stats(),
+                                data.credits(),
+                                data.crafting(),
+                                data.activity(),
+                                data.loadout()));
         values.put("version_major", data.versionMajor());
         values.put("version_minor", data.versionMinor());
         return values;
@@ -29,11 +36,14 @@ public final class StoredColumnAssertions {
 
     private static Map<String, Object> fields(List<Object> records) {
         Map<String, Object> values = new LinkedHashMap<>();
-        var names = new PropertyNamingStrategies.SnakeCaseStrategy();
+        PropertyNamingStrategies.SnakeCaseStrategy names =
+                new PropertyNamingStrategies.SnakeCaseStrategy();
         try {
             for (Object record : records) {
                 for (RecordComponent component : record.getClass().getRecordComponents()) {
-                    values.put(names.translate(component.getName()), component.getAccessor().invoke(record));
+                    values.put(
+                            names.translate(component.getName()),
+                            component.getAccessor().invoke(record));
                 }
             }
         } catch (ReflectiveOperationException exception) {

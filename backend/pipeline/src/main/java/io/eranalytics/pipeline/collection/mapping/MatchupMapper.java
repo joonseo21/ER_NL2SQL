@@ -9,18 +9,26 @@ import java.util.List;
 import java.util.Map;
 
 public final class MatchupMapper {
-    private MatchupMapper() {
-    }
+    private MatchupMapper() {}
 
     public static List<MatchupRow> map(Integer character, MatchupDto input) {
         Map<Integer, Integer> kills = input.killDetails() == null ? Map.of() : input.killDetails();
-        Map<Integer, Integer> deaths = input.deathDetails() == null ? Map.of() : input.deathDetails();
-        var opponents = new LinkedHashSet<>(kills.keySet());
+        Map<Integer, Integer> deaths =
+                input.deathDetails() == null ? Map.of() : input.deathDetails();
+        LinkedHashSet<Integer> opponents = new LinkedHashSet<>(kills.keySet());
         opponents.addAll(deaths.keySet());
         if (character == null && !opponents.isEmpty()) {
             throw invalid("characterNum");
         }
-        return opponents.stream().sorted().map(opponent -> new MatchupRow(
-                character, opponent, kills.getOrDefault(opponent, 0), deaths.getOrDefault(opponent, 0))).toList();
+        return opponents.stream()
+                .sorted()
+                .map(
+                        opponent ->
+                                new MatchupRow(
+                                        character,
+                                        opponent,
+                                        kills.getOrDefault(opponent, 0),
+                                        deaths.getOrDefault(opponent, 0)))
+                .toList();
     }
 }

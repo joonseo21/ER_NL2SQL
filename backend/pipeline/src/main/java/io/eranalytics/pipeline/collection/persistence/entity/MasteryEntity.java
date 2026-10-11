@@ -14,8 +14,7 @@ import lombok.NoArgsConstructor;
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class MasteryEntity extends AssignedIdEntity<MasteryId> {
-    @EmbeddedId
-    private MasteryId id;
+    @EmbeddedId private MasteryId id;
 
     @Column(name = "mastery_level")
     private Integer masteryLevel;

@@ -98,8 +98,13 @@ public class CreditFields {
         this.killGammaGainVfCredit = data.killGammaGainVfCredit();
         this.killDroneGainVfCredit = data.killDroneGainVfCredit();
         this.killItemBountyGainVfCredit = data.killItemBountyGainVfCredit();
-        this.totalVfCredits = data.totalVfCredits() == null ? null : data.totalVfCredits().toArray(Integer[]::new);
-        this.usedVfCredits = data.usedVfCredits() == null ? null : data.usedVfCredits().toArray(Integer[]::new);
-        this.totalTkPerMin = data.totalTkPerMin() == null ? null : data.totalTkPerMin().toArray(Integer[]::new);
+        this.totalVfCredits =
+                data.totalVfCredits() == null
+                        ? null
+                        : data.totalVfCredits().toArray(Integer[]::new);
+        this.usedVfCredits =
+                data.usedVfCredits() == null ? null : data.usedVfCredits().toArray(Integer[]::new);
+        this.totalTkPerMin =
+                data.totalTkPerMin() == null ? null : data.totalTkPerMin().toArray(Integer[]::new);
     }
 }

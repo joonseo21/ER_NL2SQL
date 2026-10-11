@@ -23,7 +23,9 @@ def test_samples_only_request_public_contract_columns() -> None:
 
 
 def test_context_describes_v5_names_access_and_approved_tier_policy() -> None:
-    prompt = build_prompt("티어별 집계", {"participants": [{"user_id": 123, "tier": "플래티넘 미만"}]})
+    prompt = build_prompt(
+        "티어별 집계", {"participants": [{"user_id": 123, "tier": "플래티넘 미만"}]}
+    )
     assert "Non-identifying sample rows" in prompt
     assert "Both remain in aggregates without a tier condition" in prompt
     assert "Non-recursive WITH" in prompt

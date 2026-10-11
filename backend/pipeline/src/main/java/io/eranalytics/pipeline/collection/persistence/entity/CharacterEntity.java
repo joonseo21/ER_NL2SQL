@@ -1,14 +1,14 @@
 package io.eranalytics.pipeline.collection.persistence.entity;
 
+import io.eranalytics.pipeline.collection.metadata.MetadataName;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.time.Instant;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import io.eranalytics.pipeline.collection.metadata.MetadataName;
-import java.time.Instant;
 
 @Entity
 @Table(name = "characters")
@@ -27,12 +27,16 @@ public class CharacterEntity {
 
     @Column(columnDefinition = "text")
     private String source;
+
     @Column(name = "l10n_key", columnDefinition = "text")
     private String l10nKey;
+
     @Column(name = "checked_at")
     private Instant checkedAt;
 
-    public CharacterEntity(int code) { this.characterCode = code; }
+    public CharacterEntity(int code) {
+        this.characterCode = code;
+    }
 
     public void applyMetadata(MetadataName row, Instant checkedAt) {
         this.nameKo = row.nameKo();

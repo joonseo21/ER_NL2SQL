@@ -70,7 +70,13 @@ public class ActivityFields {
         this.enterDimensionEmpoweredRift = data.enterDimensionEmpoweredRift();
         this.winFromDimensionEmpoweredRift = data.winFromDimensionEmpoweredRift();
         this.sumGetBuffCube = data.sumGetBuffCube();
-        this.itemTransferredDrone = data.itemTransferredDrone() == null ? null : data.itemTransferredDrone().toArray(Integer[]::new);
-        this.itemTransferredConsole = data.itemTransferredConsole() == null ? null : data.itemTransferredConsole().toArray(Integer[]::new);
+        this.itemTransferredDrone =
+                data.itemTransferredDrone() == null
+                        ? null
+                        : data.itemTransferredDrone().toArray(Integer[]::new);
+        this.itemTransferredConsole =
+                data.itemTransferredConsole() == null
+                        ? null
+                        : data.itemTransferredConsole().toArray(Integer[]::new);
     }
 }

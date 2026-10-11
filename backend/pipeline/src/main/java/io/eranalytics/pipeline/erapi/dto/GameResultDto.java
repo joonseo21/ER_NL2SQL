@@ -15,6 +15,4 @@ public record GameResultDto(
         Integer mainWeather,
         Integer subWeather,
         OffsetDateTime startDtm,
-        String serverName
-) {
-}
+        String serverName) {}

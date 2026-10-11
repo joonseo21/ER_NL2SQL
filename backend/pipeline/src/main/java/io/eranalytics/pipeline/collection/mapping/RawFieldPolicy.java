@@ -16,7 +16,8 @@ public final class RawFieldPolicy {
     public RawFieldPolicy(BattleUserResultReader reader) {
         Set<String> keys = new LinkedHashSet<>(reader.resultFieldNames());
         for (String suffix : List.of("", "2", "3")) {
-            reader.deathFieldNames().stream().filter(name -> !RETAINED_DEATH_FIELDS.contains(name))
+            reader.deathFieldNames().stream()
+                    .filter(name -> !RETAINED_DEATH_FIELDS.contains(name))
                     .forEach(name -> keys.add(name + suffix));
         }
         movedKeys = Collections.unmodifiableSet(keys);

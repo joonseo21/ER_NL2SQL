@@ -6,6 +6,4 @@ import java.util.Map;
 
 public record MatchupDto(
         @JsonDeserialize(using = CountMapDeserializer.class) Map<Integer, Integer> killDetails,
-        @JsonDeserialize(using = CountMapDeserializer.class) Map<Integer, Integer> deathDetails
-) {
-}
+        @JsonDeserialize(using = CountMapDeserializer.class) Map<Integer, Integer> deathDetails) {}

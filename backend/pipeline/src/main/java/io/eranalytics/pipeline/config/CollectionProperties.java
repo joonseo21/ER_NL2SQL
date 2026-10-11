@@ -13,8 +13,7 @@ public record CollectionProperties(
         Duration metaRefresh,
         int minVersionMajor,
         int minSeedMmr,
-        BalanceBasis balanceBasis
-) {
+        BalanceBasis balanceBasis) {
     public void validate() {
         if (balanceBasis != BalanceBasis.LATEST_PATCH) {
             throw new IllegalStateException("Collection balance basis must be LATEST_PATCH");

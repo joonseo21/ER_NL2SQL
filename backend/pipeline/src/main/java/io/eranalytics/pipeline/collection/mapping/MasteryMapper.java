@@ -8,18 +8,19 @@ import java.util.ArrayList;
 import java.util.List;
 
 public final class MasteryMapper {
-    private MasteryMapper() {
-    }
+    private MasteryMapper() {}
 
     public static List<MasteryRow> map(MasteryDto input) {
         List<MasteryRow> rows = new ArrayList<>();
         if (input.masteryLevel() != null) {
-            input.masteryLevel().forEach((code, level) -> {
-                if (level == null) {
-                    throw invalid("masteryLevel");
-                }
-                rows.add(new MasteryRow(code, level));
-            });
+            input.masteryLevel()
+                    .forEach(
+                            (code, level) -> {
+                                if (level == null) {
+                                    throw invalid("masteryLevel");
+                                }
+                                rows.add(new MasteryRow(code, level));
+                            });
         }
         return List.copyOf(rows);
     }

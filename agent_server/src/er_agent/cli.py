@@ -11,7 +11,6 @@ from .guard import guard_sql
 from .nl2sql import run_question
 from .settings import Settings
 
-
 MANUAL_QUERIES = {
     "game-count": "SELECT count(*) AS game_count FROM games",
     "character-picks": """
@@ -54,7 +53,9 @@ def main() -> None:
             raise SystemExit(1) from None
     elif arguments.command == "manual":
         settings.require_database()
-        result = execute_select(settings.database_url, guard_sql(MANUAL_QUERIES[arguments.query]).sql)
+        result = execute_select(
+            settings.database_url, guard_sql(MANUAL_QUERIES[arguments.query]).sql
+        )
     else:
         result = {"sql": guard_sql(arguments.sql).sql}
     print(json.dumps(result, ensure_ascii=False, default=str, indent=2))

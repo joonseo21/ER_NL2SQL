@@ -36,14 +36,17 @@ final class DatabasePreflightRunner implements ApplicationRunner {
     public void run(ApplicationArguments args) {
         String password = environment.getProperty("spring.datasource.password", "");
         List<String> passwordSources = findPropertySources("COLLECTOR_PASSWORD");
-        log.info("Collector DB preflight: url={}, username={}, passwordConfigured={}, passwordLength={}, passwordSources={}",
+        log.info(
+                "Collector DB preflight: url={}, username={}, passwordConfigured={}, passwordLength={}, passwordSources={}",
                 environment.getProperty("spring.datasource.url"),
                 environment.getProperty("spring.datasource.username"),
-                !password.isBlank(), password.length(), passwordSources);
+                !password.isBlank(),
+                password.length(),
+                passwordSources);
 
         try (Connection connection = dataSource.getConnection();
-             Statement statement = connection.createStatement();
-             ResultSet result = statement.executeQuery("SELECT current_user")) {
+                Statement statement = connection.createStatement();
+                ResultSet result = statement.executeQuery("SELECT current_user")) {
             result.next();
             log.info("Collector DB preflight succeeded: current_user={}", result.getString(1));
         } catch (SQLException exception) {

@@ -2,6 +2,8 @@ plugins {
     id 'java'
     id 'org.springframework.boot' version '3.5.16'
     id 'io.spring.dependency-management' version '1.1.7'
+    id 'com.diffplug.spotless' version '8.10.4'
+    id 'checkstyle'
 }
 
 group = 'io.eranalytics'
@@ -35,6 +37,23 @@ dependencies {
     testAnnotationProcessor 'org.projectlombok:lombok'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+// 포맷은 Spotless가 자동으로 맞춘다. 수정: spotlessApply, 검사: spotlessCheck(check에 포함).
+spotless {
+    encoding 'UTF-8'
+    java {
+        // AOSP = google-java-format의 4칸 들여쓰기 변형
+        googleJavaFormat('1.28.0').aosp()
+        removeUnusedImports()
+        formatAnnotations()
+    }
+}
+
+// 포매터가 고칠 수 없는 규칙만 Checkstyle로 검사한다. 규칙: config/checkstyle/checkstyle.xml
+checkstyle {
+    toolVersion = '14.3.0'
+    maxWarnings = 0
 }
 
 // Keep the original, psql-compatible SQL intact. Flyway must own the transaction,

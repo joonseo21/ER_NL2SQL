@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +14,6 @@ from .database import execute_select, sample_rows
 from .guard import guard_sql
 from .prompt import build_prompt
 from .settings import Settings
-
 
 DEFAULT_LOG_PATH = Path(__file__).resolve().parents[2] / "nl2sql_log.jsonl"
 
@@ -34,12 +33,14 @@ class TrialLog:
     error: str | None = None
 
 
-def run_question(question: str, settings: Settings, log_path: Path = DEFAULT_LOG_PATH) -> list[dict[str, Any]]:
+def run_question(
+    question: str, settings: Settings, log_path: Path = DEFAULT_LOG_PATH
+) -> list[dict[str, Any]]:
     settings.require_database()
     settings.require_gemini()
     started = time.perf_counter()
     trial = TrialLog(
-        timestamp=datetime.now(timezone.utc).isoformat(),
+        timestamp=datetime.now(UTC).isoformat(),
         question=question,
         model=settings.gemini_model,
     )
@@ -74,7 +75,7 @@ def _generate_sql(client: genai.Client, model: str, prompt: str) -> tuple[str, i
         except genai_errors.ServerError as exception:
             if exception.code not in {500, 502, 503, 504} or attempt == 3:
                 raise
-            time.sleep(2 ** attempt)
+            time.sleep(2**attempt)
     raise RuntimeError("Unreachable Gemini retry state")
 
 

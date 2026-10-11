@@ -14,7 +14,7 @@ class Settings:
     gemini_model: str
 
     @classmethod
-    def from_env(cls) -> "Settings":
+    def from_env(cls) -> Settings:
         root_env = Path(__file__).resolve().parents[3] / ".env"
         load_dotenv(root_env)
         return cls(

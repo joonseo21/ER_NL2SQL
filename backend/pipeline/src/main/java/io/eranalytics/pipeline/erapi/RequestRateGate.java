@@ -9,7 +9,8 @@ public final class RequestRateGate {
     private long nextAllowedAt;
 
     public RequestRateGate(ErApiProperties properties) {
-        if (!Double.isFinite(properties.requestsPerSecond()) || properties.requestsPerSecond() <= 0) {
+        if (!Double.isFinite(properties.requestsPerSecond())
+                || properties.requestsPerSecond() <= 0) {
             throw new IllegalArgumentException("er.api.requests-per-second must be positive");
         }
         this.intervalNanos = (long) (1_000_000_000D / properties.requestsPerSecond());
@@ -23,7 +24,8 @@ public final class RequestRateGate {
                 Thread.sleep(waitNanos / 1_000_000, (int) (waitNanos % 1_000_000));
             } catch (InterruptedException exception) {
                 Thread.currentThread().interrupt();
-                throw new IllegalStateException("Interrupted while waiting for ER API rate limit", exception);
+                throw new IllegalStateException(
+                        "Interrupted while waiting for ER API rate limit", exception);
             }
         }
         nextAllowedAt = System.nanoTime() + intervalNanos;

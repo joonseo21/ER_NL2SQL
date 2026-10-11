@@ -18,12 +18,15 @@ public final class DeathMapper {
     private final Map<String, Integer> indexes;
     private final Map<String, Integer> characterCodes = new HashMap<>();
 
-    public DeathMapper(List<BattleUserResultDto> participants, Map<String, Integer> indexes,
-                       Map<String, Integer> characterCodesByName) {
+    public DeathMapper(
+            List<BattleUserResultDto> participants,
+            Map<String, Integer> indexes,
+            Map<String, Integer> characterCodesByName) {
         this.participants = participants;
         this.indexes = indexes;
-        characterCodesByName.forEach((name, code) ->
-                characterCodes.merge(name.toLowerCase(Locale.ROOT), code, Math::min));
+        characterCodesByName.forEach(
+                (name, code) ->
+                        characterCodes.merge(name.toLowerCase(Locale.ROOT), code, Math::min));
     }
 
     public List<DeathRow> map(List<DeathDto> deaths) {
@@ -52,8 +55,16 @@ public final class DeathMapper {
                     killerCharacter = characterCodes.get(name.toLowerCase(Locale.ROOT));
                 }
             }
-            rows.add(new DeathRow((short) (index + 1), type, killerIndex, killerCharacter,
-                    name, weapon, cause, place));
+            rows.add(
+                    new DeathRow(
+                            (short) (index + 1),
+                            type,
+                            killerIndex,
+                            killerCharacter,
+                            name,
+                            weapon,
+                            cause,
+                            place));
         }
         return List.copyOf(rows);
     }

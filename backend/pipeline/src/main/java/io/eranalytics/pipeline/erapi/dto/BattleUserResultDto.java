@@ -18,5 +18,4 @@ public record BattleUserResultDto(
         MasteryDto mastery,
         MatchupDto matchup,
         List<DeathDto> deaths,
-        ObjectNode raw
-) {}
+        ObjectNode raw) {}

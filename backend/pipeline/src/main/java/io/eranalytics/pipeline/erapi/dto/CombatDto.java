@@ -27,6 +27,4 @@ public record CombatDto(
         Integer killsPhaseThree,
         Integer deathsPhaseOne,
         Integer deathsPhaseTwo,
-        Integer deathsPhaseThree
-) {
-}
+        Integer deathsPhaseThree) {}

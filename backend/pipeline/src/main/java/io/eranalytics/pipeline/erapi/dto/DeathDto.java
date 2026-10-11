@@ -9,6 +9,4 @@ public record DeathDto(
         String killerWeapon,
         String causeOfDeath,
         @JsonDeserialize(using = TextIntegerDeserializer.class) Integer placeOfDeath,
-        String killDetail
-) {
-}
+        String killDetail) {}

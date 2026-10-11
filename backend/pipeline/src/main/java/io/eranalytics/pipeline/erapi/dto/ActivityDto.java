@@ -16,6 +16,4 @@ public record ActivityDto(
         Integer winFromDimensionEmpoweredRift,
         Integer sumGetBuffCube,
         List<Integer> itemTransferredDrone,
-        List<Integer> itemTransferredConsole
-) {
-}
+        List<Integer> itemTransferredConsole) {}

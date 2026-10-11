@@ -12,6 +12,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 
 class CollectionRunnerTest {
     private final CollectorRepository games = mock(CollectorRepository.class);
@@ -25,9 +26,17 @@ class CollectionRunnerTest {
     private final OffsetDateTime before = OffsetDateTime.now(clock).minusHours(4);
 
     private CollectionRunner runner(boolean continuous) {
-        return new CollectionRunner(games, frontier, bootstrap, crawler, processor, metadata, sleeper,
+        return new CollectionRunner(
+                games,
+                frontier,
+                bootstrap,
+                crawler,
+                processor,
+                metadata,
+                sleeper,
                 new ErApiProperties("https://example.invalid", "synthetic-key", 41, 0.5),
-                settings(30, continuous), clock);
+                settings(30, continuous),
+                clock);
     }
 
     @Test
@@ -35,12 +44,14 @@ class CollectionRunnerTest {
         QueueJob first = new QueueJob(1, "GAME", "200", 1);
         QueueJob next = new QueueJob(2, "GAME", "300", 1);
         CrawlUser user = new CrawlUser(1, 41, "synthetic_user", null);
-        when(games.claimNextGame()).thenReturn(Optional.of(first), Optional.empty(),
-                Optional.of(next), Optional.empty());
+        when(games.claimNextGame())
+                .thenReturn(
+                        Optional.of(first), Optional.empty(), Optional.of(next), Optional.empty());
         when(bootstrap.ensureUsers()).thenReturn(true);
-        when(frontier.selectNext(41, 4, 3600, before)).thenReturn(Optional.of(user), Optional.empty());
+        when(frontier.selectNext(41, 4, 3600, before))
+                .thenReturn(Optional.of(user), Optional.empty());
         runner(false).run(null);
-        var order = inOrder(games, processor, bootstrap, frontier, crawler);
+        InOrder order = inOrder(games, processor, bootstrap, frontier, crawler);
         order.verify(games).claimNextGame();
         order.verify(processor).process(first);
         order.verify(games).claimNextGame();
@@ -57,7 +68,10 @@ class CollectionRunnerTest {
         when(games.claimNextGame()).thenReturn(Optional.empty());
         when(bootstrap.ensureUsers()).thenReturn(true);
         when(frontier.selectNext(41, 4, 3600, before)).thenReturn(Optional.empty());
-        doNothing().doThrow(new CollectionInterruptedException()).when(sleeper).sleep(Duration.ofMinutes(5));
+        doNothing()
+                .doThrow(new CollectionInterruptedException())
+                .when(sleeper)
+                .sleep(Duration.ofMinutes(5));
         runner(true).run(null);
         verify(sleeper, times(2)).sleep(Duration.ofMinutes(5));
         verify(frontier, times(2)).selectNext(41, 4, 3600, before);
@@ -67,9 +81,10 @@ class CollectionRunnerTest {
     void exhaustedJobDoesNotBlockFollowingJob() {
         QueueJob failed = new QueueJob(1, "GAME", "200", 1);
         QueueJob next = new QueueJob(2, "GAME", "300", 1);
-        when(games.claimNextGame()).thenReturn(Optional.of(failed), Optional.of(next), Optional.empty());
+        when(games.claimNextGame())
+                .thenReturn(Optional.of(failed), Optional.of(next), Optional.empty());
         runner(false).run(null);
-        var order = inOrder(processor);
+        InOrder order = inOrder(processor);
         order.verify(processor).process(failed);
         order.verify(processor).process(next);
     }

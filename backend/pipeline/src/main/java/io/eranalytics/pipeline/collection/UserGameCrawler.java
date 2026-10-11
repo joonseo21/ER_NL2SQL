@@ -4,6 +4,7 @@ import io.eranalytics.pipeline.collection.model.CrawlUser;
 import io.eranalytics.pipeline.config.CollectionProperties;
 import io.eranalytics.pipeline.erapi.ApiException;
 import io.eranalytics.pipeline.erapi.ErApiClient;
+import io.eranalytics.pipeline.erapi.dto.UserGameSummary;
 import io.eranalytics.pipeline.erapi.dto.UserGamesPage;
 import java.util.HashSet;
 import java.util.Set;
@@ -20,8 +21,12 @@ public class UserGameCrawler {
     private final CollectionProperties settings;
     private final CollectionRetry retry;
 
-    public UserGameCrawler(ErApiClient api, CollectorRepository games, UserFrontierRepository frontier,
-                           CollectionProperties settings, CollectionRetry retry) {
+    public UserGameCrawler(
+            ErApiClient api,
+            CollectorRepository games,
+            UserFrontierRepository frontier,
+            CollectionProperties settings,
+            CollectionRetry retry) {
         this.api = api;
         this.games = games;
         this.frontier = frontier;
@@ -31,6 +36,7 @@ public class UserGameCrawler {
 
     /**
      * 해당 사용자의 경기 목록 수집
+     *
      * @param user
      */
     public void crawl(CrawlUser user) {
@@ -40,7 +46,9 @@ public class UserGameCrawler {
         } catch (CollectionInterruptedException exception) {
             throw exception;
         } catch (RuntimeException error) {
-            frontier.fail(user, error instanceof ApiException apiError && apiError.getStatusCode() == 404,
+            frontier.fail(
+                    user,
+                    error instanceof ApiException apiError && apiError.getStatusCode() == 404,
                     CollectionRetry.reason(error));
             return;
         }
@@ -69,18 +77,20 @@ public class UserGameCrawler {
                 frontier.complete(user, newest, true);
                 return;
             }
-            for (var game : page.userGames()) {
+            for (UserGameSummary game : page.userGames()) {
                 if (previousGameId != null && game.gameId() >= previousGameId) {
                     throw new IllegalArgumentException("User games are not strictly newest first");
                 }
                 previousGameId = game.gameId();
                 if (newest == null) newest = game.gameId();
-                if (user.crawledNewestGameId() != null && game.gameId() <= user.crawledNewestGameId()) {
+                if (user.crawledNewestGameId() != null
+                        && game.gameId() <= user.crawledNewestGameId()) {
                     frontier.complete(user, newest, true);
                     return;
                 }
                 if (game.matchingMode() != 3 || game.matchingTeamMode() != 3) continue;
-                if (game.seasonId() != user.seasonId() || game.versionMajor() < settings.minVersionMajor()) {
+                if (game.seasonId() != user.seasonId()
+                        || game.versionMajor() < settings.minVersionMajor()) {
                     frontier.complete(user, newest, true);
                     return;
                 }
@@ -90,11 +100,15 @@ public class UserGameCrawler {
                 frontier.complete(user, newest, true);
                 return;
             }
-            if (!cursors.add(page.next())) throw new IllegalArgumentException("Repeated user games cursor");
+            if (!cursors.add(page.next())) {
+                throw new IllegalArgumentException("Repeated user games cursor");
+            }
             cursor = page.next();
         }
         frontier.complete(user, newest, false);
-        log.info("User frontier {} reached page limit {}; completion marker retained",
-                user.userId(), settings.maxPagesPerUser());
+        log.info(
+                "User frontier {} reached page limit {}; completion marker retained",
+                user.userId(),
+                settings.maxPagesPerUser());
     }
 }

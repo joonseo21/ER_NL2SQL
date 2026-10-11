@@ -31,6 +31,4 @@ public record ParticipantCoreDto(
         Integer useEmoticonCount,
         Boolean gambit,
         Boolean kingsGambit,
-        Boolean killGamma
-) {
-}
+        Boolean killGamma) {}

@@ -14,8 +14,7 @@ import lombok.NoArgsConstructor;
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class DeathEntity extends AssignedIdEntity<DeathId> {
-    @EmbeddedId
-    private DeathId id;
+    @EmbeddedId private DeathId id;
 
     @Column(name = "killer_type", columnDefinition = "text")
     private String killerType;

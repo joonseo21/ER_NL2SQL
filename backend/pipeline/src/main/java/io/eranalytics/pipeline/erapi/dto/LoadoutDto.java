@@ -16,6 +16,5 @@ public record LoadoutDto(
         JsonNode creditSource,
         JsonNode killMonsters,
         @JsonDeserialize(using = TextIntegerDeserializer.class) Integer placeOfStart,
-        @JsonProperty("skillOrderInfo") @JsonDeserialize(using = SkillOrderDeserializer.class) List<Integer> skillOrder
-) {
-}
+        @JsonProperty("skillOrderInfo") @JsonDeserialize(using = SkillOrderDeserializer.class)
+                List<Integer> skillOrder) {}

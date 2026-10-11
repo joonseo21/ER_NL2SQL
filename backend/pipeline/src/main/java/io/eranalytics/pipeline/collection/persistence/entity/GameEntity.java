@@ -1,6 +1,7 @@
 package io.eranalytics.pipeline.collection.persistence.entity;
 
 import io.eranalytics.pipeline.collection.model.GameData;
+import io.eranalytics.pipeline.erapi.dto.GameResultDto;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -71,7 +72,7 @@ public class GameEntity extends AssignedIdEntity<Long> {
     }
 
     public void apply(GameData data, OffsetDateTime fetchedAt) {
-        var fields = data.fields();
+        GameResultDto fields = data.fields();
         this.gameId = fields.gameId();
         this.seasonId = fields.seasonId();
         this.matchingMode = fields.matchingMode();

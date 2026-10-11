@@ -1,7 +1,7 @@
 package io.eranalytics.pipeline.collection;
 
-import io.eranalytics.pipeline.erapi.ApiException;
 import io.eranalytics.pipeline.collection.model.RetryResult;
+import io.eranalytics.pipeline.erapi.ApiException;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.function.BiConsumer;
@@ -25,13 +25,17 @@ public class CollectionRetry {
     }
 
     public <T> T call(String operation, Supplier<T> action) {
-        var result = run(operation, 1, attempt -> {}, (attempt, error) -> {}, action);
+        RetryResult<T> result = run(operation, 1, attempt -> {}, (attempt, error) -> {}, action);
         if (result.failure() != null) throw result.failure();
         return result.value();
     }
 
-    public <T> RetryResult<T> run(String operation, int firstAttempt, IntConsumer beforeAttempt,
-                      BiConsumer<Integer, RuntimeException> onFailure, Supplier<T> action) {
+    public <T> RetryResult<T> run(
+            String operation,
+            int firstAttempt,
+            IntConsumer beforeAttempt,
+            BiConsumer<Integer, RuntimeException> onFailure,
+            Supplier<T> action) {
         if (firstAttempt < 1 || firstAttempt > MAX_ATTEMPTS) {
             throw new IllegalArgumentException("Invalid retry attempt");
         }
@@ -40,18 +44,28 @@ public class CollectionRetry {
             try {
                 return new RetryResult<>(action.get(), null);
             } catch (RuntimeException error) {
-                if (Thread.currentThread().isInterrupted() || error instanceof CollectionInterruptedException) {
+                if (Thread.currentThread().isInterrupted()
+                        || error instanceof CollectionInterruptedException) {
                     throw new CollectionInterruptedException();
                 }
                 onFailure.accept(attempt, error);
                 if (!retryable(error) || attempt == MAX_ATTEMPTS) {
-                    log.warn("Collection operation {} failed finally at attempt {}/{} ({})",
-                            operation, attempt, MAX_ATTEMPTS, reason(error));
+                    log.warn(
+                            "Collection operation {} failed finally at attempt {}/{} ({})",
+                            operation,
+                            attempt,
+                            MAX_ATTEMPTS,
+                            reason(error));
                     return new RetryResult<>(null, error);
                 }
                 Duration delay = Duration.ofSeconds(Math.min(60, 1L << (attempt - 1)));
-                log.warn("Collection operation {} attempt {}/{} failed ({}); retry in {}",
-                        operation, attempt, MAX_ATTEMPTS, reason(error), delay);
+                log.warn(
+                        "Collection operation {} attempt {}/{} failed ({}); retry in {}",
+                        operation,
+                        attempt,
+                        MAX_ATTEMPTS,
+                        reason(error),
+                        delay);
                 sleeper.sleep(delay);
             }
         }
@@ -61,7 +75,8 @@ public class CollectionRetry {
     public static boolean retryable(RuntimeException error) {
         if (error instanceof ApiException api) return api.retryable();
         for (Throwable cause = error; cause != null; cause = cause.getCause()) {
-            if (cause instanceof ResourceAccessException || cause instanceof IOException
+            if (cause instanceof ResourceAccessException
+                    || cause instanceof IOException
                     || cause instanceof TransientDataAccessException) return true;
         }
         return false;

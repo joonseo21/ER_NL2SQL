@@ -30,6 +30,7 @@
 
 ## 검증과 기획 전달
 
+- 코드를 바꾸면 스타일 검사를 통과시킨다. Python은 Ruff, Java는 Spotless와 Checkstyle이며 명령은 operations의 코드 스타일 검사 절을 따른다. Checkstyle 기준선에 새 예외를 추가하지 않는다.
 - 변경에 맞는 빌드·테스트·실행 확인을 수행한다. 실패·미실행 원인과 미검증 범위를 기록한다. 로컬 테스트를 실제 API·운영 DB 검증으로 표기하지 않는다.
 - 개발 작업 완료 시 docs/spec.md의 현재 구현과 발견사항을 갱신한다. 변경 동작, 근거, 검증 결과, 배포 여부, 기획 영향, 남은 결정이 있어야 한다.
 - API 발견은 docs/api_findings.md, 운영 변경은 docs/operations.md에 반영하고 spec에서 참조한다.

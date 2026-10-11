@@ -9,8 +9,7 @@ import java.util.HashSet;
 import java.util.List;
 
 public final class TraitMapper {
-    private TraitMapper() {
-    }
+    private TraitMapper() {}
 
     public static List<TraitRow> map(Integer core, TraitsDto input) {
         List<TraitRow> rows = new ArrayList<>();
@@ -26,7 +25,7 @@ public final class TraitMapper {
         if (codes == null) {
             return;
         }
-        var seen = new HashSet<Integer>();
+        HashSet<Integer> seen = new HashSet<Integer>();
         for (Integer code : codes) {
             if (code == null || !seen.add(code)) {
                 throw invalid(field);

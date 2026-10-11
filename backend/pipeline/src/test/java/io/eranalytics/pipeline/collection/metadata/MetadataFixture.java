@@ -7,23 +7,37 @@ import java.util.Map;
 
 public final class MetadataFixture {
     private MetadataFixture() {}
-    public static Map<String,JsonNode> tables() {
-        Map<String,String> inputs = Map.of(
-            "Character", "[{\"code\":1,\"name\":\"Synthetic\"}]",
-            "WeaponTypeInfo", "[{\"type\":\"Glove\"}]",
-            "ItemWeapon", "[{\"code\":100001,\"itemType\":\"Weapon\",\"weaponType\":\"Glove\",\"itemGrade\":\"Epic\"}]",
-            "ItemArmor", "[{\"code\":200001,\"itemType\":\"Armor\",\"armorType\":\"Head\",\"itemGrade\":\"Legend\"}]",
-            "Trait", "[{\"code\":700001,\"traitType\":\"Core\",\"traitGroup\":\"Havoc\",\"active\":true}]",
-            "TacticalSkillSet", "[{\"code\":121,\"skillCode\":4114001}]",
-            "TacticalSkillSetGroup", "[{\"group\":120,\"startCode\":121,\"icon\":\"VSkillIcon_4110000\",\"active\":true}]",
-            "Area", "[{\"code\":10,\"name\":\"Harbor\"}]");
-        Map<String,JsonNode> result = new LinkedHashMap<>();
-        inputs.forEach((key,json) -> {
-            try { result.put(key,new ObjectMapper().readTree("{\"code\":200,\"data\":"+json+"}")); }
-            catch (Exception error) { throw new IllegalStateException(error); }
-        });
+
+    public static Map<String, JsonNode> tables() {
+        Map<String, String> inputs =
+                Map.of(
+                        "Character", "[{\"code\":1,\"name\":\"Synthetic\"}]",
+                        "WeaponTypeInfo", "[{\"type\":\"Glove\"}]",
+                        "ItemWeapon",
+                                "[{\"code\":100001,\"itemType\":\"Weapon\",\"weaponType\":\"Glove\",\"itemGrade\":\"Epic\"}]",
+                        "ItemArmor",
+                                "[{\"code\":200001,\"itemType\":\"Armor\",\"armorType\":\"Head\",\"itemGrade\":\"Legend\"}]",
+                        "Trait",
+                                "[{\"code\":700001,\"traitType\":\"Core\",\"traitGroup\":\"Havoc\",\"active\":true}]",
+                        "TacticalSkillSet", "[{\"code\":121,\"skillCode\":4114001}]",
+                        "TacticalSkillSetGroup",
+                                "[{\"group\":120,\"startCode\":121,\"icon\":\"VSkillIcon_4110000\",\"active\":true}]",
+                        "Area", "[{\"code\":10,\"name\":\"Harbor\"}]");
+        Map<String, JsonNode> result = new LinkedHashMap<>();
+        inputs.forEach(
+                (key, json) -> {
+                    try {
+                        result.put(
+                                key,
+                                new ObjectMapper()
+                                        .readTree("{\"code\":200,\"data\":" + json + "}"));
+                    } catch (Exception error) {
+                        throw new IllegalStateException(error);
+                    }
+                });
         return result;
     }
+
     public static String localization() {
         return """
                 Character/Name/1┃가상 실험체

@@ -11,10 +11,18 @@ import lombok.Getter;
 @Getter
 public abstract class NamedMetadataEntity {
     @Id private Integer code;
-    @Column(name="name_ko", columnDefinition="text") private String nameKo;
-    @Column(columnDefinition="text") private String source;
-    @Column(name="l10n_key", columnDefinition="text") private String l10nKey;
-    @Column(name="checked_at") private Instant checkedAt;
+
+    @Column(name = "name_ko", columnDefinition = "text")
+    private String nameKo;
+
+    @Column(columnDefinition = "text")
+    private String source;
+
+    @Column(name = "l10n_key", columnDefinition = "text")
+    private String l10nKey;
+
+    @Column(name = "checked_at")
+    private Instant checkedAt;
 
     public void apply(MetadataName row, Instant checkedAt) {
         this.code = row.code();
@@ -27,4 +35,3 @@ public abstract class NamedMetadataEntity {
 
     protected void applyDetails(MetadataName.Details details) {}
 }
-
