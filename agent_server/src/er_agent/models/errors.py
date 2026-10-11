@@ -19,3 +19,8 @@ class DatabaseQueryError(RuntimeError):
     def __init__(self, sqlstate: str | None) -> None:
         self.sqlstate = sqlstate
         super().__init__(f"database: SQLSTATE {sqlstate or 'unavailable'}")
+
+
+class SummaryFormatError(ValueError):
+    def __init__(self) -> None:
+        super().__init__("Model response does not match the summary contract")

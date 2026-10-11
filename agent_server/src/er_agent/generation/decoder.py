@@ -6,6 +6,7 @@ from typing import Any
 
 from ..models.context import QueryIntent, TierSelection, TimeRange, UnsupportedReason
 from ..models.errors import GenerationFormatError
+from ..models.evidence import SampleColumn, SampleUnit
 from ..models.generation import Generation
 from ..models.names import NameCategory, NameTerm
 from ..models.query import PatchFilter, PatchMode, PatchVersion
@@ -73,10 +74,17 @@ def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 
 def parse_generation(text: str) -> Generation:
     try:
-        item = _fields(json.loads(text, object_pairs_hook=_unique_object), {"intent", "sql"})
+        item = _fields(
+            json.loads(text, object_pairs_hook=_unique_object), {"intent", "sql", "sample"}
+        )
         if item["sql"] is not None and not isinstance(item["sql"], str):
             raise GenerationFormatError
-        return Generation(_intent(item["intent"]), item["sql"])
+        sample = _fields(item["sample"], {"column", "unit"}) if item["sample"] is not None else None
+        return Generation(
+            _intent(item["intent"]),
+            item["sql"],
+            SampleColumn(sample["column"], SampleUnit(sample["unit"])) if sample else None,
+        )
     except (ValueError, TypeError, KeyError, OverflowError):
         # Do not echo untrusted model output or conversion errors to logs/clients.
         raise GenerationFormatError from None

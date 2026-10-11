@@ -14,8 +14,10 @@ from .database.query_executor import PostgresQueryExecutor, execute_select
 from .generation.agent import SqlGenerationAgent
 from .generation.gemini import GeminiTransport, create_client
 from .generation.retry import RetryingCaller
+from .generation.session import QueryGenerationAgent
+from .generation.summary import ResultSummaryAgent
 from .models.query import QueryRequest, QueryResponse, ResponseKind
-from .query.ports import QueryRecorder, SqlGenerator
+from .query.ports import QueryGenerator, QueryRecorder
 from .query.service import QueryService
 from .recording.jsonl import DEFAULT_LOG_PATH, JsonlSink
 from .recording.trial import TrialRecorder
@@ -25,14 +27,15 @@ MANUAL_QUERY_NAMES = tuple(MANUAL_QUERIES)
 
 
 class QueryFailed(RuntimeError):
-    """Compatibility error until CLI response envelopes are connected in 7-4."""
+    """Non-answer error for the legacy row-only Python helper."""
 
 
 @contextmanager
-def _generation_session(settings: Settings, recorder: QueryRecorder) -> Iterator[SqlGenerator]:
+def _generation_session(settings: Settings, recorder: QueryRecorder) -> Iterator[QueryGenerator]:
     with create_client(settings.gemini_api_key) as client:
         transport = GeminiTransport(client, settings.gemini_model)
-        yield SqlGenerationAgent(RetryingCaller(transport, recorder), recorder)
+        caller = RetryingCaller(transport, recorder)
+        yield QueryGenerationAgent(SqlGenerationAgent(caller, recorder), ResultSummaryAgent(caller))
 
 
 def run_query(

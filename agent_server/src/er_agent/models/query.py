@@ -5,6 +5,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
+from .evidence import GroupEvidence
 from .limits import MAX_ROWS
 from .names import NameClarification
 from .serialization import json_value
@@ -102,8 +103,12 @@ class DataEvidence:
     sample_size: int | None = None
     sample_unit: str | None = None
     data_as_of: datetime | None = None
+    groups: tuple[GroupEvidence, ...] = ()
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "groups", tuple(self.groups))
+        if any(not isinstance(group, GroupEvidence) for group in self.groups):
+            raise ValueError("groups must contain GroupEvidence values")
         if self.sample_unit is not None:
             _text(self.sample_unit, "sample_unit")
         if self.sample_size is not None:

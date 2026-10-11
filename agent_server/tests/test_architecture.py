@@ -22,6 +22,7 @@ LAYER_IMPORTS = {
         "difflib",
         "time",
         "unicodedata",
+        "string",
     },
     "database": {
         "er_agent.models",

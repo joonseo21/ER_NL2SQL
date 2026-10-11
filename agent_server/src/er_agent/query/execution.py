@@ -24,13 +24,13 @@ def execute_attempt(
     guarded_sql = None
     error = None
     repairable = False
-    rows = None
+    table = None
     parameters = None
     try:
         scoped = scope_sql(sql, context)
         guarded_sql = scoped.sql
         parameters = scoped.parameters
-        rows = executor.execute(scoped.sql, scoped.parameters)
+        table = executor.execute(scoped.sql, scoped.parameters)
     except SqlGuardError as exception:
         error = f"guard: {exception}"
         repairable = True
@@ -51,10 +51,11 @@ def execute_attempt(
                 for key, value in (parameters or {}).items()
             },
             guard_passed=guarded_sql is not None,
-            execution_succeeded=rows is not None,
-            result_row_count=len(rows) if rows is not None else None,
+            execution_succeeded=table is not None,
+            result_row_count=len(table.rows) if table is not None else None,
+            result_columns=list(table.columns) if table is not None else None,
             error=error,
             repairable=repairable,
             elapsed_ms=int((perf_counter() - started) * 1000),
         )
-    return SqlAttempt(rows, guarded_sql, error, repairable)
+    return SqlAttempt(table, guarded_sql, error, repairable)

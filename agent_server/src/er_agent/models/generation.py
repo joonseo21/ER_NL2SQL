@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .context import QueryIntent
+from .evidence import SampleColumn
 
 TOKEN_FIELDS = (
     "prompt_token_count",
@@ -17,6 +18,7 @@ TOKEN_FIELDS = (
 class Generation:
     intent: QueryIntent
     sql: str | None
+    sample: SampleColumn | None = None
 
 
 @dataclass(frozen=True)

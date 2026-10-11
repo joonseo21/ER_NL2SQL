@@ -6,7 +6,9 @@ from typing import Any, Protocol
 
 from ..models.context import ContextSnapshot, ResolvedContext
 from ..models.generation import Generation
-from ..models.query import QueryRequest
+from ..models.query import QueryRequest, QueryResponse
+from ..models.sql import QueryTable
+from ..models.summary import SummaryDraft
 
 
 class QuerySettings(Protocol):
@@ -23,7 +25,7 @@ class ContextRepository(Protocol):
 
 
 class QueryExecutor(Protocol):
-    def execute(self, sql: str, parameters: dict[str, Any]) -> list[dict[str, Any]]: ...
+    def execute(self, sql: str, parameters: dict[str, Any]) -> QueryTable: ...
 
 
 class SqlGenerator(Protocol):
@@ -32,6 +34,10 @@ class SqlGenerator(Protocol):
     def repair(
         self, request: QueryRequest, context: ResolvedContext, sql: str, error: str
     ) -> str: ...
+
+
+class QueryGenerator(SqlGenerator, Protocol):
+    def summarize(self, response: QueryResponse) -> SummaryDraft: ...
 
 
 class QueryRecorder(Protocol):

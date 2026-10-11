@@ -142,8 +142,16 @@ def guard_sql(model_text: str, max_rows: int = MAX_ROWS) -> GuardedSql:
             "Columns could not be resolved against the allowed schema"
         ) from exception
     _reject_whole_rows(statement)
+    _reject_duplicate_outputs(statement)
 
     return GuardedSql(sql=statement.sql(dialect="postgres", pretty=True), limit_added=limit_added)
+
+
+def _reject_duplicate_outputs(statement: exp.Select) -> None:
+    # Check the final aliases after qualification, including implicit output names.
+    names = [projection.alias_or_name for projection in statement.selects]
+    if len(names) != len(set(names)):
+        raise SqlGuardError("Result column names must be unique; use distinct aliases")
 
 
 def _validate_structure(statement: exp.Select) -> None:

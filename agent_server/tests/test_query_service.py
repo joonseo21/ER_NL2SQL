@@ -14,6 +14,8 @@ from er_agent.models.errors import DatabaseQueryError
 from er_agent.models.generation import Generation
 from er_agent.models.names import NameTerm
 from er_agent.models.query import QueryRequest, ResponseKind
+from er_agent.models.sql import QueryTable
+from er_agent.models.summary import CellReference, SummaryDraft, SummarySentence
 from er_agent.query.service import QueryService
 from er_agent.recording.trial import TrialRecorder
 
@@ -47,8 +49,16 @@ def service(
     generator = MagicMock()
     generator.generate.return_value = generation
     generator.repair.return_value = "SELECT count(*) AS samples FROM participants"
+    generator.summarize.return_value = SummaryDraft(
+        (SummarySentence("표본은 {0}건입니다.", (CellReference(0, "samples"),)),)
+    )
     executor = MagicMock()
-    executor.execute.side_effect = failures
+    executor.execute.side_effect = [
+        QueryTable(tuple(value[0]) if value else (), tuple(value))
+        if isinstance(value, list)
+        else value
+        for value in failures
+    ]
     query = QueryService(
         ConfiguredQuery(), repository, lambda: nullcontext(generator), executor, recorder
     )

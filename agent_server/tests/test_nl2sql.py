@@ -13,10 +13,20 @@ from google.genai import errors
 from er_agent.bootstrap import run_query, run_question
 from er_agent.models.context import ContextSnapshot
 from er_agent.models.query import PatchVersion, QueryRequest, ResponseKind
+from er_agent.models.sql import QueryTable
 from er_agent.settings import Settings
 
 SETTINGS = Settings("synthetic-url", "synthetic-key", "test-model")
 GOOD_SQL = "SELECT count(*) AS samples FROM participants"
+DUPLICATE_SQL = "SELECT count(*) AS value, count(DISTINCT game_id) AS value FROM participants"
+SUMMARY = json.dumps(
+    {
+        "sentences": [
+            {"template": "표본은 {0}건입니다.", "cells": [{"row": 0, "column": "samples"}]}
+        ]
+    },
+    ensure_ascii=False,
+)
 
 
 def output(text: str) -> SimpleNamespace:
@@ -36,7 +46,8 @@ def execution(query_snapshot: ContextSnapshot) -> Iterator[MagicMock]:
             return_value=query_snapshot,
         ),
         patch(
-            "er_agent.database.query_executor.execute_select", return_value=[{"samples": 4}]
+            "er_agent.database.query_executor.execute_table",
+            return_value=QueryTable(("samples",), ({"samples": 4},)),
         ) as execute,
     ):
         yield execute
@@ -48,17 +59,18 @@ def test_success_validates_context_and_logs_returned_rows(
     execution: MagicMock,
     generation_text: Callable[..., str],
 ) -> None:
-    fake_client.models.generate_content.return_value = output(generation_text())
+    fake_client.models.generate_content.side_effect = [output(generation_text()), output(SUMMARY)]
     path = tmp_path / "log.jsonl"
     answer = run_query(QueryRequest("참가자 수"), SETTINGS, path)
     assert answer.kind == ResponseKind.ANSWER
     assert answer.rows == ({"samples": 4},)
     assert answer.applied_conditions.conditions.patch.versions == (PatchVersion(5, 0),)
-    assert answer.summary is None
+    assert answer.summary == "표본은 4건입니다."
+    assert answer.evidence.sample_size == 4
     assert execution.call_args.args[2]["__er_season"] == 41
     log = events(path)
     assert log[-1]["response"] == answer.to_dict()
-    assert log[-1]["logical_calls"] == log[-1]["physical_calls"] == 1
+    assert log[-1]["logical_calls"] == log[-1]["physical_calls"] == 2
     assert all(row["log_id"] == answer.log_id for row in log)
     assert events(path, "sql_attempt")[0]["execution_succeeded"]
 
@@ -81,6 +93,7 @@ def test_guard_repair_is_one_call_and_repaired_sql_is_guarded(
     fake_client.models.generate_content.side_effect = [
         output(generation_text(first)),
         output(GOOD_SQL),
+        output(SUMMARY),
     ]
     path = tmp_path / "log.jsonl"
     answer = run_query(QueryRequest("참가자 수"), SETTINGS, path)
@@ -89,8 +102,8 @@ def test_guard_repair_is_one_call_and_repaired_sql_is_guarded(
     attempts = events(path, "sql_attempt")
     assert [attempt["guard_passed"] for attempt in attempts] == [False, True]
     assert [attempt["generated_sql"] for attempt in attempts] == [first, GOOD_SQL]
-    assert events(path)[-1]["logical_calls"] == 2
-    repair_prompt = fake_client.models.generate_content.call_args.kwargs["contents"]
+    assert events(path)[-1]["logical_calls"] == 3
+    repair_prompt = fake_client.models.generate_content.call_args_list[1].kwargs["contents"]
     assert "Repair the failed SQL once" in repair_prompt
     assert "guard:" in repair_prompt
 
@@ -101,8 +114,15 @@ def test_database_error_is_repaired_with_sqlstate_without_private_message(
     execution: MagicMock,
     generation_text: Callable[..., str],
 ) -> None:
-    fake_client.models.generate_content.side_effect = [output(generation_text()), output(GOOD_SQL)]
-    execution.side_effect = [psycopg.errors.DivisionByZero("SECRET database row"), [{"samples": 4}]]
+    fake_client.models.generate_content.side_effect = [
+        output(generation_text()),
+        output(GOOD_SQL),
+        output(SUMMARY),
+    ]
+    execution.side_effect = [
+        psycopg.errors.DivisionByZero("SECRET database row"),
+        QueryTable(("samples",), ({"samples": 4},)),
+    ]
     path = tmp_path / "log.jsonl"
     answer = run_query(QueryRequest("참가자 수"), SETTINGS, path)
     assert answer.kind == ResponseKind.ANSWER
@@ -226,16 +246,18 @@ def test_api_retries_are_distinct_from_sql_repair(
         unavailable,
         output(generation_text("DELETE FROM participants")),
         output(GOOD_SQL),
+        output(SUMMARY),
     ]
     path = tmp_path / "log.jsonl"
     with patch("er_agent.generation.retry.time.sleep"):
         assert run_query(QueryRequest("질문"), SETTINGS, path).kind == ResponseKind.ANSWER
-    assert events(path)[-1]["logical_calls"] == 2
-    assert events(path)[-1]["physical_calls"] == 3
+    assert events(path)[-1]["logical_calls"] == 3
+    assert events(path)[-1]["physical_calls"] == 4
     assert [event["phase"] for event in events(path, "llm_attempt")] == [
         "generate",
         "generate",
         "repair",
+        "summary",
     ]
 
 
@@ -306,7 +328,7 @@ def test_unserializable_result_failure_still_finishes_log(
     generation_text: Callable[..., str],
 ) -> None:
     fake_client.models.generate_content.return_value = output(generation_text())
-    execution.return_value = [{"samples": float("nan")}]
+    execution.return_value = QueryTable(("samples",), ({"samples": float("nan")},))
     path = tmp_path / "log.jsonl"
     with pytest.raises(ValueError):
         run_query(QueryRequest("질문"), SETTINGS, path)
@@ -323,3 +345,99 @@ def test_collection_season_requires_positive_integer(value: object) -> None:
 def test_existing_season_environment_variable_is_shared() -> None:
     with patch("er_agent.settings.load_dotenv"), patch.dict("os.environ", {"ER_SEASON_ID": "42"}):
         assert Settings.from_env().season_id == 42
+
+
+@pytest.mark.parametrize(
+    "text", ["not JSON PRIVATE", '{"sentences":[]}', SUMMARY.replace('"row": 0', '"row": 1')]
+)
+def test_summary_failure_preserves_sql_and_table_without_repair(
+    tmp_path: Path,
+    fake_client: MagicMock,
+    execution: MagicMock,
+    generation_text: Callable[..., str],
+    text: str,
+) -> None:
+    fake_client.models.generate_content.side_effect = [output(generation_text()), output(text)]
+    path = tmp_path / "log.jsonl"
+    answer = run_query(QueryRequest("참가자 수"), SETTINGS, path)
+    assert answer.kind == ResponseKind.ANSWER and answer.summary is None
+    assert answer.rows == ({"samples": 4},) and answer.sql
+    assert answer.evidence.sample_size == 4
+    assert any("요약을 생성하지" in warning for warning in answer.warnings)
+    execution.assert_called_once()
+    assert events(path)[-1]["logical_calls"] == 2
+    assert events(path, "summary_result")[0]["error"] == "summary_format"
+    assert "PRIVATE" not in path.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("recovered", [True, False])
+def test_summary_api_retries_never_reexecute_sql(
+    tmp_path: Path,
+    fake_client: MagicMock,
+    execution: MagicMock,
+    generation_text: Callable[..., str],
+    recovered: bool,
+) -> None:
+    unavailable = errors.APIError(503, {"error": {"code": 503, "message": "PRIVATE api"}})
+    tail = [unavailable, output(SUMMARY)] if recovered else [unavailable] * 3
+    fake_client.models.generate_content.side_effect = [output(generation_text()), *tail]
+    path = tmp_path / "log.jsonl"
+    with patch("er_agent.generation.retry.time.sleep"):
+        answer = run_query(QueryRequest("참가자 수"), SETTINGS, path)
+    assert answer.kind == ResponseKind.ANSWER and answer.rows == ({"samples": 4},)
+    assert (answer.summary is not None) is recovered
+    assert events(path)[-1]["logical_calls"] == 2
+    assert events(path)[-1]["physical_calls"] == (3 if recovered else 4)
+    assert len(events(path, "sql_attempt")) == 1
+    execution.assert_called_once()
+    assert "PRIVATE" not in path.read_text(encoding="utf-8")
+
+
+def test_empty_result_preserves_columns_and_skips_summary_call(
+    tmp_path: Path,
+    fake_client: MagicMock,
+    execution: MagicMock,
+    generation_text: Callable[..., str],
+) -> None:
+    fake_client.models.generate_content.return_value = output(
+        generation_text("SELECT character_num FROM participants LIMIT 0", sample=None)
+    )
+    execution.return_value = QueryTable(("character_num",), ())
+    path = tmp_path / "log.jsonl"
+    answer = run_query(QueryRequest("질문"), SETTINGS, path)
+    assert answer.columns == ("character_num",) and answer.rows == ()
+    assert answer.summary == "조회 결과가 없습니다."
+    assert answer.evidence.sample_size is None
+    assert events(path)[-1]["logical_calls"] == 1
+    fake_client.models.generate_content.assert_called_once()
+
+
+@pytest.mark.parametrize("repaired", [True, False])
+def test_duplicate_columns_repair_once_or_return_notice(
+    tmp_path: Path,
+    fake_client: MagicMock,
+    execution: MagicMock,
+    generation_text: Callable[..., str],
+    repaired: bool,
+) -> None:
+    replies = [
+        output(generation_text(DUPLICATE_SQL)),
+        output(GOOD_SQL if repaired else DUPLICATE_SQL),
+    ]
+    fake_client.models.generate_content.side_effect = replies + (
+        [output(SUMMARY)] if repaired else []
+    )
+    path = tmp_path / "log.jsonl"
+    answer = run_query(QueryRequest("참가자 수"), SETTINGS, path)
+    attempts = events(path, "sql_attempt")
+    assert len(attempts) == 2 and not attempts[0]["guard_passed"]
+    assert "Result column names must be unique" in attempts[0]["error"]
+    assert attempts[0]["repairable"]
+    if repaired:
+        assert answer.kind == ResponseKind.ANSWER and answer.rows == ({"samples": 4},)
+        execution.assert_called_once()
+        assert fake_client.models.generate_content.call_count == 3
+    else:
+        assert answer.kind == ResponseKind.NOTICE and answer.sql is None
+        execution.assert_not_called()
+        assert fake_client.models.generate_content.call_count == 2

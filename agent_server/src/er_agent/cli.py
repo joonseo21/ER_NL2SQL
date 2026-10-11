@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 
-from .bootstrap import MANUAL_QUERY_NAMES, QueryFailed, run_manual, run_question
+from .bootstrap import MANUAL_QUERY_NAMES, run_manual, run_query
+from .models.query import QueryRequest, ResponseKind
 from .settings import Settings
 from .sql.guard import guard_sql
 
@@ -26,11 +26,11 @@ def main() -> None:
     settings = Settings.from_env()
 
     if arguments.command == "ask":
-        try:
-            result = run_question(arguments.question, settings)
-        except QueryFailed as exception:
-            print(str(exception), file=sys.stderr)
-            raise SystemExit(1) from None
+        response = run_query(QueryRequest(arguments.question), settings)
+        print(json.dumps(response.to_dict(), ensure_ascii=False, indent=2))
+        if response.kind != ResponseKind.ANSWER:
+            raise SystemExit(1)
+        return
     elif arguments.command == "manual":
         result = run_manual(arguments.query, settings)
     else:

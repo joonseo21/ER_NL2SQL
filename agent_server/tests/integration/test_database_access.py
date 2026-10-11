@@ -41,6 +41,22 @@ GAME_IDS = (9400001, 9400002)
 PRIVATE_NICKNAMES = tuple(f"stage4_private_player_{i}" for i in range(5))
 
 
+def model_responses(generation: str, summary: str | None = None) -> list[SimpleNamespace]:
+    if summary is None:
+        summary = json.dumps(
+            {
+                "sentences": [
+                    {
+                        "template": "조회된 값은 {0}입니다.",
+                        "cells": [{"row": 0, "column": "samples"}],
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        )
+    return [SimpleNamespace(text=text, usage_metadata=None) for text in (generation, summary)]
+
+
 @pytest.fixture(scope="module")
 def database() -> dict[str, str]:
     url = os.getenv("STAGE4_TEST_DATABASE_URL")
@@ -434,9 +450,7 @@ def test_stage7_generated_pick_rate_keeps_all_character_denominator(
                      / NULLIF(count(*) FILTER (WHERE character_num = %(character_code)s),0) AS win_rate
         FROM participants
     """
-    fake_client.models.generate_content.return_value = SimpleNamespace(
-        text=generation_text(sql), usage_metadata=None
-    )
+    fake_client.models.generate_content.side_effect = model_responses(generation_text(sql))
     request = QueryRequest("픽률과 승률", QueryConditions(character_code=1))
     result = run_query(
         request, Settings(database["agent"], "fake-key", "fake-model"), tmp_path / "log.jsonl"
@@ -460,9 +474,7 @@ def test_stage7_applied_tier_changes_results(
     tier: str | None,
     expected: int,
 ) -> None:
-    fake_client.models.generate_content.return_value = SimpleNamespace(
-        text=generation_text(), usage_metadata=None
-    )
+    fake_client.models.generate_content.side_effect = model_responses(generation_text())
     result = run_query(
         QueryRequest("참가자 수", QueryConditions(tier=tier)),
         Settings(database["agent"], "fake-key", "fake-model"),
@@ -485,9 +497,7 @@ def test_stage7_direct_child_source_is_scoped_to_latest_patch(
     expected: int,
 ) -> None:
     sql = f"SELECT count(*) AS samples FROM {table}"
-    fake_client.models.generate_content.return_value = SimpleNamespace(
-        text=generation_text(sql), usage_metadata=None
-    )
+    fake_client.models.generate_content.side_effect = model_responses(generation_text(sql))
     result = run_query(
         QueryRequest("표본 수"),
         Settings(database["agent"], "fake-key", "fake-model"),
@@ -509,13 +519,14 @@ def test_stage7_one_repair_recovers_guard_or_database_error(
     fake_client.models.generate_content.side_effect = [
         SimpleNamespace(text=generation_text(first), usage_metadata=None),
         SimpleNamespace(text="SELECT count(*) AS samples FROM participants", usage_metadata=None),
+        model_responses(generation_text())[1],
     ]
     path = tmp_path / "log.jsonl"
     result = run_query(
         QueryRequest("표본 수"), Settings(database["agent"], "fake-key", "fake-model"), path
     )
     assert result.kind == ResponseKind.ANSWER and result.rows == ({"samples": 4},)
-    assert fake_client.models.generate_content.call_count == 2
+    assert fake_client.models.generate_content.call_count == 3
     attempts = [
         json.loads(line)
         for line in path.read_text(encoding="utf-8").splitlines()
@@ -534,12 +545,11 @@ def test_stage7_question_patch_overrides_selection_and_period_is_bound(
     fake_client: MagicMock,
     generation_text: Callable[..., str],
 ) -> None:
-    fake_client.models.generate_content.return_value = SimpleNamespace(
-        text=generation_text(
+    fake_client.models.generate_content.side_effect = model_responses(
+        generation_text(
             patch={"mode": "exact", "versions": [{"major": 4, "minor": 0}]},
             period={"start": "2026-09-30T00:00:00+09:00", "end": "2026-10-01T00:00:00+09:00"},
         ),
-        usage_metadata=None,
     )
     result = run_query(
         QueryRequest("4.0 패치 9월 30일의 참가자 수"),
@@ -570,9 +580,8 @@ def test_stage7_official_metadata_name_binding_is_locally_resolved(
 ) -> None:
     sql = """SELECT count(*) AS samples FROM participants p JOIN characters c
              ON c.character_code=p.character_num WHERE c.character_code=%(name_character_1)s"""
-    fake_client.models.generate_content.return_value = SimpleNamespace(
-        text=generation_text(sql, names=[{"text": "합성 실험체 A", "category": "character"}]),
-        usage_metadata=None,
+    fake_client.models.generate_content.side_effect = model_responses(
+        generation_text(sql, names=[{"text": "합성 실험체 A", "category": "character"}])
     )
     result = run_query(
         QueryRequest("합성 실험체 A의 출현 수"),
@@ -605,3 +614,230 @@ def test_stage7_second_failure_does_not_execute_unsafe_repair(
     assert execute_select(database["agent"], "SELECT count(*) AS samples FROM participants") == [
         {"samples": 5}
     ]
+
+
+# Stage 7-4 checks group evidence and summary fallback against actual result cells.
+
+
+def test_stage74_group_comparison_returns_samples_units_and_exact_summary(
+    database: dict[str, str],
+    tmp_path: Path,
+    fake_client: MagicMock,
+    generation_text: Callable[..., str],
+) -> None:
+    sql = """SELECT p.version_major, p.character_num, count(*) AS samples
+             FROM participants p GROUP BY p.version_major,p.character_num
+             ORDER BY p.version_major,p.character_num"""
+    summary = json.dumps(
+        {
+            "sentences": [
+                {
+                    "template": "패치 {0}의 표본은 {1}건이며, 패치 {2}의 표본은 {3}건입니다.",
+                    "cells": [
+                        {"row": 0, "column": "version_major"},
+                        {"row": 0, "column": "samples"},
+                        {"row": 1, "column": "version_major"},
+                        {"row": 1, "column": "samples"},
+                    ],
+                }
+            ]
+        },
+        ensure_ascii=False,
+    )
+    fake_client.models.generate_content.side_effect = model_responses(generation_text(sql), summary)
+    path = tmp_path / "log.jsonl"
+    result = run_query(
+        QueryRequest("패치별 출현", QueryConditions(patch=PatchFilter(PatchMode.ALL))),
+        Settings(database["agent"], "fake-key", "fake-model"),
+        path,
+    )
+    assert [row["samples"] for row in result.rows] == [1, 2, 2]
+    assert result.summary == "패치 4의 표본은 1건이며, 패치 5의 표본은 2건입니다."
+    assert result.evidence.sample_size is None and result.evidence.sample_unit is None
+    assert [group.sample_size for group in result.evidence.groups] == [1, 2, 2]
+    assert all(
+        group.sample_unit == "participant_appearances" and group.warnings
+        for group in result.evidence.groups
+    )
+    assert result.evidence.data_as_of is not None
+    assert fake_client.models.generate_content.call_count == 2
+    assert all(
+        name not in call.kwargs["contents"]
+        for name in PRIVATE_NICKNAMES
+        for call in fake_client.models.generate_content.call_args_list
+    )
+    assert "fake-key" not in path.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    "count,source,unit,expected",
+    [
+        ("count(*)", "games", "games", 1),
+        ("count(DISTINCT (game_id,team_number))", "participants", "teams", 2),
+    ],
+)
+def test_stage74_game_and_team_units_are_explicit(
+    database: dict[str, str],
+    tmp_path: Path,
+    fake_client: MagicMock,
+    generation_text: Callable[..., str],
+    count: str,
+    source: str,
+    unit: str,
+    expected: int,
+) -> None:
+    sql = f"SELECT {count} AS samples FROM {source}"
+    fake_client.models.generate_content.side_effect = model_responses(
+        generation_text(sql, sample={"column": "samples", "unit": unit})
+    )
+    result = run_query(
+        QueryRequest("집계 수"),
+        Settings(database["agent"], "fake-key", "fake-model"),
+        tmp_path / "log.jsonl",
+    )
+    assert result.rows[0]["samples"] == result.evidence.sample_size == expected
+    assert result.evidence.sample_unit == unit
+    assert not result.evidence.groups[0].warnings
+
+
+@pytest.mark.parametrize("distinct,expected", [(False, 8), (True, 4)])
+def test_stage74_child_join_does_not_claim_inflated_appearance_count(
+    database: dict[str, str],
+    tmp_path: Path,
+    fake_client: MagicMock,
+    generation_text: Callable[..., str],
+    distinct: bool,
+    expected: int,
+) -> None:
+    count = "count(DISTINCT p.participant_id)" if distinct else "count(*)"
+    sql = f"SELECT {count} AS samples FROM participants p JOIN participant_equipment e ON e.participant_id=p.participant_id"
+    fake_client.models.generate_content.side_effect = model_responses(generation_text(sql))
+    result = run_query(
+        QueryRequest("집계 수"),
+        Settings(database["agent"], "fake-key", "fake-model"),
+        tmp_path / "log.jsonl",
+    )
+    assert result.rows[0]["samples"] == expected
+    assert result.evidence.sample_size == (4 if distinct else None)
+    assert result.evidence.groups[0].warnings
+
+
+@pytest.mark.parametrize("empty", [True, False])
+def test_stage74_empty_rows_differ_from_zero_count(
+    database: dict[str, str],
+    tmp_path: Path,
+    fake_client: MagicMock,
+    generation_text: Callable[..., str],
+    empty: bool,
+) -> None:
+    sql = (
+        "SELECT character_num FROM participants WHERE game_rank<0"
+        if empty
+        else "SELECT count(*) AS samples, 100.0/NULLIF(count(*),0) AS rate FROM participants WHERE game_rank<0"
+    )
+    fake_client.models.generate_content.side_effect = model_responses(
+        generation_text(
+            sql, sample=None if empty else {"column": "samples", "unit": "participant_appearances"}
+        )
+    )
+    result = run_query(
+        QueryRequest("집계 수"),
+        Settings(database["agent"], "fake-key", "fake-model"),
+        tmp_path / "log.jsonl",
+    )
+    if empty:
+        assert result.columns == ("character_num",) and result.rows == ()
+        assert result.evidence.sample_size is None
+        assert result.summary == "조회 결과가 없습니다."
+        assert fake_client.models.generate_content.call_count == 1
+    else:
+        assert result.rows == ({"samples": 0, "rate": None},)
+        assert result.evidence.sample_size == 0 and result.evidence.groups[0].warnings
+        assert fake_client.models.generate_content.call_count == 2
+
+
+def test_stage74_bad_summary_preserves_actual_sql_table_and_evidence(
+    database: dict[str, str],
+    tmp_path: Path,
+    fake_client: MagicMock,
+    generation_text: Callable[..., str],
+) -> None:
+    fake_client.models.generate_content.side_effect = model_responses(
+        generation_text(), "PRIVATE invalid summary"
+    )
+    path = tmp_path / "log.jsonl"
+    result = run_query(
+        QueryRequest("참가자 수"), Settings(database["agent"], "fake-key", "fake-model"), path
+    )
+    assert result.kind == ResponseKind.ANSWER and result.summary is None
+    assert result.sql and result.rows == ({"samples": 4},) and result.evidence.sample_size == 4
+    assert any("요약을 생성하지" in warning for warning in result.warnings)
+    records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    assert len([record for record in records if record["event"] == "sql_attempt"]) == 1
+    assert records[-1]["logical_calls"] == 2
+    assert "PRIVATE" not in path.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("filtered_alias,expected", [("p", 2), ("q", 4)])
+def test_stage74_self_join_sample_requires_filter_on_counted_source(
+    database: dict[str, str],
+    tmp_path: Path,
+    fake_client: MagicMock,
+    generation_text: Callable[..., str],
+    filtered_alias: str,
+    expected: int,
+) -> None:
+    sql = f"""SELECT count(DISTINCT p.participant_id) AS samples
+        FROM participants p JOIN participants q ON p.game_id=q.game_id
+        WHERE {filtered_alias}.character_num=%(character_code)s"""
+    fake_client.models.generate_content.side_effect = model_responses(generation_text(sql))
+    result = run_query(
+        QueryRequest("대상 실험체 출현 수", QueryConditions(character_code=1)),
+        Settings(database["agent"], "fake-key", "fake-model"),
+        tmp_path / "log.jsonl",
+    )
+    assert result.kind == ResponseKind.ANSWER and result.rows == ({"samples": expected},)
+    if filtered_alias == "p":
+        assert result.evidence.sample_size == 2
+        assert result.evidence.groups[0].sample_unit == "participant_appearances"
+    else:
+        assert result.evidence.sample_size is None
+        assert result.evidence.groups[0].sample_size is None
+        assert result.evidence.groups[0].sample_unit is None
+        assert any("확인하지 못했습니다" in warning for warning in result.warnings)
+
+
+@pytest.mark.parametrize("repaired", [True, False])
+def test_stage74_duplicate_columns_repair_or_notice_before_database_execution(
+    database: dict[str, str],
+    tmp_path: Path,
+    fake_client: MagicMock,
+    generation_text: Callable[..., str],
+    repaired: bool,
+) -> None:
+    duplicate = "SELECT count(*) AS value, count(DISTINCT game_id) AS value FROM participants"
+    good = "SELECT count(*) AS samples FROM participants"
+    replies = [
+        SimpleNamespace(text=generation_text(duplicate), usage_metadata=None),
+        SimpleNamespace(text=good if repaired else duplicate, usage_metadata=None),
+    ]
+    fake_client.models.generate_content.side_effect = replies + (
+        model_responses(generation_text())[1:] if repaired else []
+    )
+    path = tmp_path / "log.jsonl"
+    result = run_query(
+        QueryRequest("참가자 수"), Settings(database["agent"], "fake-key", "fake-model"), path
+    )
+    records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    attempts = [record for record in records if record["event"] == "sql_attempt"]
+    assert len(attempts) == 2 and not attempts[0]["guard_passed"]
+    assert (
+        attempts[0]["repairable"] and "Result column names must be unique" in attempts[0]["error"]
+    )
+    assert sum(attempt["execution_succeeded"] for attempt in attempts) == int(repaired)
+    if repaired:
+        assert result.kind == ResponseKind.ANSWER and result.rows == ({"samples": 4},)
+        assert fake_client.models.generate_content.call_count == 3
+    else:
+        assert result.kind == ResponseKind.NOTICE and result.sql is None
+        assert fake_client.models.generate_content.call_count == 2

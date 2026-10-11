@@ -43,8 +43,13 @@ def query_snapshot() -> ContextSnapshot:
 @pytest.fixture
 def generation_text() -> Callable[..., str]:
     def encode(
-        sql: str | None = "SELECT count(*) AS samples FROM participants", **overrides: Any
+        sql: str | None = "SELECT count(*) AS samples FROM participants",
+        *,
+        sample: dict[str, str] | None | str = "default",
+        **overrides: Any,
     ) -> str:
+        if sample == "default":
+            sample = {"column": "samples", "unit": "participant_appearances"}
         intent = dict(
             names=[],
             patch=None,
@@ -55,7 +60,7 @@ def generation_text() -> Callable[..., str]:
             unsupported_reason=None,
         )
         intent.update(overrides)
-        return json.dumps({"intent": intent, "sql": sql}, ensure_ascii=False)
+        return json.dumps({"intent": intent, "sql": sql, "sample": sample}, ensure_ascii=False)
 
     return encode
 

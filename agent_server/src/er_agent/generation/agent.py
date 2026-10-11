@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 
 from ..models.context import ContextSnapshot, ResolvedContext
 from ..models.generation import Generation
@@ -25,7 +26,10 @@ class SqlGenerationAgent:
         )
         generation = parse_generation(text)
         self.recorder.append(
-            "generation_result", intent=json.loads(text)["intent"], generated_sql=generation.sql
+            "generation_result",
+            intent=json.loads(text)["intent"],
+            generated_sql=generation.sql,
+            sample=asdict(generation.sample) if generation.sample else None,
         )
         return generation
 

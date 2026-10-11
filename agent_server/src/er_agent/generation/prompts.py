@@ -45,6 +45,14 @@ Use every verified named entity in an appropriate code predicate, never as a
 free-standing SELECT constant. Do not use literal codes or name strings as filters.
 Use no other placeholders. SQL must read at least one game/participant fact source.
 Aggregate arithmetic and joins must follow the metric definitions.
+For aggregate results, include the actual target group's count in each result row
+as samples (or picks for pick rate), and declare its column and unit in sample.
+Use participant_appearances for participant metrics, games for game counts, teams
+for deduplicated (game_id, team_number). Never declare a rate, unique-user count,
+returned row count, or the global pick-rate denominator as the target sample.
+Use COUNT(DISTINCT participant_id) when child joins multiply appearances.
+Keep this sample column and its unit during SQL repair. For nonaggregate results
+or an unidentifiable sample, set sample=null; do not invent counts.
 """
 
 
@@ -69,7 +77,7 @@ def build_generation_prompt(request: QueryRequest, snapshot: ContextSnapshot) ->
         + f"""
 For this generation call, replace the SQL-only output rule with this JSON contract:
 {_json(GENERATION_SCHEMA)}
-Return exactly one JSON object, without markdown, with intent and sql.
+Return exactly one JSON object, without markdown, with intent, sql and sample.
 Extract only conditions explicitly stated in the question. null overrides mean use
 the selected conditions. An explicit all-tier override is {{"tier":null,"division":null}}.
 Keep named terms as actually written; never normalize a typo or expand an alias.

@@ -5,36 +5,71 @@ from unittest.mock import patch
 
 import pytest
 
-from er_agent.bootstrap import QueryFailed, run_manual
+from er_agent.bootstrap import run_manual
 from er_agent.cli import main
+from er_agent.models.names import NameClarification
+from er_agent.models.query import (
+    AppliedConditions,
+    PatchFilter,
+    PatchMode,
+    PatchVersion,
+    QueryConditions,
+    QueryRequest,
+    QueryResponse,
+    ResponseKind,
+)
 from er_agent.settings import Settings
 
 SETTINGS = Settings("test-url", "test-key", "test-model")
 
 
-def test_ask_cli_still_prints_row_array(capsys: pytest.CaptureFixture[str]) -> None:
+def test_ask_cli_prints_complete_response(capsys: pytest.CaptureFixture[str]) -> None:
+    response = QueryResponse(
+        ResponseKind.ANSWER,
+        "질문",
+        "test-log",
+        0,
+        applied_conditions=AppliedConditions(
+            41, QueryConditions(patch=PatchFilter(PatchMode.EXACT, (PatchVersion(5, 0),)))
+        ),
+        sql="SELECT count(*) AS samples FROM participants",
+        columns=("samples",),
+        rows=({"samples": 4},),
+        summary="표본은 4건입니다.",
+    )
     with (
         patch("sys.argv", ["er-agent", "ask", "질문"]),
         patch("er_agent.cli.Settings.from_env", return_value=SETTINGS),
-        patch("er_agent.cli.run_question", return_value=[{"samples": 4}]) as query,
+        patch("er_agent.cli.run_query", return_value=response) as query,
     ):
         main()
-    query.assert_called_once_with("질문", SETTINGS)
-    assert json.loads(capsys.readouterr().out) == [{"samples": 4}]
+    query.assert_called_once_with(QueryRequest("질문"), SETTINGS)
+    assert json.loads(capsys.readouterr().out) == response.to_dict()
 
 
-def test_notice_cli_keeps_stderr_and_exit_code(capsys: pytest.CaptureFixture[str]) -> None:
+@pytest.mark.parametrize("kind", [ResponseKind.NOTICE, ResponseKind.CLARIFICATION])
+def test_non_answer_cli_prints_json_and_exit_code(
+    capsys: pytest.CaptureFixture[str], kind: ResponseKind
+) -> None:
+    response = QueryResponse(
+        kind,
+        "질문",
+        "test-log",
+        0,
+        message="정식 명칭을 확인해 주세요.",
+        clarifications=(NameClarification("미확인"),) if kind == ResponseKind.CLARIFICATION else (),
+    )
     with (
         patch("sys.argv", ["er-agent", "ask", "질문"]),
         patch("er_agent.cli.Settings.from_env", return_value=SETTINGS),
-        patch("er_agent.cli.run_question", side_effect=QueryFailed("정식 명칭을 확인해 주세요.")),
+        patch("er_agent.cli.run_query", return_value=response),
         pytest.raises(SystemExit) as failure,
     ):
         main()
     assert failure.value.code == 1
     output = capsys.readouterr()
-    assert not output.out
-    assert output.err.strip() == "정식 명칭을 확인해 주세요."
+    assert json.loads(output.out) == response.to_dict()
+    assert not output.err
 
 
 def test_manual_cli_delegates_execution(capsys: pytest.CaptureFixture[str]) -> None:
@@ -58,7 +93,7 @@ def test_guard_cli_uses_no_execution_adapter(capsys: pytest.CaptureFixture[str])
     with (
         patch("sys.argv", ["er-agent", "guard", "SELECT game_id FROM games"]),
         patch("er_agent.cli.Settings.from_env", return_value=SETTINGS),
-        patch("er_agent.cli.run_question") as query,
+        patch("er_agent.cli.run_query") as query,
         patch("er_agent.cli.run_manual") as manual,
     ):
         main()

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..models.context import UnsupportedReason
+from ..models.evidence import SampleUnit
 from ..models.names import NameCategory
 from ..models.query import PatchMode
 
@@ -75,4 +76,17 @@ INTENT_SCHEMA = _object(
 )
 
 
-GENERATION_SCHEMA = _object({"intent": INTENT_SCHEMA, "sql": _nullable({"type": "string"})})
+GENERATION_SCHEMA = _object(
+    {
+        "intent": INTENT_SCHEMA,
+        "sql": _nullable({"type": "string"}),
+        "sample": _nullable(
+            _object(
+                {
+                    "column": {"type": "string"},
+                    "unit": {"type": "string", "enum": [unit.value for unit in SampleUnit]},
+                }
+            )
+        ),
+    }
+)

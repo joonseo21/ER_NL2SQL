@@ -10,6 +10,25 @@ def test_adds_limit_to_safe_select() -> None:
     assert guarded.limit_added is True
 
 
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT count(*) AS value, count(DISTINCT game_id) AS value FROM participants",
+        "SELECT count(*) AS VALUE, count(DISTINCT game_id) AS value FROM participants",
+        "SELECT p.game_id, q.game_id FROM participants p JOIN participants q ON p.game_id=q.game_id",
+    ],
+)
+def test_duplicate_result_column_names_are_guard_errors(sql: str) -> None:
+    with pytest.raises(SqlGuardError, match="Result column names must be unique"):
+        guard_sql(sql)
+
+
+def test_distinct_quoted_output_names_remain_allowed() -> None:
+    assert guard_sql(
+        'SELECT count(*) AS "Value", count(DISTINCT game_id) AS value FROM participants'
+    )
+
+
 def test_keeps_existing_limit() -> None:
     guarded = guard_sql("```sql\nSELECT participant_id FROM participants LIMIT 10;\n```")
     assert int(parse_one(guarded.sql, dialect="postgres").args["limit"].expression.this) == 10

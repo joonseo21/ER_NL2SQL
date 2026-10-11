@@ -64,3 +64,19 @@ def test_sql_type_is_not_coerced(generation_text: Callable[..., str]) -> None:
     item["sql"] = ["SELECT 1"]
     with pytest.raises(GenerationFormatError):
         parse_generation(json.dumps(item))
+
+
+@pytest.mark.parametrize(
+    "sample",
+    [
+        {"column": "samples", "unit": "users"},
+        {"column": "", "unit": "games"},
+        {"column": 1, "unit": "games"},
+        {"column": "samples", "unit": "games", "extra": True},
+    ],
+)
+def test_invalid_sample_declaration_is_not_coerced(
+    generation_text: Callable[..., str], sample: dict
+) -> None:
+    with pytest.raises(GenerationFormatError):
+        parse_generation(generation_text(sample=sample))
