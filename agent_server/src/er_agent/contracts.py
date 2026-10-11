@@ -65,6 +65,7 @@ class QueryConditions:
     patch: PatchFilter = field(default_factory=PatchFilter)
     tier: str | None = None
     character_code: int | None = None
+    tier_division: int | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.patch, PatchFilter):
@@ -73,6 +74,10 @@ class QueryConditions:
             _text(self.tier, "conditions.tier")
         if self.character_code is not None:
             _integer(self.character_code, "conditions.character_code", 1)
+        if self.tier_division is not None:
+            _integer(self.tier_division, "conditions.tier_division")
+            if self.tier is None:
+                raise ValueError("Tier division requires a tier")
 
 
 @dataclass(frozen=True)

@@ -10,8 +10,11 @@ from psycopg.conninfo import conninfo_to_dict, make_conninfo
 from psycopg.rows import dict_row
 
 from er_agent.cli import MANUAL_QUERIES
-from er_agent.database import execute_select, sample_rows
+from er_agent.context import QueryIntent, ResolvedContext, TierSelection, prepare_context
+from er_agent.contracts import NameCategory, PatchFilter, PatchMode, PatchVersion, QueryRequest
+from er_agent.database import execute_select, load_context_snapshot, sample_rows
 from er_agent.guard import SqlGuardError, guard_sql
+from er_agent.names import NameTerm
 from er_agent.prompt import METRICS_PATH, build_prompt
 from er_agent.query_schema import TABLE_COLUMNS
 
@@ -204,6 +207,68 @@ def test_named_trait_cte_counts_participants_once(database: dict[str, str]) -> N
     """,
     )
     assert rows == [{"trait_code": 123, "name_ko": "합성 이름", "samples": 5}]
+
+
+def test_context_snapshot_matches_ranked_squad_scope_and_resolves_names(
+    database: dict[str, str],
+) -> None:
+    snapshot = load_context_snapshot(database["agent"], 41)
+    assert sum(scope.appearances for scope in snapshot.scopes) == 5
+    assert {scope.patch for scope in snapshot.scopes} == {PatchVersion(4, 0), PatchVersion(5, 0)}
+    assert {entry.category for entry in snapshot.catalog.entries} == set(NameCategory)
+    character = snapshot.catalog.character(2)
+    assert character is not None
+    result = prepare_context(
+        QueryRequest("합성 실험체 승률"),
+        QueryIntent(
+            character=NameTerm(character.name),
+            tier=TierSelection("다이아몬드", 4),
+            patch=PatchFilter(PatchMode.EXACT, (PatchVersion(4, 0),)),
+        ),
+        snapshot,
+        "postgres-context",
+    )
+    assert isinstance(result, ResolvedContext)
+    assert result.applied_conditions.conditions.character_code == 2
+    assert result.applied_conditions.conditions.patch.versions == (PatchVersion(4, 0),)
+    assert result.evidence.sample_size is None
+    assert all(scope.data_as_of.utcoffset() is not None for scope in snapshot.scopes)
+
+
+def test_internal_metadata_pagination_does_not_truncate_item_names(
+    database: dict[str, str],
+) -> None:
+    codes = list(range(990100, 990305))
+    with psycopg.connect(database["owner"]) as owner:
+        assert (
+            owner.execute("SELECT count(*) FROM items WHERE code = ANY(%s)", (codes,)).fetchone()[0]
+            == 0
+        )
+        owner.cursor().executemany(
+            "INSERT INTO items(code,name_ko,source,l10n_key,checked_at) "
+            "VALUES (%s,%s,'fixture','fixture/pagination',now())",
+            [(code, f"페이지 합성 장비 {code}") for code in codes],
+        )
+    try:
+        snapshot = load_context_snapshot(database["agent"], 41)
+        found = {
+            entry.code for entry in snapshot.catalog.entries if entry.category == NameCategory.ITEM
+        }
+        assert set(codes) <= found
+        last = snapshot.catalog.resolve(NameTerm("페이지 합성 장비 990304", NameCategory.ITEM))
+        assert last.candidate.code == 990304
+    finally:
+        with psycopg.connect(database["owner"]) as owner:
+            owner.execute("DELETE FROM items WHERE code = ANY(%s)", (codes,))
+
+
+def test_context_snapshot_never_uses_another_season_as_a_fallback(database: dict[str, str]) -> None:
+    assert load_context_snapshot(database["agent"], 999).scopes == ()
+
+
+def test_context_snapshot_requires_agent_role(database: dict[str, str]) -> None:
+    with pytest.raises(ValueError, match="agent_ro"):
+        load_context_snapshot(database["owner"], 41)
 
 
 @pytest.mark.parametrize(
