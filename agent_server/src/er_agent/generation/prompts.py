@@ -3,16 +3,16 @@ from __future__ import annotations
 import json
 from dataclasses import asdict
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
-from .context import ContextSnapshot, ResolvedContext
-from .contracts import QueryRequest
-from .generation import GENERATION_SCHEMA
-from .sql_scope import name_parameters
+from ..models.context import ContextSnapshot, ResolvedContext
+from ..models.query import QueryRequest
+from ..paths import AGENT_ROOT
+from ..sql.bindings import name_parameters
+from .schema import GENERATION_SCHEMA
 
-SCHEMA_CONTEXT_PATH = Path(__file__).resolve().parents[2] / "schema_context.md"
-METRICS_PATH = Path(__file__).resolve().parents[2] / "metrics.md"
+SCHEMA_CONTEXT_PATH = AGENT_ROOT / "schema_context.md"
+METRICS_PATH = AGENT_ROOT / "metrics.md"
 
 
 def build_prompt(question: str, samples: dict[str, Any]) -> str:

@@ -3,8 +3,8 @@ from unittest.mock import patch
 
 import pytest
 
-from er_agent.guard import guard_sql
-from er_agent.prompt import METRICS_PATH, build_prompt
+from er_agent.generation.prompts import METRICS_PATH, build_prompt
+from er_agent.sql.guard import guard_sql
 
 
 def test_prompt_uses_metric_document_as_its_single_policy_source() -> None:
@@ -13,13 +13,13 @@ def test_prompt_uses_metric_document_as_its_single_policy_source() -> None:
     assert prompt.count(text) == 1
     assert "계산 대상 실험체의 조건은 분자에 적용하고 분모에서 제외" in prompt
     assert "승률에 적용하지 않는다" in prompt
-    with patch("er_agent.prompt.METRICS_PATH") as source:
+    with patch("er_agent.generation.prompts.METRICS_PATH") as source:
         source.read_text.return_value = "검토한 지표 정의"
         assert "검토한 지표 정의" in build_prompt("질문", {})
 
 
 def test_missing_metric_document_stops_prompt_building() -> None:
-    with patch("er_agent.prompt.METRICS_PATH") as source:
+    with patch("er_agent.generation.prompts.METRICS_PATH") as source:
         source.read_text.side_effect = FileNotFoundError
         with pytest.raises(FileNotFoundError):
             build_prompt("픽률", {})

@@ -1,37 +1,27 @@
-"""Validate extracted question meaning against a read-only database snapshot.
-
-This is not a Korean-language parser. The generation adapter supplies QueryIntent;
-this module verifies official names and scope before any generated SQL can execute.
-"""
+"""Validate extracted names and scope before any generated SQL executes."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime
-from enum import StrEnum
-
-from .contracts import (
+from ..models.context import (
+    ContextSnapshot,
+    QueryIntent,
+    ResolvedContext,
+    ScopeBucket,
+    TierSelection,
+    UnsupportedReason,
+)
+from ..models.names import NameCatalog, NameCategory, NameClarification, NameTerm, ResolvedName
+from ..models.query import (
     AppliedConditions,
     DataEvidence,
-    NameCategory,
-    NameClarification,
     PatchFilter,
     PatchMode,
-    PatchVersion,
     QueryConditions,
     QueryRequest,
     QueryResponse,
     ResponseKind,
 )
-from .names import NameCatalog, NameTerm, ResolvedName
-
-
-class UnsupportedReason(StrEnum):
-    PERSONAL_HISTORY = "personal_history"
-    PREDICTION = "prediction"
-    UNRELATED = "unrelated"
-    UNAVAILABLE_DATA = "unavailable_data"
-
+from .name_resolver import NameResolver
 
 REASON_MESSAGES = {
     UnsupportedReason.PERSONAL_HISTORY: "특정 이용자의 개인 전적은 제공하지 않습니다.",
@@ -39,87 +29,9 @@ REASON_MESSAGES = {
     UnsupportedReason.UNRELATED: "이터널 리턴 경기 데이터에 관한 질문만 지원합니다.",
     UnsupportedReason.UNAVAILABLE_DATA: "수집된 경기 데이터로 확인할 수 없는 내용입니다.",
 }
+
+
 EXAMPLES = ("최신 패치의 실험체별 승률과 표본 수를 알려줘", "티어별 평균 순위를 비교해줘")
-
-
-@dataclass(frozen=True)
-class TimeRange:
-    start: datetime
-    end: datetime
-
-    def __post_init__(self) -> None:
-        for value in (self.start, self.end):
-            if not isinstance(value, datetime) or value.utcoffset() is None:
-                raise ValueError("Period boundaries must be timezone-aware datetimes")
-        if self.start >= self.end:
-            raise ValueError("Period requires start < end (end is exclusive)")
-
-
-@dataclass(frozen=True)
-class TierSelection:
-    tier: str | None = None
-    division: int | None = None
-
-    def __post_init__(self) -> None:
-        QueryConditions(tier=self.tier, tier_division=self.division)
-
-
-@dataclass(frozen=True)
-class QueryIntent:
-    names: tuple[NameTerm, ...] = ()
-    patch: PatchFilter | None = None
-    tier: TierSelection | None = None
-    character: NameTerm | None = None
-    all_characters: bool = False
-    period: TimeRange | None = None
-    unsupported_reason: UnsupportedReason | None = None
-
-    def __post_init__(self) -> None:
-        names = tuple(self.names)
-        if any(not isinstance(term, NameTerm) for term in names):
-            raise ValueError("Intent names must contain NameTerm values")
-        object.__setattr__(self, "names", names)
-        for value, expected in (
-            (self.patch, PatchFilter),
-            (self.tier, TierSelection),
-            (self.character, NameTerm),
-            (self.period, TimeRange),
-            (self.unsupported_reason, UnsupportedReason),
-        ):
-            if value is not None and not isinstance(value, expected):
-                raise ValueError("Invalid extracted intent type")
-        if type(self.all_characters) is not bool or (self.character and self.all_characters):
-            raise ValueError("Character override must be a name or all characters")
-        if self.character and self.character.category not in {None, NameCategory.CHARACTER}:
-            raise ValueError("Character override must refer to a character")
-
-
-@dataclass(frozen=True)
-class ScopeBucket:
-    patch: PatchVersion
-    tier: str | None
-    division: int | None
-    appearances: int
-    first_match: datetime | None
-    last_match: datetime | None
-    data_as_of: datetime
-
-
-@dataclass(frozen=True)
-class ContextSnapshot:
-    season_id: int
-    catalog: NameCatalog
-    scopes: tuple[ScopeBucket, ...]
-    tiers: tuple[TierSelection, ...]
-
-
-@dataclass(frozen=True)
-class ResolvedContext:
-    applied_conditions: AppliedConditions
-    names: tuple[ResolvedName, ...]
-    period: TimeRange | None
-    evidence: DataEvidence
-    warnings: tuple[str, ...] = ()
 
 
 def _notice(request: QueryRequest, log_id: str, elapsed_ms: int, message: str) -> QueryResponse:
@@ -143,7 +55,7 @@ def _resolve_names(
     resolved: list[ResolvedName] = []
     unresolved: list[NameClarification] = []
     for term in dict.fromkeys(terms):
-        result = catalog.resolve(term)
+        result = NameResolver(catalog).resolve(term)
         if isinstance(result, ResolvedName):
             resolved.append(result)
         else:
@@ -162,7 +74,9 @@ def _merge_conditions(
     if intent.all_characters:
         character = None
     elif intent.character:
-        result = catalog.resolve(NameTerm(intent.character.text, NameCategory.CHARACTER))
+        result = NameResolver(catalog).resolve(
+            NameTerm(intent.character.text, NameCategory.CHARACTER)
+        )
         if not isinstance(result, ResolvedName):
             raise ValueError("Resolve character names before merging conditions")
         character = result.candidate.code
@@ -208,7 +122,7 @@ def _scope_error(
             return "요청한 티어 구분은 지원하지 않습니다. 경기 당시 MMR의 저장된 티어를 사용합니다."
     if (
         conditions.character_code is not None
-        and snapshot.catalog.character(conditions.character_code) is None
+        and NameResolver(snapshot.catalog).character(conditions.character_code) is None
     ):
         return "선택한 실험체 코드를 공식 이름 메타데이터에서 확인할 수 없습니다."
     if not scopes:

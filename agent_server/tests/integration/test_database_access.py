@@ -13,10 +13,15 @@ import pytest
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 from psycopg.rows import dict_row
 
-from er_agent.cli import MANUAL_QUERIES
-from er_agent.context import QueryIntent, ResolvedContext, TierSelection, prepare_context
-from er_agent.contracts import (
-    NameCategory,
+from er_agent.bootstrap import run_query
+from er_agent.database.context_repository import load_context_snapshot
+from er_agent.database.manual_queries import MANUAL_QUERIES
+from er_agent.database.query_executor import execute_select
+from er_agent.database.samples import sample_rows
+from er_agent.generation.prompts import METRICS_PATH, build_prompt
+from er_agent.models.context import QueryIntent, ResolvedContext, TierSelection
+from er_agent.models.names import NameCategory, NameTerm
+from er_agent.models.query import (
     PatchFilter,
     PatchMode,
     PatchVersion,
@@ -24,14 +29,12 @@ from er_agent.contracts import (
     QueryRequest,
     ResponseKind,
 )
-from er_agent.database import execute_select, load_context_snapshot, sample_rows
-from er_agent.guard import SqlGuardError, guard_sql
-from er_agent.names import NameTerm
-from er_agent.nl2sql import run_query
-from er_agent.prompt import METRICS_PATH, build_prompt
-from er_agent.query_schema import TABLE_COLUMNS
+from er_agent.query.context_resolver import prepare_context
+from er_agent.query.name_resolver import NameResolver
 from er_agent.settings import Settings
-from er_agent.sql_scope import scope_sql
+from er_agent.sql.guard import SqlGuardError, guard_sql
+from er_agent.sql.schema import TABLE_COLUMNS
+from er_agent.sql.scope import scope_sql
 
 pytestmark = pytest.mark.postgres
 GAME_IDS = (9400001, 9400002)
@@ -231,7 +234,7 @@ def test_context_snapshot_matches_ranked_squad_scope_and_resolves_names(
     assert sum(scope.appearances for scope in snapshot.scopes) == 5
     assert {scope.patch for scope in snapshot.scopes} == {PatchVersion(4, 0), PatchVersion(5, 0)}
     assert {entry.category for entry in snapshot.catalog.entries} == set(NameCategory)
-    character = snapshot.catalog.character(2)
+    character = NameResolver(snapshot.catalog).character(2)
     assert character is not None
     result = prepare_context(
         QueryRequest("합성 실험체 승률"),
@@ -270,7 +273,9 @@ def test_internal_metadata_pagination_does_not_truncate_item_names(
             entry.code for entry in snapshot.catalog.entries if entry.category == NameCategory.ITEM
         }
         assert set(codes) <= found
-        last = snapshot.catalog.resolve(NameTerm("페이지 합성 장비 990304", NameCategory.ITEM))
+        last = NameResolver(snapshot.catalog).resolve(
+            NameTerm("페이지 합성 장비 990304", NameCategory.ITEM)
+        )
         assert last.candidate.code == 990304
     finally:
         with psycopg.connect(database["owner"]) as owner:

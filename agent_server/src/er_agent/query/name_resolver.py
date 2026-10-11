@@ -1,24 +1,16 @@
-"""Official-name lookup. Similar names are suggestions, never automatic replacements."""
-
 from __future__ import annotations
 
 import unicodedata
-from dataclasses import dataclass
 from difflib import SequenceMatcher
 
-from .contracts import NameCandidate, NameCategory, NameClarification
-
-
-@dataclass(frozen=True)
-class NameTerm:
-    text: str
-    category: NameCategory | None = None
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.text, str) or not self.text.strip():
-            raise ValueError("Name term must be nonempty text")
-        if self.category is not None and not isinstance(self.category, NameCategory):
-            raise ValueError("Name category must be a NameCategory")
+from ..models.names import (
+    NameCandidate,
+    NameCatalog,
+    NameCategory,
+    NameClarification,
+    NameTerm,
+    ResolvedName,
+)
 
 
 def _normalized(text: str) -> str:
@@ -26,29 +18,18 @@ def _normalized(text: str) -> str:
     return unicodedata.normalize("NFC", text.strip())
 
 
-@dataclass(frozen=True)
-class ResolvedName:
-    term: NameTerm
-    candidate: NameCandidate
+def _candidate_key(entry: NameCandidate) -> tuple[str, str, int]:
+    return entry.category.value, entry.name, entry.code
 
 
-@dataclass(frozen=True)
-class NameCatalog:
-    entries: tuple[NameCandidate, ...]
-
-    def __post_init__(self) -> None:
-        entries = tuple(self.entries)
-        if any(not isinstance(entry, NameCandidate) for entry in entries):
-            raise ValueError("Catalog must contain NameCandidate values")
-        identities = [(entry.category, entry.code) for entry in entries]
-        if len(set(identities)) != len(identities):
-            raise ValueError("Catalog codes must be unique within each category")
-        object.__setattr__(self, "entries", entries)
+class NameResolver:
+    def __init__(self, catalog: NameCatalog) -> None:
+        self.catalog = catalog
 
     def resolve(self, term: NameTerm) -> ResolvedName | NameClarification:
         entries = tuple(
             entry
-            for entry in self.entries
+            for entry in self.catalog.entries
             if term.category is None or entry.category == term.category
         )
         exact = tuple(
@@ -77,12 +58,8 @@ class NameCatalog:
         return next(
             (
                 entry
-                for entry in self.entries
+                for entry in self.catalog.entries
                 if entry.category == NameCategory.CHARACTER and entry.code == code
             ),
             None,
         )
-
-
-def _candidate_key(entry: NameCandidate) -> tuple[str, str, int]:
-    return entry.category.value, entry.name, entry.code

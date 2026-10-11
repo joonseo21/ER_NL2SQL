@@ -11,10 +11,11 @@ import psycopg
 from psycopg.conninfo import conninfo_to_dict
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "agent_server" / "src"))
-from er_agent.cli import MANUAL_QUERIES
-from er_agent.database import execute_select, sample_rows
-from er_agent.guard import guard_sql
-from er_agent.query_schema import TABLE_COLUMNS
+from er_agent.database.manual_queries import MANUAL_QUERIES
+from er_agent.database.query_executor import execute_select
+from er_agent.database.samples import sample_rows
+from er_agent.sql.guard import guard_sql
+from er_agent.sql.schema import TABLE_COLUMNS
 
 
 def require(condition: bool, message: str) -> None:

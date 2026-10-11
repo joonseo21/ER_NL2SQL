@@ -1,10 +1,10 @@
 from unittest.mock import patch
 
-from er_agent.cli import MANUAL_QUERIES
-from er_agent.database import sample_rows
-from er_agent.guard import guard_sql
-from er_agent.prompt import build_prompt
-from er_agent.query_schema import BLOCKED_COLUMNS, TABLE_COLUMNS
+from er_agent.database.manual_queries import MANUAL_QUERIES
+from er_agent.database.samples import sample_rows
+from er_agent.generation.prompts import build_prompt
+from er_agent.sql.guard import guard_sql
+from er_agent.sql.schema import BLOCKED_COLUMNS, TABLE_COLUMNS
 
 
 def test_samples_only_request_public_contract_columns() -> None:
@@ -14,7 +14,7 @@ def test_samples_only_request_public_contract_columns() -> None:
         queries.append(guard_sql(query).sql)
         return []
 
-    with patch("er_agent.database.execute_select", side_effect=select):
+    with patch("er_agent.database.samples.execute_select", side_effect=select):
         samples = sample_rows("unused")
     assert set(samples) == set(TABLE_COLUMNS)
     assert len(queries) == len(TABLE_COLUMNS)

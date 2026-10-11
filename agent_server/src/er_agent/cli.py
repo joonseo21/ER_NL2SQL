@@ -4,24 +4,9 @@ import argparse
 import json
 import sys
 
-from .database import execute_select
-from .guard import guard_sql
-from .nl2sql import QueryFailed, run_question
+from .bootstrap import MANUAL_QUERY_NAMES, QueryFailed, run_manual, run_question
 from .settings import Settings
-
-MANUAL_QUERIES = {
-    "game-count": "SELECT count(*) AS game_count FROM games",
-    "character-picks": """
-        SELECT character_num, count(*) AS picks
-        FROM participants GROUP BY character_num ORDER BY picks DESC LIMIT 20
-    """,
-    "tier-average-rank": """
-        SELECT tier, avg(game_rank) AS average_rank, count(*) AS samples,
-               100.0 * count(*) FILTER (WHERE game_rank = 1) / NULLIF(count(*), 0) AS win_rate,
-               100.0 * count(*) FILTER (WHERE game_rank <= 3) / NULLIF(count(*), 0) AS top3_rate
-        FROM participants GROUP BY tier ORDER BY tier
-    """,
-}
+from .sql.guard import guard_sql
 
 
 def main() -> None:
@@ -32,7 +17,7 @@ def main() -> None:
     ask_parser.add_argument("question")
 
     manual_parser = subparsers.add_parser("manual", help="Run a predefined read-only smoke query")
-    manual_parser.add_argument("query", choices=MANUAL_QUERIES)
+    manual_parser.add_argument("query", choices=MANUAL_QUERY_NAMES)
 
     guard_parser = subparsers.add_parser("guard", help="Validate SQL without a database")
     guard_parser.add_argument("sql")
@@ -47,10 +32,7 @@ def main() -> None:
             print(str(exception), file=sys.stderr)
             raise SystemExit(1) from None
     elif arguments.command == "manual":
-        settings.require_database()
-        result = execute_select(
-            settings.database_url, guard_sql(MANUAL_QUERIES[arguments.query]).sql
-        )
+        result = run_manual(arguments.query, settings)
     else:
         result = {"sql": guard_sql(arguments.sql).sql}
     print(json.dumps(result, ensure_ascii=False, default=str, indent=2))

@@ -1,93 +1,15 @@
-"""Strict JSON boundary between model meaning extraction and local validation."""
-
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from .context import QueryIntent, TierSelection, TimeRange, UnsupportedReason
-from .contracts import NameCategory, PatchFilter, PatchMode, PatchVersion
-from .names import NameTerm
-
-
-def _object(properties: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "type": "object",
-        "properties": properties,
-        "required": list(properties),
-        "additionalProperties": False,
-    }
-
-
-def _nullable(schema: dict[str, Any]) -> dict[str, Any]:
-    return {"anyOf": [schema, {"type": "null"}]}
-
-
-NAME_SCHEMA = _object(
-    {
-        "text": {"type": "string"},
-        "category": _nullable({"type": "string", "enum": [item.value for item in NameCategory]}),
-    }
-)
-INTENT_SCHEMA = _object(
-    {
-        "names": {"type": "array", "items": NAME_SCHEMA},
-        "patch": _nullable(
-            _object(
-                {
-                    "mode": {"type": "string", "enum": [item.value for item in PatchMode]},
-                    "versions": {
-                        "type": "array",
-                        "items": _object(
-                            {
-                                "major": {"type": "integer", "minimum": 0},
-                                "minor": {"type": "integer", "minimum": 0},
-                            }
-                        ),
-                    },
-                }
-            )
-        ),
-        "tier": _nullable(
-            _object(
-                {
-                    "tier": _nullable({"type": "string"}),
-                    "division": _nullable({"type": "integer", "minimum": 0}),
-                }
-            )
-        ),
-        "character": _nullable(NAME_SCHEMA),
-        "all_characters": {"type": "boolean"},
-        "period": _nullable(
-            _object(
-                {
-                    "start": {"type": "string"},
-                    "end": {"type": "string"},
-                }
-            )
-        ),
-        "unsupported_reason": _nullable(
-            {
-                "type": "string",
-                "enum": [reason.value for reason in UnsupportedReason],
-            }
-        ),
-    }
-)
-GENERATION_SCHEMA = _object({"intent": INTENT_SCHEMA, "sql": _nullable({"type": "string"})})
-
-
-class GenerationFormatError(ValueError):
-    def __init__(self) -> None:
-        super().__init__("Model response does not match the generation contract")
-
-
-@dataclass(frozen=True)
-class Generation:
-    intent: QueryIntent
-    sql: str | None
+from ..models.context import QueryIntent, TierSelection, TimeRange, UnsupportedReason
+from ..models.errors import GenerationFormatError
+from ..models.generation import Generation
+from ..models.names import NameCategory, NameTerm
+from ..models.query import PatchFilter, PatchMode, PatchVersion
+from .schema import INTENT_SCHEMA
 
 
 def _fields(value: Any, keys: set[str]) -> dict[str, Any]:

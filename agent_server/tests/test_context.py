@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from er_agent.context import (
+from er_agent.models.context import (
     ContextSnapshot,
     QueryIntent,
     ResolvedContext,
@@ -11,11 +11,9 @@ from er_agent.context import (
     TierSelection,
     TimeRange,
     UnsupportedReason,
-    prepare_context,
 )
-from er_agent.contracts import (
-    NameCandidate,
-    NameCategory,
+from er_agent.models.names import NameCandidate, NameCatalog, NameCategory, NameTerm
+from er_agent.models.query import (
     PatchFilter,
     PatchMode,
     PatchVersion,
@@ -24,7 +22,7 @@ from er_agent.contracts import (
     QueryResponse,
     ResponseKind,
 )
-from er_agent.names import NameCatalog, NameTerm
+from er_agent.query.context_resolver import prepare_context
 
 KST = timezone(timedelta(hours=9))
 DAY = datetime(2026, 10, 8, 20, tzinfo=KST)

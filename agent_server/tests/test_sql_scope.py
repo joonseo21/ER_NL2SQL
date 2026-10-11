@@ -2,17 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from er_agent.context import (
-    ContextSnapshot,
-    QueryIntent,
-    ResolvedContext,
-    TierSelection,
-    prepare_context,
-)
-from er_agent.contracts import NameCategory, QueryConditions, QueryRequest
-from er_agent.guard import SqlGuardError
-from er_agent.names import NameTerm
-from er_agent.sql_scope import name_parameters, scope_sql
+from er_agent.models.context import ContextSnapshot, QueryIntent, ResolvedContext, TierSelection
+from er_agent.models.names import NameCategory, NameTerm
+from er_agent.models.query import QueryConditions, QueryRequest
+from er_agent.query.context_resolver import prepare_context
+from er_agent.sql.bindings import name_parameters
+from er_agent.sql.guard import SqlGuardError
+from er_agent.sql.scope import scope_sql
 
 
 def context(
@@ -129,7 +125,7 @@ def test_unknown_tier_is_null_not_a_string_filter(query_snapshot: ContextSnapsho
 
 
 def test_all_patch_mode_omits_patch_predicate(query_snapshot: ContextSnapshot) -> None:
-    from er_agent.contracts import PatchFilter, PatchMode
+    from er_agent.models.query import PatchFilter, PatchMode
 
     resolved = context(query_snapshot, QueryIntent(patch=PatchFilter(PatchMode.ALL)))
     scoped = scope_sql("SELECT count(*) FROM participants", resolved)

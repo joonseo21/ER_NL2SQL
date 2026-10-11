@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from pathlib import Path
 
 from dotenv import load_dotenv
+
+from .paths import REPOSITORY_ROOT
 
 
 @dataclass(frozen=True)
@@ -20,7 +21,7 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> Settings:
-        root_env = Path(__file__).resolve().parents[3] / ".env"
+        root_env = REPOSITORY_ROOT / ".env"
         load_dotenv(root_env)
         return cls(
             database_url=os.getenv("AGENT_DATABASE_URL", ""),

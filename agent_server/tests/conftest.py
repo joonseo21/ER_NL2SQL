@@ -8,9 +8,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from er_agent.context import ContextSnapshot, ScopeBucket, TierSelection
-from er_agent.contracts import NameCandidate, NameCategory, PatchVersion
-from er_agent.names import NameCatalog
+from er_agent.models.context import ContextSnapshot, ScopeBucket, TierSelection
+from er_agent.models.names import NameCandidate, NameCatalog, NameCategory
+from er_agent.models.query import PatchVersion
 
 
 @pytest.fixture
@@ -64,5 +64,5 @@ def generation_text() -> Callable[..., str]:
 def fake_client() -> Iterator[MagicMock]:
     client = MagicMock()
     client.__enter__.return_value = client
-    with patch("er_agent.nl2sql.create_client", return_value=client):
+    with patch("er_agent.bootstrap.create_client", return_value=client):
         yield client

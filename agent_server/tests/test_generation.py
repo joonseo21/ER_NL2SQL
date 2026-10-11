@@ -5,7 +5,8 @@ from collections.abc import Callable
 
 import pytest
 
-from er_agent.generation import GenerationFormatError, parse_generation
+from er_agent.generation.decoder import parse_generation
+from er_agent.models.errors import GenerationFormatError
 
 
 def test_structured_question_meaning_is_typed(generation_text: Callable[..., str]) -> None:

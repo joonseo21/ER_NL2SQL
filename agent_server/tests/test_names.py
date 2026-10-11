@@ -3,8 +3,15 @@ from collections.abc import Callable
 
 import pytest
 
-from er_agent.contracts import NameCandidate, NameCategory, NameClarification
-from er_agent.names import NameCatalog, NameTerm, ResolvedName
+from er_agent.models.names import (
+    NameCandidate,
+    NameCatalog,
+    NameCategory,
+    NameClarification,
+    NameTerm,
+    ResolvedName,
+)
+from er_agent.query.name_resolver import NameResolver
 
 
 @pytest.fixture
@@ -39,15 +46,17 @@ def test_official_names_resolve_in_all_five_categories(
     code: int,
     name: str,
 ) -> None:
-    result = catalog.resolve(NameTerm(name, category))
+    result = NameResolver(catalog).resolve(NameTerm(name, category))
     assert isinstance(result, ResolvedName)
     assert result.candidate.code == code and result.candidate.category == category
 
 
 def test_only_boundary_whitespace_and_unicode_form_are_normalized(catalog: NameCatalog) -> None:
-    result = catalog.resolve(NameTerm(" " + unicodedata.normalize("NFD", "합성 실험체") + " "))
+    result = NameResolver(catalog).resolve(
+        NameTerm(" " + unicodedata.normalize("NFD", "합성 실험체") + " ")
+    )
     assert isinstance(result, ResolvedName) and result.candidate.code == 1
-    assert isinstance(catalog.resolve(NameTerm("합성실험체")), NameClarification)
+    assert isinstance(NameResolver(catalog).resolve(NameTerm("합성실험체")), NameClarification)
 
 
 @pytest.mark.parametrize(
@@ -62,7 +71,7 @@ def test_exact_homonyms_require_clarification_with_all_candidates(
     term: NameTerm,
     expected_codes: set[int],
 ) -> None:
-    result = catalog.resolve(term)
+    result = NameResolver(catalog).resolve(term)
     assert isinstance(result, NameClarification)
     assert {candidate.code for candidate in result.candidates} == expected_codes
 
@@ -70,7 +79,7 @@ def test_exact_homonyms_require_clarification_with_all_candidates(
 def test_typo_candidates_are_never_resolved_or_taken_from_other_categories(
     catalog: NameCatalog,
 ) -> None:
-    result = catalog.resolve(NameTerm("합성 장비이", NameCategory.ITEM))
+    result = NameResolver(catalog).resolve(NameTerm("합성 장비이", NameCategory.ITEM))
     assert isinstance(result, NameClarification)
     assert result.candidates[0].code == 100
     assert all(candidate.category == NameCategory.ITEM for candidate in result.candidates)
@@ -78,10 +87,12 @@ def test_typo_candidates_are_never_resolved_or_taken_from_other_categories(
 
 
 def test_aliases_and_unknown_names_do_not_automatically_get_a_code(catalog: NameCatalog) -> None:
-    assert isinstance(catalog.resolve(NameTerm("양검", NameCategory.WEAPON)), NameClarification)
-    unknown = catalog.resolve(NameTerm("zzzzzzzz", NameCategory.ITEM))
+    assert isinstance(
+        NameResolver(catalog).resolve(NameTerm("양검", NameCategory.WEAPON)), NameClarification
+    )
+    unknown = NameResolver(catalog).resolve(NameTerm("zzzzzzzz", NameCategory.ITEM))
     assert isinstance(unknown, NameClarification) and unknown.candidates == ()
-    assert catalog.character(100) is None
+    assert NameResolver(catalog).character(100) is None
 
 
 @pytest.mark.parametrize(

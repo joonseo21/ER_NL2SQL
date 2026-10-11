@@ -1,29 +1,14 @@
-"""Agent input/output contracts; HTTP parsing and query execution are separate.
-
-Empty request conditions mean latest patch / all tiers / all characters. Applied
-conditions contain the actual resolved scope, not the requested defaults.
-"""
-
 from __future__ import annotations
 
-import math
-from dataclasses import dataclass, field, fields, is_dataclass
-from datetime import date, datetime
-from decimal import Decimal
+from dataclasses import dataclass, field
+from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from .query_schema import MAX_ROWS
-
-
-def _text(value: str, name: str) -> None:
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"{name} must be nonempty text")
-
-
-def _integer(value: int, name: str, minimum: int = 0) -> None:
-    if type(value) is not int or value < minimum:
-        raise ValueError(f"{name} must be an integer >= {minimum}")
+from .limits import MAX_ROWS
+from .names import NameClarification
+from .serialization import json_value
+from .validation import _integer, _text
 
 
 class PatchMode(StrEnum):
@@ -112,39 +97,6 @@ class ResponseKind(StrEnum):
     CLARIFICATION = "clarification"
 
 
-class NameCategory(StrEnum):
-    CHARACTER = "character"
-    WEAPON = "weapon"
-    ITEM = "item"
-    TRAIT = "trait"
-    TACTICAL = "tactical"
-
-
-@dataclass(frozen=True)
-class NameCandidate:
-    category: NameCategory
-    code: int
-    name: str
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.category, NameCategory):
-            raise ValueError("candidate.category must be a NameCategory")
-        _integer(self.code, "candidate.code", 1)
-        _text(self.name, "candidate.name")
-
-
-@dataclass(frozen=True)
-class NameClarification:
-    term: str
-    candidates: tuple[NameCandidate, ...] = ()
-
-    def __post_init__(self) -> None:
-        _text(self.term, "clarification.term")
-        if any(not isinstance(candidate, NameCandidate) for candidate in self.candidates):
-            raise ValueError("clarification.candidates must contain NameCandidate values")
-        object.__setattr__(self, "candidates", tuple(self.candidates))
-
-
 @dataclass(frozen=True)
 class DataEvidence:
     sample_size: int | None = None
@@ -226,26 +178,4 @@ class QueryResponse:
 
     def to_dict(self) -> dict[str, Any]:
         """JSON-compatible payload. Decimal strings preserve database precision."""
-        return _json_value(self)
-
-
-def _json_value(value: Any) -> Any:
-    if is_dataclass(value):
-        return {item.name: _json_value(getattr(value, item.name)) for item in fields(value)}
-    if isinstance(value, StrEnum):
-        return value.value
-    if isinstance(value, (datetime, date)):
-        return value.isoformat()
-    if isinstance(value, Decimal):
-        return str(value)
-    if isinstance(value, dict):
-        if any(not isinstance(key, str) for key in value):
-            raise ValueError("JSON object keys must be strings")
-        return {key: _json_value(item) for key, item in value.items()}
-    if isinstance(value, (tuple, list)):
-        return [_json_value(item) for item in value]
-    if value is None or type(value) in {str, bool, int}:
-        return value
-    if type(value) is float and math.isfinite(value):
-        return value
-    raise ValueError("Unsupported JSON value")
+        return json_value(self)

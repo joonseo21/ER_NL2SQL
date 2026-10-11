@@ -1,7 +1,7 @@
 import pytest
 from sqlglot import exp, parse_one
 
-from er_agent.guard import SqlGuardError, guard_sql
+from er_agent.sql.guard import SqlGuardError, guard_sql
 
 
 def test_adds_limit_to_safe_select() -> None:

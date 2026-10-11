@@ -5,7 +5,8 @@ Update with schema_context and runtime grants when a later migration is approved
 
 from __future__ import annotations
 
-MAX_ROWS = 200
+from ..models.limits import MAX_ROWS as MAX_ROWS
+
 BLOCKED_COLUMNS = frozenset({"nickname", "raw", "is_ranker"})
 
 TABLE_COLUMNS: dict[str, tuple[str, ...]] = {

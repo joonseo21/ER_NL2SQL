@@ -4,12 +4,10 @@ from decimal import Decimal
 
 import pytest
 
-from er_agent.contracts import (
+from er_agent.models.names import NameCandidate, NameCategory, NameClarification
+from er_agent.models.query import (
     AppliedConditions,
     DataEvidence,
-    NameCandidate,
-    NameCategory,
-    NameClarification,
     PatchFilter,
     PatchMode,
     PatchVersion,

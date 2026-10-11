@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
 
 from sqlglot import exp, parse
 from sqlglot.errors import OptimizeError, ParseError
@@ -9,7 +8,8 @@ from sqlglot.optimizer.normalize_identifiers import normalize_identifiers
 from sqlglot.optimizer.qualify import qualify
 from sqlglot.optimizer.scope import traverse_scope
 
-from .query_schema import ALLOWED_TABLES, BLOCKED_COLUMNS, MAX_ROWS, TABLE_COLUMNS
+from ..models.sql import GuardedSql
+from .schema import ALLOWED_TABLES, BLOCKED_COLUMNS, MAX_ROWS, TABLE_COLUMNS
 
 # 분석 전용: SQL 문자열을 실행하거나, 파일/설정을 읽거나, 세션 상태를 수정하는 함수는
 # 사용하지 않는다. 쿼리 계약에 따라 의도적으로 수정하기.
@@ -96,12 +96,6 @@ ALLOWED_FUNCTIONS = frozenset(
 
 class SqlGuardError(ValueError):
     pass
-
-
-@dataclass(frozen=True)
-class GuardedSql:
-    sql: str
-    limit_added: bool
 
 
 def extract_sql(model_text: str) -> str:

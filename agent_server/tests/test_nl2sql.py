@@ -10,9 +10,9 @@ import psycopg
 import pytest
 from google.genai import errors
 
-from er_agent.context import ContextSnapshot
-from er_agent.contracts import PatchVersion, QueryRequest, ResponseKind
-from er_agent.nl2sql import run_query, run_question
+from er_agent.bootstrap import run_query, run_question
+from er_agent.models.context import ContextSnapshot
+from er_agent.models.query import PatchVersion, QueryRequest, ResponseKind
 from er_agent.settings import Settings
 
 SETTINGS = Settings("synthetic-url", "synthetic-key", "test-model")
@@ -31,8 +31,13 @@ def events(path: Path, kind: str | None = None) -> list[dict]:
 @pytest.fixture
 def execution(query_snapshot: ContextSnapshot) -> Iterator[MagicMock]:
     with (
-        patch("er_agent.nl2sql.load_context_snapshot", return_value=query_snapshot),
-        patch("er_agent.nl2sql.execute_select", return_value=[{"samples": 4}]) as execute,
+        patch(
+            "er_agent.database.context_repository.load_context_snapshot",
+            return_value=query_snapshot,
+        ),
+        patch(
+            "er_agent.database.query_executor.execute_select", return_value=[{"samples": 4}]
+        ) as execute,
     ):
         yield execute
 
@@ -223,7 +228,7 @@ def test_api_retries_are_distinct_from_sql_repair(
         output(GOOD_SQL),
     ]
     path = tmp_path / "log.jsonl"
-    with patch("er_agent.llm.time.sleep"):
+    with patch("er_agent.generation.retry.time.sleep"):
         assert run_query(QueryRequest("질문"), SETTINGS, path).kind == ResponseKind.ANSWER
     assert events(path)[-1]["logical_calls"] == 2
     assert events(path)[-1]["physical_calls"] == 3
@@ -241,7 +246,7 @@ def test_exhausted_api_requests_return_notice_and_leave_every_attempt(
         429, {"error": {"code": 429, "message": "SECRET api"}}
     )
     path = tmp_path / "log.jsonl"
-    with patch("er_agent.llm.time.sleep"):
+    with patch("er_agent.generation.retry.time.sleep"):
         answer = run_query(QueryRequest("질문"), SETTINGS, path)
     assert answer.kind == ResponseKind.NOTICE and "429" in answer.message
     execution.assert_not_called()
@@ -254,7 +259,10 @@ def test_snapshot_failure_logs_without_calling_model(
 ) -> None:
     path = tmp_path / "log.jsonl"
     with (
-        patch("er_agent.nl2sql.load_context_snapshot", side_effect=ValueError("SECRET db")),
+        patch(
+            "er_agent.database.context_repository.load_context_snapshot",
+            side_effect=ValueError("SECRET db"),
+        ),
         pytest.raises(ValueError),
     ):
         run_query(QueryRequest("질문"), SETTINGS, path)
@@ -272,6 +280,23 @@ def test_legacy_success_still_returns_rows(
 ) -> None:
     fake_client.models.generate_content.return_value = output(generation_text())
     assert run_question("질문", SETTINGS, tmp_path / "log.jsonl") == [{"samples": 4}]
+
+
+@pytest.mark.parametrize("text", ["not JSON", "success", "clarification"])
+def test_bootstrap_closes_generation_session_on_every_response(
+    tmp_path: Path,
+    fake_client: MagicMock,
+    execution: MagicMock,
+    generation_text: Callable[..., str],
+    text: str,
+) -> None:
+    if text == "success":
+        text = generation_text()
+    elif text == "clarification":
+        text = generation_text(names=[{"text": "없는 명칭", "category": "character"}])
+    fake_client.models.generate_content.return_value = output(text)
+    run_query(QueryRequest("질문"), SETTINGS, tmp_path / "log.jsonl")
+    fake_client.__exit__.assert_called_once()
 
 
 def test_unserializable_result_failure_still_finishes_log(
