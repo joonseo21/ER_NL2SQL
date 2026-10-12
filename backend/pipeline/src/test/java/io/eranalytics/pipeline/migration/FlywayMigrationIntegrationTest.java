@@ -66,14 +66,14 @@ class FlywayMigrationIntegrationTest {
 
     @Test
     void initializesEmptyDatabaseAndDoesNotRepeatAppliedMigrations() {
-        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(6);
+        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(7);
         assertThat(
                         jdbc.queryForList(
                                 "SELECT version FROM flyway_schema_history WHERE version IS NOT NULL "
                                         + "ORDER BY installed_rank",
                                 String.class))
-                .containsExactly("1", "2", "3", "4", "5");
-        assertThat(flyway().info().current().getVersion().toString()).isEqualTo("5");
+                .containsExactly("1", "2", "3", "4", "5", "6");
+        assertThat(flyway().info().current().getVersion().toString()).isEqualTo("6");
         flyway().validate();
         assertThat(flyway().migrate().migrationsExecuted).isZero();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM tiers", Integer.class)).isEqualTo(14);
@@ -91,7 +91,7 @@ class FlywayMigrationIntegrationTest {
                 .isEqualTo(3);
 
         DatabaseMigration.configure(url, "stage2_test", "").baselineVersion("2").load().baseline();
-        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(4);
+        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(5);
         assertThat(
                         jdbc.queryForObject(
                                 "SELECT type FROM flyway_schema_history WHERE version='2'",
@@ -164,6 +164,7 @@ class FlywayMigrationIntegrationTest {
                         "V3__mvp1_users_and_participant_columns.sql",
                         "V4__mvp1_move_raw_to_columns.sql",
                         "V5__name_metadata.sql",
+                        "V6__participants_scope_cover_index.sql",
                         "R__runtime_privileges.sql")) {
             try (InputStream resource = getClass().getResourceAsStream("/db/migration/" + file)) {
                 Files.copy(resource, changed.resolve(file));
@@ -227,7 +228,7 @@ class FlywayMigrationIntegrationTest {
     @Test
     void upgradeAfterRepeatableWasAppliedAtV4GrantsNewNameTables() {
         DatabaseMigration.configure(url, "stage2_test", "").target("4").load().migrate();
-        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(1);
+        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(2);
         for (String table :
                 List.of(
                         "items",
