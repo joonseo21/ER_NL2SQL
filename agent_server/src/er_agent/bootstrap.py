@@ -32,8 +32,8 @@ class QueryFailed(RuntimeError):
 
 @contextmanager
 def _generation_session(settings: Settings, recorder: QueryRecorder) -> Iterator[QueryGenerator]:
-    with create_client(settings.gemini_api_key) as client:
-        transport = GeminiTransport(client, settings.gemini_model)
+    with create_client(settings.gemini_api_key, settings.gemini_timeout_seconds) as client:
+        transport = GeminiTransport(client, settings.gemini_model, settings.gemini_thinking_level)
         caller = RetryingCaller(transport, recorder)
         yield QueryGenerationAgent(SqlGenerationAgent(caller, recorder), ResultSummaryAgent(caller))
 

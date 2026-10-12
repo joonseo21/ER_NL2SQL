@@ -46,6 +46,27 @@ def test_client_disables_hidden_retries() -> None:
     assert options.timeout == 30_000
 
 
+def test_client_timeout_follows_configuration() -> None:
+    with patch("er_agent.generation.gemini.genai.Client") as factory:
+        create_client("test-only", 120)
+    options = factory.call_args.kwargs["http_options"]
+    assert options.timeout == 120_000
+    assert options.retry_options.attempts == 1
+
+
+@pytest.mark.parametrize("level", ["", "low", "high"])
+def test_thinking_level_is_sent_only_when_configured(level: str) -> None:
+    client = MagicMock()
+    client.models.generate_content.return_value = response()
+    GeminiTransport(client, "test-model", level).complete("prompt")
+    config = client.models.generate_content.call_args.kwargs["config"]
+    if not level:
+        assert config.thinking_config is None
+    else:
+        sent = config.thinking_config.thinking_level
+        assert str(getattr(sent, "value", sent)).lower() == level
+
+
 def test_each_attempt_is_logged_with_separate_code_and_tokens(tmp_path: Path) -> None:
     trial = TrialRecorder(JsonlSink(tmp_path / "log.jsonl"), "질문", "test-model")
     client = MagicMock()

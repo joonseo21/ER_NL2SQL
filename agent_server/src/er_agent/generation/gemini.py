@@ -11,12 +11,12 @@ from ..models.errors import LlmCallError
 from ..models.generation import TOKEN_FIELDS, ModelReply
 
 
-def create_client(api_key: str) -> genai.Client:
+def create_client(api_key: str, timeout_seconds: int = 30) -> genai.Client:
     # The retry wrapper must observe every physical request.
     return genai.Client(
         api_key=api_key,
         http_options=types.HttpOptions(
-            timeout=30_000, retry_options=types.HttpRetryOptions(attempts=1)
+            timeout=timeout_seconds * 1000, retry_options=types.HttpRetryOptions(attempts=1)
         ),
     )
 
@@ -30,15 +30,22 @@ def _category(code: int) -> str:
 
 
 class GeminiTransport:
-    def __init__(self, client: genai.Client, model: str) -> None:
+    def __init__(self, client: genai.Client, model: str, thinking_level: str = "") -> None:
         self.client = client
         self.model = model
+        # Empty keeps the model default; only an explicit level is sent.
+        self.thinking_level = thinking_level
 
     def complete(self, prompt: str, schema: dict[str, Any] | None = None) -> ModelReply:
         config = types.GenerateContentConfig(
             response_mime_type="application/json" if schema is not None else "text/plain",
             response_json_schema=schema,
             candidate_count=1,
+            thinking_config=(
+                types.ThinkingConfig(thinking_level=self.thinking_level)
+                if self.thinking_level
+                else None
+            ),
         )
         try:
             response = self.client.models.generate_content(
