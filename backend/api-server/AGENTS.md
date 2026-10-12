@@ -22,6 +22,7 @@
 - `backend/pipeline/`, `agent_server/`, `frontend/`, `db/migrations/`의 코드는 읽지 않는다. 에이전트의 응답 형식과 DB 구조는 계약으로 안다.
 - 테이블이 필요하면 직접 마이그레이션을 만들지 않고 database 계약의 "변경 요청"에 테이블과 컬럼을 적고 사용자에게 알린다. 마이그레이션은 pipeline이 작성한다.
 - 에이전트 응답에 필요한 필드가 없으면 agent-http 계약의 "변경 요청"에 적는다.
+- 에이전트가 아직 HTTP로 뜨지 않았으면 [docs/contracts/samples](../../docs/contracts/samples/README.md)의 응답 예시를 돌려주는 가짜 에이전트로 개발한다.
 - 담당 밖 코드를 봐야 원인을 알 수 있으면 사용자에게 어떤 파일이 왜 필요한지 말하고 승인받은 파일만 본다.
 
 ## 계약을 바꿀 때
