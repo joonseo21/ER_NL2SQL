@@ -9,13 +9,28 @@ from ..models.query import QueryResponse
 from ..models.serialization import json_value
 from ..models.summary import SummaryDraft, SummarySentence
 
+# Metric names that contain a digit. A template may name the metric; every value still
+# comes from a result cell. Result column names are server-verified identifiers.
+METRIC_LABELS = ("top 3", "top3", "탑 3", "탑3")
+
+
+def _without_metric_names(literal: str, columns: tuple[str, ...]) -> str:
+    cleaned = literal
+    for name in sorted(columns, key=len, reverse=True):
+        cleaned = cleaned.replace(name, "")
+    cleaned = cleaned.lower()
+    for label in METRIC_LABELS:
+        cleaned = cleaned.replace(label, "")
+    return cleaned
+
 
 def _render(sentence: SummarySentence, response: QueryResponse) -> str:
     pieces = []
     used = set()
     try:
         for literal, field, spec, conversion in Formatter().parse(sentence.template):
-            if any(character.isnumeric() or character in "\r\n{}" for character in literal):
+            checked = _without_metric_names(literal, response.columns)
+            if any(character.isnumeric() or character in "\r\n{}" for character in checked):
                 raise SummaryFormatError
             pieces.append(literal)
             if field is None:

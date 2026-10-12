@@ -78,6 +78,51 @@ def test_invalid_template_cannot_introduce_or_transform_values(template: str) ->
         render_summary(parse_summary(draft(template)), answer())
 
 
+def metric_answer() -> QueryResponse:
+    base = answer()
+    return QueryResponse(
+        base.kind,
+        base.question,
+        base.log_id,
+        0,
+        applied_conditions=base.applied_conditions,
+        sql=base.sql,
+        columns=("character_name", "top3_rate"),
+        rows=({"character_name": "합성 이름", "top3_rate": "46.30"},),
+    )
+
+
+@pytest.mark.parametrize(
+    "template,expected",
+    [
+        ("TOP 3 비율은 {0}입니다.", "TOP 3 비율은 46.30입니다."),
+        ("탑3 비율은 {0}입니다.", "탑3 비율은 46.30입니다."),
+        ("top3 비율은 {0}입니다.", "top3 비율은 46.30입니다."),
+        ("top3_rate는 {0}입니다.", "top3_rate는 46.30입니다."),
+    ],
+)
+def test_metric_names_with_a_digit_are_text_not_model_numbers(template: str, expected: str) -> None:
+    response = metric_answer()
+    data = {"sentences": [{"template": template, "cells": [{"row": 0, "column": "top3_rate"}]}]}
+    assert render_summary(parse_summary(json.dumps(data, ensure_ascii=False)), response) == expected
+
+
+@pytest.mark.parametrize(
+    "template",
+    [
+        "TOP 4 비율은 {0}입니다.",
+        "표본은 3건이고 비율은 {0}입니다.",
+        "top 33 비율은 {0}입니다.",
+        "top3_rate_2는 {0}입니다.",
+        "TOP 3 비율은 {0}이고 3입니다.",
+    ],
+)
+def test_digit_allowance_does_not_admit_other_literal_numbers(template: str) -> None:
+    data = {"sentences": [{"template": template, "cells": [{"row": 0, "column": "top3_rate"}]}]}
+    with pytest.raises(SummaryFormatError):
+        render_summary(parse_summary(json.dumps(data, ensure_ascii=False)), metric_answer())
+
+
 @pytest.mark.parametrize(
     "row,column", [(1, "rate"), (-1, "rate"), (True, "rate"), (0, "missing"), (0, 42)]
 )

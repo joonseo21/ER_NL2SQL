@@ -55,6 +55,8 @@ Each template is one sentence. Insert every fact/value/name using numbered slots
 {{0}}, {{1}}, ... referring to its cells array. A cell uses a zero-based row index
 and an exact column name. All references must be used. Put NO literal numbers in
 templates, no newline, formatting specification, conversion or attribute access.
+Naming a metric that contains a digit, such as TOP 3 or a column name like top3_rate,
+is allowed as plain text; its value still comes from a cell.
 Do not round, calculate, or add units not justified by the result. The server inserts
 the exact cell values. For example a samples column can be described using
 {{"sentences":[{{"template":"표본은 {{0}}건입니다.","cells":[{{"row":0,"column":"samples"}}]}}]}}.
