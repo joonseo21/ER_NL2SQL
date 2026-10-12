@@ -1,0 +1,5 @@
+[
+  {"id": "matchup", "question": "아드리아나로 상대하기 좋은 실험체를 추천해줘"},
+  {"id": "teammate", "question": "아드리아나와 같은 팀에 있으면 좋은 실험체를 추천해줘"},
+  {"id": "current-performance", "question": "지금 성능이 좋은 실험체를 추천해줘"}
+]

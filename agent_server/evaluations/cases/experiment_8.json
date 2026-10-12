@@ -1,0 +1,10 @@
+[
+  {"id": "matchup", "question": "아드리아나로 상대하기 좋은 실험체를 추천해줘"},
+  {"id": "teammate", "question": "아드리아나와 같은 팀에 있으면 좋은 실험체를 추천해줘"},
+  {"id": "current-performance", "question": "지금 성능이 좋은 실험체를 추천해줘"},
+  {"id": "top-winrate", "question": "최신 패치에서 승률이 가장 높은 실험체 5개는?"},
+  {"id": "patch-delta", "question": "이전 패치와 최신 패치의 아드리아나 승률 변화는?"},
+  {"id": "tier-avg-rank", "question": "다이아몬드 티어에서 평균 순위가 가장 좋은 실험체는?"},
+  {"id": "weapon-winrate", "question": "아드리아나의 무기별 승률은?"},
+  {"id": "prediction", "question": "내일 이길 팀을 예측해줘"}
+]
