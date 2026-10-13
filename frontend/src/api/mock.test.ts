@@ -80,19 +80,120 @@ describe('가짜 서버의 동작', () => {
     expect((await api.askQuestion(request, 'CODE')).remaining_today).toBe(7)
   })
 
-  it('오류 시나리오는 횟수를 줄이지 않고 코드별 ApiError를 던진다', async () => {
+  it('한도 초과는 접수 단계에서 거절되어 횟수를 소비하지 않는다', async () => {
     let scenario: MockScenarioId = 'error-invite-limit'
+    const statuses: string[] = []
     const api = createMockApi({ delayMs: 0, scenario: () => scenario, initialRemaining: 5 })
-    await expect(api.askQuestion(request, 'CODE')).rejects.toMatchObject({
+    await expect(api.askQuestion(request, 'CODE', (s) => statuses.push(s))).rejects.toMatchObject({
       code: 'INVITE_LIMIT_EXCEEDED',
       status: 429,
     })
     scenario = 'error-global-limit'
     await expect(api.askQuestion(request, 'CODE')).rejects.toMatchObject({ code: 'GLOBAL_LIMIT_EXCEEDED' })
-    scenario = 'error-agent'
-    await expect(api.askQuestion(request, 'CODE')).rejects.toMatchObject({ code: 'AGENT_UNAVAILABLE' })
+    expect(statuses).toEqual([]) // 접수되지 않았으므로 진행 상태도 없다
+
     scenario = 'answer'
     expect((await api.askQuestion(request, 'CODE')).remaining_today).toBe(4)
+  })
+
+  it('접수한 뒤 에이전트가 실패하면 횟수는 소비된 채 오류가 된다', async () => {
+    let scenario: MockScenarioId = 'error-agent'
+    const statuses: string[] = []
+    const api = createMockApi({ delayMs: 0, scenario: () => scenario, initialRemaining: 5 })
+
+    await expect(api.askQuestion(request, 'CODE', (s) => statuses.push(s))).rejects.toMatchObject({
+      code: 'AGENT_CONNECTION_FAILED',
+      message: '질문 처리 서버에 연결하지 못했습니다. 잠시 뒤 다시 이용해 주세요.',
+      accepted: { requestId: 'mock-request-1', remainingToday: 4 },
+    })
+    expect(statuses).toEqual(['accepted', 'processing'])
+
+    scenario = 'answer'
+    expect((await api.askQuestion(request, 'CODE')).remaining_today).toBe(3) // 5 → 4(실패) → 3
+  })
+
+  it('처리 지연 시나리오는 접수 정보를 담은 PROCESSING_TIMEOUT이고, 다시 확인하면 답변을 받는다', async () => {
+    const api = createMockApi({ delayMs: 0, scenario: () => 'error-timeout', initialRemaining: 5 })
+
+    const error = await api.askQuestion(request, 'CODE').catch((e: unknown) => e)
+    expect(error).toMatchObject({
+      code: 'PROCESSING_TIMEOUT',
+      accepted: { requestId: 'mock-request-1', remainingToday: 4 },
+    })
+
+    const response = await api.checkQuestion('mock-request-1', 4, 'CODE')
+    expect(response).toMatchObject({ kind: 'answer', remaining_today: 4 })
+  })
+
+  it('후기는 가짜 서버가 돌려준 log_id에만 저장되고 다시 보내도 저장된다', async () => {
+    const api = createMockApi({ delayMs: 0 })
+    const { log_id } = await api.askQuestion(request, 'CODE')
+
+    await expect(api.submitFeedback(log_id, { rating: 'like' }, 'CODE')).resolves.toEqual({ saved: true })
+    await expect(
+      api.submitFeedback(log_id, { rating: 'dislike', comment: '바꿨어요' }, 'CODE'),
+    ).resolves.toEqual({ saved: true })
+  })
+
+  it('모르는 log_id의 후기는 QUESTION_NOT_FOUND다', async () => {
+    const api = createMockApi({ delayMs: 0 })
+    await expect(api.submitFeedback('unknown', { rating: 'like' }, 'CODE')).rejects.toMatchObject({
+      code: 'QUESTION_NOT_FOUND',
+      status: 404,
+    })
+  })
+
+  it('의견이 500자를 넘으면 VALIDATION_FAILED, 500자는 허용한다', async () => {
+    const api = createMockApi({ delayMs: 0 })
+    const { log_id } = await api.askQuestion(request, 'CODE')
+    await expect(
+      api.submitFeedback(log_id, { rating: 'like', comment: '가'.repeat(500) }, 'CODE'),
+    ).resolves.toEqual({ saved: true })
+    await expect(
+      api.submitFeedback(log_id, { rating: 'like', comment: '가'.repeat(501) }, 'CODE'),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED', status: 400 })
+  })
+
+  it('수집 현황은 계약의 확정 형식(티어별 이용자 수·참가 기록 수, 패치, 시각 3종)을 따른다', async () => {
+    const summary = await createMockApi({ delayMs: 0 }).getCollectionSummary('CODE')
+    expect(Object.keys(summary).sort()).toEqual(
+      ['by_tier', 'cached_until', 'latest_collected_at', 'patches', 'snapshot_at', 'total_games'].sort(),
+    )
+    expect(summary.total_games).toBeGreaterThan(0)
+    for (const row of summary.by_tier) {
+      expect(Object.keys(row).sort()).toEqual(['participant_appearances', 'tier', 'users'])
+      expect(row.users).toBeGreaterThanOrEqual(0)
+      expect(row.participant_appearances).toBeGreaterThanOrEqual(0)
+    }
+    // 조건 목록과 같은 형식의 패치이며 버전 내림차순이다.
+    expect(summary.patches[0]).toEqual({
+      major: 5,
+      minor: 0,
+      first_match: expect.any(String),
+      last_match: expect.any(String),
+    })
+    expect(Date.parse(summary.cached_until)).toBeGreaterThan(Date.parse(summary.snapshot_at))
+  })
+
+  it('수집 현황 예시에는 티어를 확인하지 못한 항목(null)과 자료가 없는 티어(0)가 있다', async () => {
+    const { by_tier } = await createMockApi({ delayMs: 0 }).getCollectionSummary('CODE')
+    expect(by_tier.some((row) => row.tier === null)).toBe(true)
+    expect(by_tier.some((row) => row.tier !== null && row.users === 0 && row.participant_appearances === 0)).toBe(
+      true,
+    )
+  })
+
+  it('수집 현황도 잘못된 초대 코드는 거절한다', async () => {
+    await expect(createMockApi({ delayMs: 0 }).getCollectionSummary('INVALID')).rejects.toMatchObject({
+      code: 'INVITE_INVALID',
+    })
+  })
+
+  it('정상 질문은 접수 → 처리 중 → 완료 순서로 진행 상태를 알린다', async () => {
+    const statuses: string[] = []
+    const api = createMockApi({ delayMs: 0 })
+    await api.askQuestion(request, 'CODE', (s) => statuses.push(s))
+    expect(statuses).toEqual(['accepted', 'processing', 'completed'])
   })
 
   it('잘못된 초대 코드는 INVITE_INVALID다', async () => {

@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react'
 import { createApi, isMockMode } from './api'
 import type { ErApi } from './api'
+import { CollectionStatus } from './components/CollectionStatus'
 import { InviteGate } from './components/InviteGate'
 import { MockBar } from './components/MockBar'
 import { clearInviteCode, loadInviteCode, saveInviteCode } from './lib/session'
@@ -15,6 +16,8 @@ interface Session {
   remaining: number | null
 }
 
+type View = 'question' | 'status'
+
 interface Props {
   /** 테스트에서 다른 API를 넣기 위한 자리 */
   api?: ErApi
@@ -26,6 +29,9 @@ export default function App({ api = defaultApi }: Props) {
     return code === null ? null : { code, remaining: null }
   })
   const [rejected, setRejected] = useState(false)
+  const [view, setView] = useState<View>('question')
+  // 수집 현황은 처음 열 때 한 번 불러오고, 이후에는 화면만 가렸다 보여 준다.
+  const [statusOpened, setStatusOpened] = useState(false)
 
   const handleVerified = useCallback((code: string, remaining: number) => {
     saveInviteCode(code)
@@ -43,6 +49,11 @@ export default function App({ api = defaultApi }: Props) {
     clearInviteCode()
     setRejected(false)
     setSession(null)
+  }
+
+  function showView(next: View) {
+    setView(next)
+    if (next === 'status') setStatusOpened(true)
   }
 
   return (
@@ -70,6 +81,27 @@ export default function App({ api = defaultApi }: Props) {
       )}
       {isMockMode && <MockBar />}
 
+      {session && (
+        <nav className="tabs" aria-label="화면 전환">
+          <button
+            type="button"
+            className={`tab${view === 'question' ? ' active' : ''}`}
+            aria-current={view === 'question' ? 'page' : undefined}
+            onClick={() => showView('question')}
+          >
+            질문
+          </button>
+          <button
+            type="button"
+            className={`tab${view === 'status' ? ' active' : ''}`}
+            aria-current={view === 'status' ? 'page' : undefined}
+            onClick={() => showView('status')}
+          >
+            수집 현황
+          </button>
+        </nav>
+      )}
+
       <main>
         {session === null ? (
           <InviteGate
@@ -78,13 +110,27 @@ export default function App({ api = defaultApi }: Props) {
             onVerified={handleVerified}
           />
         ) : (
-          <QuestionScreen
-            key={session.code}
-            api={api}
-            inviteCode={session.code}
-            initialRemaining={session.remaining}
-            onInviteInvalid={handleInviteInvalid}
-          />
+          <>
+            <div hidden={view !== 'question'}>
+              <QuestionScreen
+                key={session.code}
+                api={api}
+                inviteCode={session.code}
+                initialRemaining={session.remaining}
+                onInviteInvalid={handleInviteInvalid}
+              />
+            </div>
+            {statusOpened && (
+              <div hidden={view !== 'status'}>
+                <CollectionStatus
+                  key={session.code}
+                  api={api}
+                  inviteCode={session.code}
+                  onInviteInvalid={handleInviteInvalid}
+                />
+              </div>
+            )}
+          </>
         )}
       </main>
     </div>
