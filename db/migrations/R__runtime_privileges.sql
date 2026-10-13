@@ -40,3 +40,24 @@ BEGIN
         END IF;
     END LOOP;
 END $$;
+
+-- Keep older-version verification usable before web storage and its role exist.
+DO $$
+BEGIN
+    IF to_regclass('public.invite_codes') IS NOT NULL THEN
+        REVOKE ALL ON invite_codes, daily_usage, question_logs, feedback FROM collector, agent_ro;
+        IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'api_server') THEN
+            GRANT USAGE ON SCHEMA public TO api_server;
+            REVOKE ALL ON ALL TABLES IN SCHEMA public FROM api_server;
+            REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM api_server;
+            -- Table revocation does not remove earlier column grants.
+            REVOKE SELECT (nickname, raw, is_ranker) ON participants FROM api_server;
+            GRANT SELECT, INSERT, UPDATE, DELETE ON
+                invite_codes, daily_usage, question_logs, feedback TO api_server;
+            GRANT SELECT ON tiers, characters, collect_queue, api_call_log TO api_server;
+            GRANT SELECT (game_id, season_id, matching_mode, matching_team_mode,
+                version_major, version_minor, start_dtm, fetched_at) ON games TO api_server;
+            GRANT SELECT (game_id, participant_id, tier, tier_division) ON participants TO api_server;
+        END IF;
+    END IF;
+END $$;

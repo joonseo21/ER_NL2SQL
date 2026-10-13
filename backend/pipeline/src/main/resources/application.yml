@@ -26,6 +26,14 @@ spring:
         order_updates: true
 
 er:
+  web-api:
+    enabled: ${ER_WEB_API_ENABLED:false}
+    datasource:
+      url: ${API_SERVER_DATABASE_URL:${COLLECTOR_DATABASE_URL:jdbc:postgresql://localhost:5433/er_analytics}}
+      username: api_server
+      password: ${API_SERVER_PASSWORD:}
+      hikari:
+        maximum-pool-size: 3
   api:
     base-url: https://open-api.bser.io
     key: ${ER_API_KEY:}

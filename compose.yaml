@@ -9,11 +9,13 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       COLLECTOR_PASSWORD: ${COLLECTOR_PASSWORD:?Set COLLECTOR_PASSWORD in .env}
       AGENT_RO_PASSWORD: ${AGENT_RO_PASSWORD:?Set AGENT_RO_PASSWORD in .env}
+      API_SERVER_PASSWORD: ${API_SERVER_PASSWORD:?Set API_SERVER_PASSWORD in .env}
     ports:
       - "127.0.0.1:5433:5432"
     volumes:
       - er_postgres_data:/var/lib/postgresql/data
       - ./db/init/020-roles.sh:/docker-entrypoint-initdb.d/020-roles.sh:ro
+      - ./db/init/030-api-server-role.sh:/docker-entrypoint-initdb.d/030-api-server-role.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d ${POSTGRES_DB:-er_analytics}"]
       interval: 5s
@@ -34,6 +36,9 @@ services:
       COLLECTOR_DATABASE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-er_analytics}
       COLLECTOR_PASSWORD: ${COLLECTOR_PASSWORD:?Set COLLECTOR_PASSWORD in .env}
       ER_API_KEY: ${ER_API_KEY:?Set ER_API_KEY in .env}
+      ER_WEB_API_ENABLED: ${ER_WEB_API_ENABLED:-false}
+      API_SERVER_DATABASE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-er_analytics}
+      API_SERVER_PASSWORD: ${API_SERVER_PASSWORD:?Set API_SERVER_PASSWORD in .env}
       ER_SEASON_ID: ${ER_SEASON_ID:?Set ER_SEASON_ID in .env}
       ER_REQUESTS_PER_SECOND: ${ER_REQUESTS_PER_SECOND:-0.5}
       ER_COLLECTION_ENABLED: "true"

@@ -56,6 +56,9 @@ class FlywayMigrationIntegrationTest {
                         IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='agent_ro') THEN
                             CREATE ROLE agent_ro LOGIN;
                         END IF;
+                        IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='api_server') THEN
+                            CREATE ROLE api_server LOGIN;
+                        END IF;
                     END $$
                     """);
             sql.execute("DROP SCHEMA public CASCADE");
@@ -66,14 +69,14 @@ class FlywayMigrationIntegrationTest {
 
     @Test
     void initializesEmptyDatabaseAndDoesNotRepeatAppliedMigrations() {
-        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(7);
+        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(8);
         assertThat(
                         jdbc.queryForList(
                                 "SELECT version FROM flyway_schema_history WHERE version IS NOT NULL "
                                         + "ORDER BY installed_rank",
                                 String.class))
-                .containsExactly("1", "2", "3", "4", "5", "6");
-        assertThat(flyway().info().current().getVersion().toString()).isEqualTo("6");
+                .containsExactly("1", "2", "3", "4", "5", "6", "7");
+        assertThat(flyway().info().current().getVersion().toString()).isEqualTo("7");
         flyway().validate();
         assertThat(flyway().migrate().migrationsExecuted).isZero();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM tiers", Integer.class)).isEqualTo(14);
@@ -91,7 +94,7 @@ class FlywayMigrationIntegrationTest {
                 .isEqualTo(3);
 
         DatabaseMigration.configure(url, "stage2_test", "").baselineVersion("2").load().baseline();
-        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(5);
+        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(6);
         assertThat(
                         jdbc.queryForObject(
                                 "SELECT type FROM flyway_schema_history WHERE version='2'",
@@ -165,6 +168,7 @@ class FlywayMigrationIntegrationTest {
                         "V4__mvp1_move_raw_to_columns.sql",
                         "V5__name_metadata.sql",
                         "V6__participants_scope_cover_index.sql",
+                        "V7__web_api_storage.sql",
                         "R__runtime_privileges.sql")) {
             try (InputStream resource = getClass().getResourceAsStream("/db/migration/" + file)) {
                 Files.copy(resource, changed.resolve(file));
@@ -195,7 +199,7 @@ class FlywayMigrationIntegrationTest {
                                 "SELECT has_schema_privilege('collector','public','CREATE')",
                                 Boolean.class))
                 .isFalse();
-        for (String role : List.of("collector", "agent_ro")) {
+        for (String role : List.of("collector", "agent_ro", "api_server")) {
             assertThat(
                             jdbc.queryForObject(
                                     "SELECT has_table_privilege(?, 'flyway_schema_history', 'SELECT')",
@@ -228,7 +232,7 @@ class FlywayMigrationIntegrationTest {
     @Test
     void upgradeAfterRepeatableWasAppliedAtV4GrantsNewNameTables() {
         DatabaseMigration.configure(url, "stage2_test", "").target("4").load().migrate();
-        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(2);
+        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(3);
         for (String table :
                 List.of(
                         "items",
@@ -256,6 +260,26 @@ class FlywayMigrationIntegrationTest {
                                     table))
                     .isTrue();
         }
+    }
+
+    @Test
+    void addsWebStorageAfterV6WithoutChangingCollectionData() {
+        DatabaseMigration.configure(url, "stage2_test", "").target("6").load().migrate();
+        jdbc.update("INSERT INTO games(game_id,season_id) VALUES (710001,41)");
+        String before =
+                jdbc.queryForObject("SELECT row_to_json(games)::text FROM games", String.class);
+        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT row_to_json(games)::text FROM games", String.class))
+                .isEqualTo(before);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM invite_codes", Integer.class))
+                .isZero();
+        assertThat(
+                        jdbc.queryForObject(
+                                "SELECT has_table_privilege('api_server','question_logs','INSERT')",
+                                Boolean.class))
+                .isTrue();
+        flyway().validate();
+        assertThat(flyway().migrate().migrationsExecuted).isZero();
     }
 
     private void applyOriginal(String file) throws Exception {

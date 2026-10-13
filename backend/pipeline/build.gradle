@@ -99,7 +99,7 @@ tasks.named('test') {
 
 // DB 테스트 태스크
 tasks.register('integrationTest', Test) {
-    description = 'Verifies V1-V5 and JPA persistence in a dedicated PostgreSQL test database.'
+    description = 'Verifies migrations and JPA persistence in dedicated PostgreSQL test databases.'
     group = 'verification'
     testClassesDirs = sourceSets.test.output.classesDirs
     classpath = sourceSets.test.runtimeClasspath
