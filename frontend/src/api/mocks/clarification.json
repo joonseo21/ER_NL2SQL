@@ -1,0 +1,23 @@
+{
+  "kind": "clarification",
+  "question": "아드리나의 최신 패치 승률은?",
+  "log_id": "sample-clarification-0001",
+  "elapsed_ms": 1840,
+  "applied_conditions": null,
+  "sql": null,
+  "columns": [],
+  "rows": [],
+  "summary": null,
+  "message": "'아드리나'를 정식 명칭에서 찾지 못했습니다. 아래 후보 중 하나로 다시 질문해 주세요.",
+  "examples": [],
+  "clarifications": [
+    {
+      "term": "아드리나",
+      "candidates": [
+        { "category": "character", "code": 17, "name": "아드리아나" }
+      ]
+    }
+  ],
+  "evidence": null,
+  "warnings": []
+}

@@ -1,6 +1,6 @@
 # frontend 파트 (질문 화면)
 
-공통 규칙은 [CLAUDE.md](../CLAUDE.md)다. 이 파일은 이 파트의 범위만 정한다. 아직 코드가 없다(10단계).
+공통 규칙은 [CLAUDE.md](../CLAUDE.md)다. 이 파일은 이 파트의 범위만 정한다. 10단계에서 프로젝트를 만들었고 API 서버가 없는 동안 가짜 응답으로 개발한다.
 
 ## 담당
 
@@ -23,4 +23,12 @@
 
 ## 검증
 
-린트·타입 검사·빌드 명령은 프로젝트를 만들 때 정하고 여기에 적는다.
+`frontend/`에서 실행한다. Node.js 24 LTS와 npm이 필요하며 처음에는 `npm install`을 한다. 모든 검사를 통과시킨 뒤 끝낸다.
+
+| 명령 | 내용 |
+|---|---|
+| `npm run lint` | ESLint |
+| `npm run typecheck` | TypeScript 타입 검사 |
+| `npm test` | Vitest 단위·화면 테스트 (한 번 실행) |
+| `npm run build` | 타입 검사 후 프로덕션 빌드 |
+| `npm run dev` | 개발 서버 |
