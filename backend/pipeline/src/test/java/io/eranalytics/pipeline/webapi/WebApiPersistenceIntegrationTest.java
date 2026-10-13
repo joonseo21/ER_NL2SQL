@@ -44,6 +44,7 @@ import org.springframework.test.context.DynamicPropertySource;
         properties = {
             "er.collection.enabled=false",
             "er.web-api.enabled=true",
+            "er.web-api.agent.mode=mock",
             "spring.config.import="
         })
 class WebApiPersistenceIntegrationTest {

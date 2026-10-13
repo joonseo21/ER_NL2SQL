@@ -23,7 +23,8 @@ public class ConditionsService {
     private final ObjectMapper json;
     private final int season;
 
-    public ConditionsService(ObjectMapper json, @Value("${er.web-api.season-id:41}") int season) {
+    public ConditionsService(
+            ObjectMapper json, @Value("${er.web-api.season-id:${ER_SEASON_ID:41}}") int season) {
         this.json = json;
         this.season = season;
     }
@@ -31,14 +32,7 @@ public class ConditionsService {
     @Transactional(value = "webApiTransactionManager", readOnly = true)
     public ObjectNode list() {
         ObjectNode response = json.createObjectNode();
-        ArrayNode patches = response.putArray("patches");
-        for (Object[] row : patches()) {
-            ObjectNode patch = patches.addObject();
-            patch.put("major", ((Number) row[0]).intValue());
-            patch.put("minor", ((Number) row[1]).intValue());
-            patch.put("first_match", timestamp(row[2]));
-            patch.put("last_match", timestamp(row[3]));
-        }
+        response.set("patches", availablePatches());
         ArrayNode tiers = response.putArray("tiers");
         for (Object tier :
                 entities.createNativeQuery(
@@ -61,6 +55,19 @@ public class ConditionsService {
         return response;
     }
 
+    @Transactional(value = "webApiTransactionManager", readOnly = true)
+    public ArrayNode availablePatches() {
+        ArrayNode patches = json.createArrayNode();
+        for (Object[] row : patches()) {
+            ObjectNode patch = patches.addObject();
+            patch.put("major", ((Number) row[0]).intValue());
+            patch.put("minor", ((Number) row[1]).intValue());
+            patch.put("first_match", timestamp(row[2]));
+            patch.put("last_match", timestamp(row[3]));
+        }
+        return patches;
+    }
+
     @SuppressWarnings("unchecked")
     private List<Object[]> patches() {
         return entities.createNativeQuery(
@@ -74,7 +81,7 @@ public class ConditionsService {
                 .getResultList();
     }
 
-    private String timestamp(Object value) {
+    public static String timestamp(Object value) {
         if (value == null) return null;
         if (value instanceof Instant instant) return instant.toString();
         if (value instanceof OffsetDateTime date) return date.toInstant().toString();

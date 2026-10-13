@@ -8,13 +8,9 @@ import java.io.InputStream;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.io.ClassPathResource;
-import org.springframework.stereotype.Component;
 
 /** Bundled contract fixtures only: never calls Gemini or executes generated SQL. */
-@Component
-@ConditionalOnProperty(name = "er.web-api.enabled", havingValue = "true")
 public class MockAgentClient implements AgentClient {
     private final ObjectNode template;
 

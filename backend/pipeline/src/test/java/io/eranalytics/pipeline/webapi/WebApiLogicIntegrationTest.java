@@ -21,6 +21,7 @@ import io.eranalytics.pipeline.webapi.repository.InviteCodeRepository;
 import io.eranalytics.pipeline.webapi.repository.QuestionLogRepository;
 import io.eranalytics.pipeline.webapi.repository.QuestionRequestRepository;
 import io.eranalytics.pipeline.webapi.service.QuestionAccepted;
+import io.eranalytics.pipeline.webapi.service.QuestionFailure;
 import io.eranalytics.pipeline.webapi.service.QuestionService;
 import io.eranalytics.pipeline.webapi.service.UsageService;
 import io.eranalytics.pipeline.webapi.service.WebApiClock;
@@ -63,6 +64,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
         properties = {
             "er.collection.enabled=false",
             "er.web-api.enabled=true",
+            "er.web-api.agent.mode=mock",
             "spring.config.import="
         })
 @AutoConfigureMockMvc
@@ -90,13 +92,23 @@ class WebApiLogicIntegrationTest {
                 Statement sql = connection.createStatement()) {
             sql.execute(
                     "DO $$ BEGIN IF current_database() <> 'er_webapi_logic_test' THEN RAISE EXCEPTION 'Wrong test database'; END IF; END $$");
+            sql.execute("DROP SCHEMA public CASCADE");
+            sql.execute("CREATE SCHEMA public");
         }
         Flyway.configure()
                 .dataSource(url, "stage2_test", "")
                 .locations("classpath:db/migration")
                 .load()
                 .migrate();
-        QuestionRequestTestSchema.prepare(url);
+        assertThat(
+                        Flyway.configure()
+                                .dataSource(url, "stage2_test", "")
+                                .load()
+                                .info()
+                                .current()
+                                .getVersion()
+                                .getVersion())
+                .isEqualTo("8");
         properties.add("spring.datasource.url", () -> url);
         properties.add("spring.datasource.username", () -> "collector");
         properties.add("spring.datasource.password", () -> "");
@@ -124,12 +136,122 @@ class WebApiLogicIntegrationTest {
                 Statement sql = connection.createStatement()) {
             sql.execute(
                     "TRUNCATE question_requests,feedback,question_logs,daily_usage,invite_codes");
+            sql.execute("TRUNCATE games,users CASCADE");
         }
         clock.now = NOW;
         invites.save(new InviteCodeEntity(CODE, "synthetic", NOW));
         MockAgentClient mock = new MockAgentClient(json, "answer");
         when(agent.query(anyString(), any()))
                 .thenAnswer(call -> mock.query(call.getArgument(0), call.getArgument(1)));
+    }
+
+    @Test
+    void summaryCountsCurrentUsersAndHistoricalAppearancesAndCachesSnapshot() throws Exception {
+        try (Connection connection = DriverManager.getConnection(testUrl(), "stage2_test", "");
+                Statement sql = connection.createStatement()) {
+            sql.execute(
+                    """
+                    INSERT INTO games(game_id,season_id,matching_mode,matching_team_mode,version_major,version_minor,start_dtm,fetched_at)
+                    VALUES(101,41,3,3,4,2,'2026-10-10T00:00:00Z','2026-10-12T00:00:00Z'),
+                          (102,41,3,3,4,3,'2026-10-11T00:00:00Z','2026-10-13T00:00:00Z'),
+                          (103,40,3,3,4,1,NULL,now()),(104,41,2,3,4,4,NULL,now())
+                    """);
+            sql.execute(
+                    """
+                    INSERT INTO users(season_id,nickname,tier)
+                    VALUES(41,'synthetic-user','다이아몬드'),(40,'excluded-season','플래티넘')
+                    """);
+            sql.execute(
+                    """
+                    INSERT INTO participants(game_id,nickname,tier,raw)
+                    VALUES(101,'synthetic-user','플래티넘','{}'),(101,'another','플래티넘','{}'),
+                          (102,'synthetic-user','다이아몬드','{}'),(104,'excluded-mode','플래티넘','{}')
+                    """);
+        }
+        http.perform(get("/api/collection/summary")).andExpect(status().isUnauthorized());
+        JsonNode result = collectionSummary();
+        assertThat(result.path("total_games").asInt()).isEqualTo(2);
+        assertThat(result.path("latest_collected_at").asText()).isEqualTo("2026-10-13T00:00:00Z");
+        assertThat(result.path("patches").size()).isEqualTo(2);
+        assertThat(tier(result, "다이아몬드").path("users").asInt()).isEqualTo(1);
+        assertThat(tier(result, "플래티넘").path("users").asInt()).isZero();
+        assertThat(tier(result, "플래티넘").path("participant_appearances").asInt()).isEqualTo(2);
+        assertThat(tier(result, "다이아몬드").path("participant_appearances").asInt()).isEqualTo(1);
+        String conditions =
+                http.perform(get("/api/conditions").header("X-Invite-Code", CODE))
+                        .andExpect(status().isOk())
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(result.path("patches")).isEqualTo(json.readTree(conditions).path("patches"));
+        try (Connection connection = DriverManager.getConnection(testUrl(), "stage2_test", "");
+                Statement sql = connection.createStatement()) {
+            sql.execute("DELETE FROM games WHERE game_id=102");
+        }
+        clock.now = NOW.plusSeconds(299);
+        assertThat(collectionSummary()).isEqualTo(result);
+        clock.now = NOW.plusSeconds(300);
+        assertThat(collectionSummary().path("total_games").asInt()).isEqualTo(1);
+    }
+
+    private JsonNode collectionSummary() throws Exception {
+        String body =
+                http.perform(get("/api/collection/summary").header("X-Invite-Code", CODE))
+                        .andExpect(status().isOk())
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        return json.readTree(body);
+    }
+
+    private static JsonNode tier(JsonNode summary, String name) {
+        for (JsonNode bucket : summary.path("by_tier")) {
+            if (name.equals(bucket.path("tier").asText())) return bucket;
+        }
+        throw new AssertionError("Missing tier: " + name);
+    }
+
+    @Test
+    void persistsAgentFailuresWithoutResendingOrLeakingDetails() throws Exception {
+        for (QuestionFailure failure :
+                List.of(
+                        QuestionFailure.AGENT_AUTH_FAILED,
+                        QuestionFailure.AGENT_REQUEST_REJECTED,
+                        QuestionFailure.AGENT_INTERNAL_ERROR,
+                        QuestionFailure.AGENT_BUSY,
+                        QuestionFailure.AGENT_CONNECTION_FAILED,
+                        QuestionFailure.AGENT_TIMEOUT)) {
+            doThrow(failure.exception()).when(agent).query(anyString(), any());
+            String body =
+                    http.perform(
+                                    post("/api/questions")
+                                            .header("X-Invite-Code", CODE)
+                                            .contentType(MediaType.APPLICATION_JSON)
+                                            .content("{\"question\":\"질문\"}"))
+                            .andExpect(status().isAccepted())
+                            .andReturn()
+                            .getResponse()
+                            .getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+            String id = json.readTree(body).path("request_id").asText();
+            await().atMost(Duration.ofSeconds(10))
+                    .untilAsserted(
+                            () -> {
+                                io.eranalytics.pipeline.webapi.entity.QuestionRequestEntity stored =
+                                        requests.findById(id).orElseThrow();
+                                assertThat(stored.getStatus()).isEqualTo("failed");
+                                assertThat(stored.getErrorCode()).isEqualTo(failure.name());
+                                http.perform(
+                                                get("/api/questions/" + id)
+                                                        .header("X-Invite-Code", CODE))
+                                        .andExpect(status().isOk())
+                                        .andExpect(jsonPath("$.error_code").value(failure.name()))
+                                        .andExpect(
+                                                jsonPath("$.message")
+                                                        .value(failure.exception().getMessage()));
+                            });
+        }
+        verify(agent, times(6)).query(anyString(), any());
+        assertThat(logs.count()).isZero();
     }
 
     @Test

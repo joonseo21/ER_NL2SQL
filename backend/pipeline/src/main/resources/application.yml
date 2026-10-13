@@ -28,6 +28,12 @@ spring:
 er:
   web-api:
     enabled: ${ER_WEB_API_ENABLED:false}
+    frontend-location: ${WEB_API_FRONTEND_LOCATION:classpath:/static/}
+    agent:
+      mode: ${WEB_API_AGENT_MODE:http}
+      base-url: ${AGENT_BASE_URL:http://127.0.0.1:8000}
+      connect-timeout-ms: ${AGENT_CONNECT_TIMEOUT_MS:3000}
+      read-timeout-ms: ${AGENT_READ_TIMEOUT_MS:330000}
     datasource:
       url: ${API_SERVER_DATABASE_URL:${COLLECTOR_DATABASE_URL:jdbc:postgresql://localhost:5433/er_analytics}}
       username: api_server

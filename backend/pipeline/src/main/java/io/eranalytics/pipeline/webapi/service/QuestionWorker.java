@@ -24,11 +24,25 @@ public class QuestionWorker {
             QuestionProcessingStore.Work work = store.claim(id);
             if (work == null) return;
             ObjectNode response = agent.query(work.question(), work.conditions());
-            store.complete(id, response);
+            saveResult(id, response);
         } catch (WebApiException failure) {
             fail(id, failure.getCode(), failure.getMessage());
         } catch (RuntimeException failure) {
-            fail(id, "QUESTION_PROCESSING_FAILED", "질문 처리에 실패했습니다. 자동으로 다시 전송하지 않습니다.");
+            fail(
+                    id,
+                    QuestionFailure.QUESTION_PROCESSING_FAILED.name(),
+                    QuestionFailure.QUESTION_PROCESSING_FAILED.getMessage());
+        }
+    }
+
+    private void saveResult(String id, ObjectNode response) {
+        try {
+            store.complete(id, response);
+        } catch (RuntimeException unavailable) {
+            fail(
+                    id,
+                    QuestionFailure.RESULT_STORAGE_FAILED.name(),
+                    QuestionFailure.RESULT_STORAGE_FAILED.getMessage());
         }
     }
 

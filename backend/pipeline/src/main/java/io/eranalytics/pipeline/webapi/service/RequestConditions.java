@@ -13,14 +13,20 @@ public final class RequestConditions {
     public static JsonNode validate(JsonNode conditions) {
         if (conditions == null) return JsonNodeFactory.instance.objectNode();
         object(conditions, Set.of("patch", "tier", "tier_division", "character_code"));
+        tier(conditions);
+        integer(conditions.get("character_code"));
+        if (conditions.hasNonNull("character_code")
+                && conditions.get("character_code").intValue() == 0) fail();
+        if (conditions.has("patch")) patch(conditions.get("patch"));
+        return conditions.deepCopy();
+    }
+
+    private static void tier(JsonNode conditions) {
         JsonNode tier = conditions.get("tier");
         if (tier != null && !tier.isNull() && !tier.isTextual()) fail();
         integer(conditions.get("tier_division"));
-        integer(conditions.get("character_code"));
         if (conditions.hasNonNull("tier_division")
                 && (tier == null || tier.isNull() || tier.asText().isBlank())) fail();
-        if (conditions.has("patch")) patch(conditions.get("patch"));
-        return conditions.deepCopy();
     }
 
     private static void patch(JsonNode patch) {

@@ -24,7 +24,10 @@ public class QuestionDispatcher {
         try {
             worker.process(event.requestId());
         } catch (RuntimeException rejected) {
-            fail(event.requestId(), "DISPATCH_UNAVAILABLE", "질문을 접수했지만 처리 작업을 시작하지 못했습니다.");
+            fail(
+                    event.requestId(),
+                    QuestionFailure.DISPATCH_UNAVAILABLE.name(),
+                    QuestionFailure.DISPATCH_UNAVAILABLE.getMessage());
         }
     }
 
