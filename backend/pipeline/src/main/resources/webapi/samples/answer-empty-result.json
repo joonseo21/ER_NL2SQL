@@ -1,0 +1,29 @@
+{
+  "kind": "answer",
+  "question": "플래티넘 구간에서 아드리아나의 최신 패치 승률은?",
+  "log_id": "sample-empty-result-0001",
+  "elapsed_ms": 6120,
+  "applied_conditions": {
+    "season_id": 41,
+    "conditions": {
+      "patch": { "mode": "exact", "versions": [{ "major": 5, "minor": 0 }] },
+      "tier": "플래티넘",
+      "character_code": 17,
+      "tier_division": null
+    }
+  },
+  "sql": "SELECT COUNT(p.participant_id) AS samples, ROUND(100.0 * COUNT(*) FILTER (WHERE p.game_rank = 1) / NULLIF(COUNT(*), 0), 2) AS win_rate FROM participants p WHERE p.version_major = 5 AND p.version_minor = 0 AND p.tier = '플래티넘' AND p.character_num = 17 GROUP BY p.character_num LIMIT 200",
+  "columns": ["samples", "win_rate"],
+  "rows": [],
+  "summary": "조회 결과가 없습니다.",
+  "message": null,
+  "examples": [],
+  "clarifications": [],
+  "evidence": {
+    "sample_size": null,
+    "sample_unit": null,
+    "data_as_of": "2026-10-12T05:51:30.242689+00:00",
+    "groups": []
+  },
+  "warnings": []
+}

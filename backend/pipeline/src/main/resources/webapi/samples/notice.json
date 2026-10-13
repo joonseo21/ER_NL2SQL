@@ -1,0 +1,16 @@
+{
+  "kind": "notice",
+  "question": "아드리아나로 상대하기 좋은 실험체를 추천해줘",
+  "log_id": "92f9827a-01da-48aa-82f8-dc753a9dcfa5",
+  "elapsed_ms": 114450,
+  "applied_conditions": null,
+  "sql": null,
+  "columns": [],
+  "rows": [],
+  "summary": null,
+  "message": "SQL을 실행하지 못했습니다. 질문을 다시 제출해 주세요.",
+  "examples": [],
+  "clarifications": [],
+  "evidence": null,
+  "warnings": []
+}

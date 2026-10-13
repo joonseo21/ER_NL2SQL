@@ -1,0 +1,65 @@
+{
+  "kind": "answer",
+  "question": "다이아몬드 티어에서 평균 순위가 가장 좋은 실험체는?",
+  "log_id": "44200706-7617-421d-ac17-0280f80e7852",
+  "elapsed_ms": 11671,
+  "applied_conditions": {
+    "season_id": 41,
+    "conditions": {
+      "patch": {
+        "mode": "exact",
+        "versions": [
+          {
+            "major": 5,
+            "minor": 0
+          }
+        ]
+      },
+      "tier": "다이아몬드",
+      "character_code": null,
+      "tier_division": null
+    }
+  },
+  "sql": "SELECT\n  \"c\".\"character_code\" AS \"character_code\",\n  COALESCE(\"c\".\"name_ko\", \"c\".\"name_en\", CAST(\"c\".\"character_code\" AS TEXT)) AS \"character_name\",\n  COUNT(*) AS \"samples\",\n  CAST(AVG(\"p\".\"game_rank\") AS DECIMAL(10, 2)) AS \"average_rank\",\n  100.0 * COUNT(*) FILTER(WHERE\n    \"p\".\"game_rank\" = 1) / NULLIF(COUNT(*), 0) AS \"win_rate\",\n  100.0 * COUNT(*) FILTER(WHERE\n    \"p\".\"game_rank\" <= 3) / NULLIF(COUNT(*), 0) AS \"top3_rate\"\nFROM (\n  SELECT\n    \"__er_source\".\"game_id\" AS \"game_id\",\n    \"__er_source\".\"team_number\" AS \"team_number\",\n    \"__er_source\".\"character_num\" AS \"character_num\",\n    \"__er_source\".\"best_weapon\" AS \"best_weapon\",\n    \"__er_source\".\"best_weapon_level\" AS \"best_weapon_level\",\n    \"__er_source\".\"game_rank\" AS \"game_rank\",\n    \"__er_source\".\"player_kill\" AS \"player_kill\",\n    \"__er_source\".\"player_assistant\" AS \"player_assistant\",\n    \"__er_source\".\"monster_kill\" AS \"monster_kill\",\n    \"__er_source\".\"damage_to_player\" AS \"damage_to_player\",\n    \"__er_source\".\"mmr_before\" AS \"mmr_before\",\n    \"__er_source\".\"mmr_gain\" AS \"mmr_gain\",\n    \"__er_source\".\"mmr_after\" AS \"mmr_after\",\n    \"__er_source\".\"play_time\" AS \"play_time\",\n    \"__er_source\".\"participant_id\" AS \"participant_id\",\n    \"__er_source\".\"user_id\" AS \"user_id\",\n    \"__er_source\".\"version_major\" AS \"version_major\",\n    \"__er_source\".\"version_minor\" AS \"version_minor\",\n    \"__er_source\".\"tier\" AS \"tier\",\n    \"__er_source\".\"tier_division\" AS \"tier_division\",\n    \"__er_source\".\"victory\" AS \"victory\",\n    \"__er_source\".\"character_level\" AS \"character_level\",\n    \"__er_source\".\"skin_code\" AS \"skin_code\",\n    \"__er_source\".\"player_deaths\" AS \"player_deaths\",\n    \"__er_source\".\"team_kill\" AS \"team_kill\",\n    \"__er_source\".\"total_field_kill\" AS \"total_field_kill\",\n    \"__er_source\".\"give_up\" AS \"give_up\",\n    \"__er_source\".\"escape_state\" AS \"escape_state\",\n    \"__er_source\".\"account_level\" AS \"account_level\",\n    \"__er_source\".\"mmr_gain_in_game\" AS \"mmr_gain_in_game\",\n    \"__er_source\".\"mmr_loss_entry_cost\" AS \"mmr_loss_entry_cost\",\n    \"__er_source\".\"gambit\" AS \"gambit\",\n    \"__er_source\".\"kings_gambit\" AS \"kings_gambit\",\n    \"__er_source\".\"mmr_gain_gambit\" AS \"mmr_gain_gambit\",\n    \"__er_source\".\"watch_time\" AS \"watch_time\",\n    \"__er_source\".\"total_time\" AS \"total_time\",\n    \"__er_source\".\"duration\" AS \"duration\",\n    \"__er_source\".\"use_emoticon_count\" AS \"use_emoticon_count\",\n    \"__er_source\".\"damage_to_player_basic\" AS \"damage_to_player_basic\",\n    \"__er_source\".\"damage_to_player_skill\" AS \"damage_to_player_skill\",\n    \"__er_source\".\"damage_to_player_item_skill\" AS \"damage_to_player_item_skill\",\n    \"__er_source\".\"damage_to_player_direct\" AS \"damage_to_player_direct\",\n    \"__er_source\".\"damage_to_monster\" AS \"damage_to_monster\",\n    \"__er_source\".\"damage_from_player\" AS \"damage_from_player\",\n    \"__er_source\".\"damage_from_player_basic\" AS \"damage_from_player_basic\",\n    \"__er_source\".\"damage_from_player_skill\" AS \"damage_from_player_skill\",\n    \"__er_source\".\"damage_from_player_item_skill\" AS \"damage_from_player_item_skill\",\n    \"__er_source\".\"damage_from_player_direct\" AS \"damage_from_player_direct\",\n    \"__er_source\".\"damage_from_monster\" AS \"damage_from_monster\",\n    \"__er_source\".\"damage_offseted_by_shield_player\" AS \"damage_offseted_by_shield_player\",\n    \"__er_source\".\"heal_amount\" AS \"heal_amount\",\n    \"__er_source\".\"team_recover\" AS \"team_recover\",\n    \"__er_source\".\"protect_absorb\" AS \"protect_absorb\",\n    \"__er_source\".\"cc_time_to_player\" AS \"cc_time_to_player\",\n    \"__er_source\".\"team_down\" AS \"team_down\",\n    \"__er_source\".\"team_elimination\" AS \"team_elimination\",\n    \"__er_source\".\"terminate_count\" AS \"terminate_count\",\n    \"__er_source\".\"clutch_count\" AS \"clutch_count\",\n    \"__er_source\".\"kills_phase_one\" AS \"kills_phase_one\",\n    \"__er_source\".\"kills_phase_two\" AS \"kills_phase_two\",\n    \"__er_source\".\"kills_phase_three\" AS \"kills_phase_three\",\n    \"__er_source\".\"deaths_phase_one\" AS \"deaths_phase_one\",\n    \"__er_source\".\"deaths_phase_two\" AS \"deaths_phase_two\",\n    \"__er_source\".\"deaths_phase_three\" AS \"deaths_phase_three\",\n    \"__er_source\".\"credit_revival_count\" AS \"credit_revival_count\",\n    \"__er_source\".\"credit_revived_others_count\" AS \"credit_revived_others_count\",\n    \"__er_source\".\"max_hp\" AS \"max_hp\",\n    \"__er_source\".\"attack_power\" AS \"attack_power\",\n    \"__er_source\".\"defense\" AS \"defense\",\n    \"__er_source\".\"attack_speed\" AS \"attack_speed\",\n    \"__er_source\".\"move_speed\" AS \"move_speed\",\n    \"__er_source\".\"skill_amp\" AS \"skill_amp\",\n    \"__er_source\".\"adaptive_force\" AS \"adaptive_force\",\n    \"__er_source\".\"cool_down_reduction\" AS \"cool_down_reduction\",\n    \"__er_source\".\"critical_strike_chance\" AS \"critical_strike_chance\",\n    \"__er_source\".\"life_steal\" AS \"life_steal\",\n    \"__er_source\".\"attack_range\" AS \"attack_range\",\n    \"__er_source\".\"sight_range\" AS \"sight_range\",\n    \"__er_source\".\"total_gain_vf_credit\" AS \"total_gain_vf_credit\",\n    \"__er_source\".\"total_use_vf_credit\" AS \"total_use_vf_credit\",\n    \"__er_source\".\"craft_uncommon\" AS \"craft_uncommon\",\n    \"__er_source\".\"craft_rare\" AS \"craft_rare\",\n    \"__er_source\".\"craft_epic\" AS \"craft_epic\",\n    \"__er_source\".\"craft_legend\" AS \"craft_legend\",\n    \"__er_source\".\"craft_mythic\" AS \"craft_mythic\",\n    \"__er_source\".\"camp_fire_craft_uncommon\" AS \"camp_fire_craft_uncommon\",\n    \"__er_source\".\"camp_fire_craft_rare\" AS \"camp_fire_craft_rare\",\n    \"__er_source\".\"camp_fire_craft_epic\" AS \"camp_fire_craft_epic\",\n    \"__er_source\".\"camp_fire_craft_legendary\" AS \"camp_fire_craft_legendary\",\n    \"__er_source\".\"kill_player_gain_vf_credit\" AS \"kill_player_gain_vf_credit\",\n    \"__er_source\".\"kill_chicken_gain_vf_credit\" AS \"kill_chicken_gain_vf_credit\",\n    \"__er_source\".\"kill_boar_gain_vf_credit\" AS \"kill_boar_gain_vf_credit\",\n    \"__er_source\".\"kill_wild_dog_gain_vf_credit\" AS \"kill_wild_dog_gain_vf_credit\",\n    \"__er_source\".\"kill_wolf_gain_vf_credit\" AS \"kill_wolf_gain_vf_credit\",\n    \"__er_source\".\"kill_bear_gain_vf_credit\" AS \"kill_bear_gain_vf_credit\",\n    \"__er_source\".\"kill_bat_gain_vf_credit\" AS \"kill_bat_gain_vf_credit\",\n    \"__er_source\".\"kill_raven_gain_vf_credit\" AS \"kill_raven_gain_vf_credit\",\n    \"__er_source\".\"kill_wickline_gain_vf_credit\" AS \"kill_wickline_gain_vf_credit\",\n    \"__er_source\".\"kill_alpha_gain_vf_credit\" AS \"kill_alpha_gain_vf_credit\",\n    \"__er_source\".\"kill_omega_gain_vf_credit\" AS \"kill_omega_gain_vf_credit\",\n    \"__er_source\".\"kill_gamma_gain_vf_credit\" AS \"kill_gamma_gain_vf_credit\",\n    \"__er_source\".\"kill_drone_gain_vf_credit\" AS \"kill_drone_gain_vf_credit\",\n    \"__er_source\".\"kill_item_bounty_gain_vf_credit\" AS \"kill_item_bounty_gain_vf_credit\",\n    \"__er_source\".\"add_telephoto_camera\" AS \"add_telephoto_camera\",\n    \"__er_source\".\"remove_telephoto_camera\" AS \"remove_telephoto_camera\",\n    \"__er_source\".\"use_hyper_loop\" AS \"use_hyper_loop\",\n    \"__er_source\".\"use_security_console\" AS \"use_security_console\",\n    \"__er_source\".\"use_recon_drone\" AS \"use_recon_drone\",\n    \"__er_source\".\"use_emp_drone\" AS \"use_emp_drone\",\n    \"__er_source\".\"tactical_skill_use_count\" AS \"tactical_skill_use_count\",\n    \"__er_source\".\"kill_gamma\" AS \"kill_gamma\",\n    \"__er_source\".\"enter_dimension_rift\" AS \"enter_dimension_rift\",\n    \"__er_source\".\"win_from_dimension_rift\" AS \"win_from_dimension_rift\",\n    \"__er_source\".\"enter_dimension_empowered_rift\" AS \"enter_dimension_empowered_rift\",\n    \"__er_source\".\"win_from_dimension_empowered_rift\" AS \"win_from_dimension_empowered_rift\",\n    \"__er_source\".\"sum_get_buff_cube\" AS \"sum_get_buff_cube\",\n    \"__er_source\".\"trait_first_core\" AS \"trait_first_core\",\n    \"__er_source\".\"tactical_skill_group\" AS \"tactical_skill_group\",\n    \"__er_source\".\"tactical_skill_level\" AS \"tactical_skill_level\",\n    \"__er_source\".\"route_id_of_start\" AS \"route_id_of_start\",\n    \"__er_source\".\"place_of_start\" AS \"place_of_start\",\n    \"__er_source\".\"skill_order\" AS \"skill_order\",\n    \"__er_source\".\"total_vf_credits\" AS \"total_vf_credits\",\n    \"__er_source\".\"used_vf_credits\" AS \"used_vf_credits\",\n    \"__er_source\".\"total_tk_per_min\" AS \"total_tk_per_min\",\n    \"__er_source\".\"food_craft_count\" AS \"food_craft_count\",\n    \"__er_source\".\"item_transferred_drone\" AS \"item_transferred_drone\",\n    \"__er_source\".\"item_transferred_console\" AS \"item_transferred_console\",\n    \"__er_source\".\"skill_level_info\" AS \"skill_level_info\",\n    \"__er_source\".\"credit_source\" AS \"credit_source\",\n    \"__er_source\".\"kill_monsters\" AS \"kill_monsters\"\n  FROM \"participants\" AS \"__er_source\"\n  WHERE\n    EXISTS(\n      SELECT\n        1 AS \"1\"\n      FROM \"games\" AS \"__er_game\"\n      WHERE\n        \"__er_game\".\"game_id\" = \"__er_source\".\"game_id\"\n        AND \"__er_game\".\"season_id\" = %(__er_season)s\n        AND \"__er_game\".\"matching_mode\" = 3\n        AND \"__er_game\".\"matching_team_mode\" = 3\n        AND (\n          (\n            \"__er_game\".\"version_major\" = %(__er_major_0)s\n            AND \"__er_game\".\"version_minor\" = %(__er_minor_0)s\n          )\n        )\n    )\n    AND \"__er_source\".\"tier\" = %(__er_tier)s\n) AS \"p\"\nLEFT JOIN \"characters\" AS \"c\"\n  ON \"c\".\"character_code\" = \"p\".\"character_num\"\nGROUP BY\n  \"c\".\"character_code\",\n  \"c\".\"name_ko\",\n  \"c\".\"name_en\"\nHAVING\n  COUNT(*) >= 30\nORDER BY\n  \"average_rank\" ASC\nLIMIT 1",
+  "columns": [
+    "character_code",
+    "character_name",
+    "samples",
+    "average_rank",
+    "win_rate",
+    "top3_rate"
+  ],
+  "rows": [
+    {
+      "character_code": 66,
+      "character_name": "아르다",
+      "samples": 730,
+      "average_rank": "3.97",
+      "win_rate": "16.1643835616438356",
+      "top3_rate": "46.3013698630136986"
+    }
+  ],
+  "summary": null,
+  "message": null,
+  "examples": [],
+  "clarifications": [],
+  "evidence": {
+    "sample_size": null,
+    "sample_unit": null,
+    "data_as_of": "2026-10-12T05:51:30.242689+00:00",
+    "groups": [
+      {
+        "row_index": 0,
+        "sample_size": null,
+        "sample_unit": null,
+        "warnings": [
+          "표본 수와 집계 단위를 확인하지 못했습니다."
+        ]
+      }
+    ]
+  },
+  "warnings": [
+    "결과 행 0: 표본 수와 집계 단위를 확인하지 못했습니다.",
+    "요약을 생성하지 못했습니다. SQL과 표를 확인해 주세요."
+  ]
+}
