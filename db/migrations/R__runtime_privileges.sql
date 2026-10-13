@@ -61,3 +61,21 @@ BEGIN
         END IF;
     END IF;
 END $$;
+
+-- Run after the V7 reset of all api_server table privileges.
+DO $$
+DECLARE user_columns text;
+BEGIN
+    IF to_regclass('public.question_requests') IS NOT NULL THEN
+        REVOKE ALL ON question_requests FROM collector, agent_ro;
+        IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'api_server') THEN
+            REVOKE ALL ON question_requests, users FROM api_server;
+            GRANT SELECT, INSERT, UPDATE ON question_requests TO api_server;
+            SELECT string_agg(quote_ident(column_name), ', ' ORDER BY ordinal_position)
+            INTO user_columns FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'users';
+            EXECUTE format('REVOKE SELECT (%s) ON users FROM api_server', user_columns);
+            GRANT SELECT (season_id, tier) ON users TO api_server;
+        END IF;
+    END IF;
+END $$;

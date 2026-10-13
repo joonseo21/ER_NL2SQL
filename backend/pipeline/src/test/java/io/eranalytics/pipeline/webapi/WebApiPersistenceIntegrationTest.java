@@ -10,10 +10,12 @@ import io.eranalytics.pipeline.webapi.entity.DailyUsageEntity;
 import io.eranalytics.pipeline.webapi.entity.FeedbackEntity;
 import io.eranalytics.pipeline.webapi.entity.InviteCodeEntity;
 import io.eranalytics.pipeline.webapi.entity.QuestionLogEntity;
+import io.eranalytics.pipeline.webapi.entity.QuestionRequestEntity;
 import io.eranalytics.pipeline.webapi.repository.DailyUsageRepository;
 import io.eranalytics.pipeline.webapi.repository.FeedbackRepository;
 import io.eranalytics.pipeline.webapi.repository.InviteCodeRepository;
 import io.eranalytics.pipeline.webapi.repository.QuestionLogRepository;
+import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -127,7 +129,8 @@ class WebApiPersistenceIntegrationTest {
     void resetWebData() throws Exception {
         try (Connection connection = admin();
                 Statement sql = connection.createStatement()) {
-            sql.execute("TRUNCATE feedback, question_logs, daily_usage, invite_codes");
+            sql.execute(
+                    "TRUNCATE question_requests, feedback, question_logs, daily_usage, invite_codes");
         }
         invites.saveAndFlush(new InviteCodeEntity(CODE, "synthetic recipient", NOW));
     }
@@ -141,7 +144,7 @@ class WebApiPersistenceIntegrationTest {
         assertThat(collectionEntities.getMetamodel().getEntities())
                 .noneMatch(type -> type.getJavaType().getName().contains(".webapi."));
         assertThat(webEntities.getMetamodel().getEntities())
-                .hasSize(4)
+                .hasSize(5)
                 .allMatch(type -> type.getJavaType().getName().contains(".webapi.entity."));
     }
 
@@ -303,6 +306,36 @@ class WebApiPersistenceIntegrationTest {
                             .hasMessageContaining("permission denied");
                 }
             }
+        }
+    }
+
+    @Test
+    void validatesExistingReceiptEntityAndRoundTripsItsLifecycle() throws Exception {
+        questions.saveAndFlush(question("synthetic-receipt-log", "answer"));
+        try (EntityManager entities = webEntities.createEntityManager()) {
+            entities.getTransaction().begin();
+            entities.persist(
+                    new QuestionRequestEntity(
+                            "synthetic-receipt", CODE, "합성 질문", JSON.createObjectNode(), NOW));
+            entities.getTransaction().commit();
+            entities.clear();
+            entities.getTransaction().begin();
+            QuestionRequestEntity request =
+                    entities.find(QuestionRequestEntity.class, "synthetic-receipt");
+            request.processing(NOW.plusSeconds(1));
+            entities.getTransaction().commit();
+            entities.getTransaction().begin();
+            request.complete(
+                    JSON.readTree("{\"log_id\":\"synthetic-receipt-log\",\"type\":\"answer\"}"),
+                    NOW.plusSeconds(2));
+            entities.getTransaction().commit();
+            entities.clear();
+            QuestionRequestEntity loaded =
+                    entities.find(QuestionRequestEntity.class, "synthetic-receipt");
+            assertThat(loaded.getStatus()).isEqualTo("completed");
+            assertThat(loaded.getAgentLogId()).isEqualTo("synthetic-receipt-log");
+            assertThat(loaded.getVersion()).isEqualTo(2);
+            assertThat(loaded.getResponse().get("type").asText()).isEqualTo("answer");
         }
     }
 

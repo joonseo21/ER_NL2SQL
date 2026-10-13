@@ -20,6 +20,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
@@ -69,14 +70,14 @@ class FlywayMigrationIntegrationTest {
 
     @Test
     void initializesEmptyDatabaseAndDoesNotRepeatAppliedMigrations() {
-        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(8);
+        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(9);
         assertThat(
                         jdbc.queryForList(
                                 "SELECT version FROM flyway_schema_history WHERE version IS NOT NULL "
                                         + "ORDER BY installed_rank",
                                 String.class))
-                .containsExactly("1", "2", "3", "4", "5", "6", "7");
-        assertThat(flyway().info().current().getVersion().toString()).isEqualTo("7");
+                .containsExactly("1", "2", "3", "4", "5", "6", "7", "8");
+        assertThat(flyway().info().current().getVersion().toString()).isEqualTo("8");
         flyway().validate();
         assertThat(flyway().migrate().migrationsExecuted).isZero();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM tiers", Integer.class)).isEqualTo(14);
@@ -94,7 +95,7 @@ class FlywayMigrationIntegrationTest {
                 .isEqualTo(3);
 
         DatabaseMigration.configure(url, "stage2_test", "").baselineVersion("2").load().baseline();
-        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(6);
+        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(7);
         assertThat(
                         jdbc.queryForObject(
                                 "SELECT type FROM flyway_schema_history WHERE version='2'",
@@ -169,6 +170,7 @@ class FlywayMigrationIntegrationTest {
                         "V5__name_metadata.sql",
                         "V6__participants_scope_cover_index.sql",
                         "V7__web_api_storage.sql",
+                        "V8__question_requests_and_user_tier_access.sql",
                         "R__runtime_privileges.sql")) {
             try (InputStream resource = getClass().getResourceAsStream("/db/migration/" + file)) {
                 Files.copy(resource, changed.resolve(file));
@@ -232,7 +234,7 @@ class FlywayMigrationIntegrationTest {
     @Test
     void upgradeAfterRepeatableWasAppliedAtV4GrantsNewNameTables() {
         DatabaseMigration.configure(url, "stage2_test", "").target("4").load().migrate();
-        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(3);
+        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(4);
         for (String table :
                 List.of(
                         "items",
@@ -263,14 +265,20 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
-    void addsWebStorageAfterV6WithoutChangingCollectionData() {
+    void addsWebStorageAndReceiptsAfterV6WithoutChangingCollectionData() {
         DatabaseMigration.configure(url, "stage2_test", "").target("6").load().migrate();
         jdbc.update("INSERT INTO games(game_id,season_id) VALUES (710001,41)");
         String before =
                 jdbc.queryForObject("SELECT row_to_json(games)::text FROM games", String.class);
-        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(1);
+        jdbc.update(
+                "INSERT INTO users(season_id,nickname,tier) VALUES (41,'synthetic_user','플래티넘')");
+        String usersBefore =
+                jdbc.queryForObject("SELECT row_to_json(users)::text FROM users", String.class);
+        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(2);
         assertThat(jdbc.queryForObject("SELECT row_to_json(games)::text FROM games", String.class))
                 .isEqualTo(before);
+        assertThat(jdbc.queryForObject("SELECT row_to_json(users)::text FROM users", String.class))
+                .isEqualTo(usersBefore);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM invite_codes", Integer.class))
                 .isZero();
         assertThat(
@@ -278,8 +286,203 @@ class FlywayMigrationIntegrationTest {
                                 "SELECT has_table_privilege('api_server','question_logs','INSERT')",
                                 Boolean.class))
                 .isTrue();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM question_requests", Integer.class))
+                .isZero();
         flyway().validate();
         assertThat(flyway().migrate().migrationsExecuted).isZero();
+    }
+
+    @Test
+    void enforcesReceiptStatesJsonAndReferences() {
+        flyway().migrate();
+        seedWebReference();
+        String insert =
+                """
+                INSERT INTO question_requests(request_id,invite_code,question,request_conditions,
+                    status,agent_log_id,response,created_at,updated_at)
+                VALUES (?,'synthetic_code',? ,?::jsonb,?,?,?::jsonb,now(),now())
+                """;
+        for (String status : List.of("accepted", "processing", "failed")) {
+            jdbc.update(insert, status, "합성 질문", "{}", status, null, null);
+        }
+        jdbc.update(insert, "completed", "합성 질문", "{}", "completed", "synthetic_log", "{}");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM question_requests", Integer.class))
+                .isEqualTo(4);
+        for (String status : List.of("accepted", "processing", "failed")) {
+            assertThatThrownBy(
+                            () ->
+                                    jdbc.update(
+                                            insert,
+                                            "invalid",
+                                            "합성 질문",
+                                            "{}",
+                                            status,
+                                            "synthetic_log",
+                                            "{}"))
+                    .isInstanceOf(DataIntegrityViolationException.class);
+        }
+        for (String invalidResponse : List.of("[]", "null")) {
+            assertThatThrownBy(
+                            () ->
+                                    jdbc.update(
+                                            insert,
+                                            "invalid",
+                                            "합성 질문",
+                                            "{}",
+                                            "completed",
+                                            "synthetic_log",
+                                            invalidResponse))
+                    .isInstanceOf(DataIntegrityViolationException.class);
+        }
+        assertThatThrownBy(
+                        () -> jdbc.update(insert, "invalid", "합성", "{}", "completed", null, "{}"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(
+                        () ->
+                                jdbc.update(
+                                        insert,
+                                        "invalid",
+                                        "합성",
+                                        "{}",
+                                        "completed",
+                                        "synthetic_log",
+                                        null))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbc.update(insert, "invalid", " ", "{}", "accepted", null, null))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(
+                        () -> jdbc.update(insert, "invalid", "\t\n", "{}", "accepted", null, null))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbc.update(insert, "invalid", "합성", "[]", "accepted", null, null))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbc.update(insert, "invalid", "합성", "{}", "unknown", null, null))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(
+                        () ->
+                                jdbc.update(
+                                        insert,
+                                        "invalid",
+                                        "합성",
+                                        "{}",
+                                        "completed",
+                                        "missing_log",
+                                        "{}"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThat(
+                        jdbc.queryForObject(
+                                "SELECT indexdef FROM pg_indexes WHERE indexname="
+                                        + "'idx_question_requests_status_created'",
+                                String.class))
+                .contains("(status, created_at)");
+    }
+
+    @Test
+    void grantsReceiptWritesAndOnlySeasonAndTierUserReads() throws Exception {
+        flyway().migrate();
+        seedWebReference();
+        jdbc.update(
+                "INSERT INTO users(season_id,nickname,tier) VALUES (41,'synthetic_user','플래티넘')");
+        JdbcTemplate api = new JdbcTemplate(new DriverManagerDataSource(url, "api_server", ""));
+        assertThat(
+                        api.queryForObject(
+                                "SELECT count(*) FROM users WHERE season_id=41 AND tier='플래티넘'",
+                                Integer.class))
+                .isEqualTo(1);
+        api.update(
+                """
+                INSERT INTO question_requests(request_id,invite_code,question,request_conditions,
+                    status,created_at,updated_at)
+                VALUES ('synthetic_request','synthetic_code','합성 질문','{}','accepted',now(),now())
+                """);
+        assertThat(
+                        api.update(
+                                "UPDATE question_requests SET status='processing' WHERE request_id='synthetic_request'"))
+                .isEqualTo(1);
+        assertThat(api.queryForObject("SELECT status FROM question_requests", String.class))
+                .isEqualTo("processing");
+        try (Connection connection = DriverManager.getConnection(url, "api_server", "");
+                Statement sql = connection.createStatement()) {
+            List<String> privateColumns =
+                    jdbc.queryForList(
+                            """
+                    SELECT column_name FROM information_schema.columns
+                    WHERE table_schema='public' AND table_name='users'
+                        AND column_name NOT IN ('season_id','tier')
+                    """,
+                            String.class);
+            for (String column : privateColumns) {
+                assertThatThrownBy(() -> sql.executeQuery("SELECT \"" + column + "\" FROM users"))
+                        .isInstanceOf(SQLException.class)
+                        .satisfies(
+                                error ->
+                                        assertThat(((SQLException) error).getSQLState())
+                                                .isEqualTo("42501"));
+            }
+            for (String blocked :
+                    List.of(
+                            "SELECT * FROM users",
+                            "SELECT row_to_json(users) FROM users",
+                            "DELETE FROM question_requests WHERE false",
+                            "UPDATE users SET tier='다이아몬드' WHERE false")) {
+                assertThatThrownBy(() -> sql.execute(blocked))
+                        .isInstanceOf(SQLException.class)
+                        .satisfies(
+                                error ->
+                                        assertThat(((SQLException) error).getSQLState())
+                                                .isEqualTo("42501"));
+            }
+        }
+        for (String role : List.of("collector", "agent_ro")) {
+            assertThat(
+                            jdbc.queryForObject(
+                                    "SELECT has_table_privilege(?, 'question_requests', 'SELECT,INSERT,UPDATE,DELETE')",
+                                    Boolean.class,
+                                    role))
+                    .isFalse();
+            try (Connection connection = DriverManager.getConnection(url, role, "");
+                    Statement sql = connection.createStatement()) {
+                assertThatThrownBy(() -> sql.executeQuery("SELECT * FROM question_requests"))
+                        .isInstanceOf(SQLException.class)
+                        .hasMessageContaining("permission denied");
+            }
+        }
+    }
+
+    @Test
+    void reappliesPrivilegesAfterLateRoleProvisioning() throws Exception {
+        flyway().migrate();
+        jdbc.execute("REVOKE ALL ON ALL TABLES IN SCHEMA public FROM api_server");
+        jdbc.execute("REVOKE SELECT (season_id,tier) ON users FROM api_server");
+        applyOriginal("R__runtime_privileges.sql");
+        assertThat(
+                        jdbc.queryForObject(
+                                "SELECT has_table_privilege('api_server','question_requests','UPDATE')",
+                                Boolean.class))
+                .isTrue();
+        assertThat(
+                        jdbc.queryForObject(
+                                "SELECT has_column_privilege('api_server','users','tier','SELECT')",
+                                Boolean.class))
+                .isTrue();
+        assertThat(
+                        jdbc.queryForObject(
+                                "SELECT has_column_privilege('api_server','users','nickname','SELECT')",
+                                Boolean.class))
+                .isFalse();
+        assertThat(
+                        jdbc.queryForObject(
+                                "SELECT has_table_privilege('api_server','question_requests','DELETE')",
+                                Boolean.class))
+                .isFalse();
+    }
+
+    private void seedWebReference() {
+        jdbc.update("INSERT INTO invite_codes(code) VALUES ('synthetic_code')");
+        jdbc.update(
+                """
+                INSERT INTO question_logs(log_id,invite_code,question,response_type,elapsed_ms)
+                VALUES ('synthetic_log','synthetic_code','합성 질문','answer',0)
+                """);
     }
 
     private void applyOriginal(String file) throws Exception {
