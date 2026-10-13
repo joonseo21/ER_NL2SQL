@@ -136,10 +136,14 @@ class QueryResponse:
     clarifications: tuple[NameClarification, ...] = ()
     evidence: DataEvidence | None = None
     warnings: tuple[str, ...] = ()
+    chart: None = None
+    conversation_context: None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.kind, ResponseKind):
             raise ValueError("kind must be a ResponseKind")
+        if self.chart is not None or self.conversation_context is not None:
+            raise ValueError("Chart and conversation context are reserved null fields")
         for name in ("columns", "examples", "clarifications", "warnings"):
             object.__setattr__(self, name, tuple(getattr(self, name)))
         if any(not isinstance(row, dict) for row in self.rows):

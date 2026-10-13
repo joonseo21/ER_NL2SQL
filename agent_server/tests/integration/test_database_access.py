@@ -10,6 +10,7 @@ from unittest.mock import MagicMock
 
 import psycopg
 import pytest
+from fastapi.testclient import TestClient
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 from psycopg.rows import dict_row
 
@@ -19,6 +20,8 @@ from er_agent.database.manual_queries import MANUAL_QUERIES
 from er_agent.database.query_executor import execute_select
 from er_agent.database.samples import sample_rows
 from er_agent.generation.prompts import METRICS_PATH, build_prompt
+from er_agent.http.app import create_app
+from er_agent.http.config import HttpSettings
 from er_agent.models.context import QueryIntent, ResolvedContext, TierSelection
 from er_agent.models.names import NameCategory, NameTerm
 from er_agent.models.query import (
@@ -39,6 +42,43 @@ from er_agent.sql.scope import scope_sql
 pytestmark = pytest.mark.postgres
 GAME_IDS = (9400001, 9400002)
 PRIVATE_NICKNAMES = tuple(f"stage4_private_player_{i}" for i in range(5))
+
+
+@pytest.mark.parametrize("mode", ["answer", "bad-summary", "invalid-sql"])
+def test_http_query_uses_read_only_database_and_records_complete_response(
+    database, tmp_path, fake_client, generation_text, mode
+):
+    if mode == "invalid-sql":
+        text = generation_text("DELETE FROM participants")
+        replies = [SimpleNamespace(text=text, usage_metadata=None)] * 2
+    else:
+        replies = model_responses(
+            generation_text(), "PRIVATE invalid summary" if mode == "bad-summary" else None
+        )
+    fake_client.models.generate_content.side_effect = replies
+    log_path = tmp_path / "http.jsonl"
+    app = create_app(
+        Settings(database["agent"], "fake-key", "fake-model"),
+        HttpSettings("a" * 64, log_path),
+    )
+    with TestClient(app) as client:
+        result = client.post(
+            "/v1/query", headers={"X-Agent-Token": "a" * 64}, json={"question": "참가자 수"}
+        )
+    assert result.status_code == 200
+    payload = result.json()
+    if mode == "invalid-sql":
+        assert payload["kind"] == "notice" and payload["sql"] is None and not payload["rows"]
+    else:
+        assert payload["kind"] == "answer" and payload["rows"] == [{"samples": 4}]
+        assert payload["evidence"]["sample_size"] == 4
+        assert payload["applied_conditions"]["conditions"]["patch"]["mode"] == "exact"
+        assert payload["sql"]
+        assert (payload["summary"] is None) == (mode == "bad-summary")
+    assert payload["chart"] is None and payload["conversation_context"] is None
+    records = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
+    assert records[-1]["response"] == payload
+    assert "PRIVATE" not in result.text + log_path.read_text(encoding="utf-8")
 
 
 def model_responses(generation: str, summary: str | None = None) -> list[SimpleNamespace]:

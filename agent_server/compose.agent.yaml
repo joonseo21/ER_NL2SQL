@@ -1,0 +1,27 @@
+# From repository root: docker compose -f compose.yaml -f agent_server/compose.agent.yaml ...
+services:
+  agent:
+    profiles: [agent]
+    image: er-analytics-agent:local
+    build:
+      context: ./agent_server
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      AGENT_DATABASE_URL: ${AGENT_CONTAINER_DATABASE_URL:?Set the agent_ro container URL}
+      AGENT_INTERNAL_TOKEN: ${AGENT_INTERNAL_TOKEN:?Set the shared internal token}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?Set GEMINI_API_KEY}
+      GEMINI_MODEL: ${GEMINI_MODEL:?Set GEMINI_MODEL}
+      GEMINI_TIMEOUT_SECONDS: ${GEMINI_TIMEOUT_SECONDS:-30}
+      GEMINI_THINKING_LEVEL: ${GEMINI_THINKING_LEVEL:-}
+      ER_SEASON_ID: ${ER_SEASON_ID:-41}
+    volumes:
+      - er_agent_logs:/app/agent_server/logs
+    # No ports mapping: only services on the Compose network can call agent:8000.
+    expose: ["8000"]
+
+volumes:
+  er_agent_logs:

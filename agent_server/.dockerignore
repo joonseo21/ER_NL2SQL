@@ -1,0 +1,9 @@
+**
+!pyproject.toml
+!uv.lock
+!src/
+!src/**
+!schema_context.md
+!metrics.md
+**/__pycache__/
+**/*.pyc
