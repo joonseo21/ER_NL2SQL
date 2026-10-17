@@ -11,6 +11,17 @@ DEFAULT_GEMINI_TIMEOUT_SECONDS = 30
 MAX_GEMINI_TIMEOUT_SECONDS = 600
 # "" keeps the model default. MINIMAL is rejected by the current model.
 THINKING_LEVELS = ("", "low", "high")
+# Unset uses low (2026-10-17 user decision): with the model default, 15 of 60 pilot
+# observations exhausted three 30-second attempts. "default" restores the model default.
+DEFAULT_THINKING_LEVEL = "low"
+MODEL_DEFAULT_THINKING = "default"
+
+
+def _thinking_from_env() -> str:
+    value = os.getenv("GEMINI_THINKING_LEVEL", "").strip().lower()
+    if not value:
+        return DEFAULT_THINKING_LEVEL
+    return "" if value == MODEL_DEFAULT_THINKING else value
 
 
 def _timeout_from_env() -> int:
@@ -31,7 +42,7 @@ class Settings:
     gemini_model: str
     season_id: int = 41
     gemini_timeout_seconds: int = DEFAULT_GEMINI_TIMEOUT_SECONDS
-    gemini_thinking_level: str = ""
+    gemini_thinking_level: str = DEFAULT_THINKING_LEVEL
 
     def __post_init__(self) -> None:
         if type(self.season_id) is not int or self.season_id <= 0:
@@ -44,7 +55,7 @@ class Settings:
                 f"GEMINI_TIMEOUT_SECONDS must be an integer from 1 to {MAX_GEMINI_TIMEOUT_SECONDS}"
             )
         if self.gemini_thinking_level not in THINKING_LEVELS:
-            raise ValueError("GEMINI_THINKING_LEVEL must be empty, low or high")
+            raise ValueError("GEMINI_THINKING_LEVEL must be empty, low, high or default")
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -56,7 +67,7 @@ class Settings:
             gemini_model=os.getenv("GEMINI_MODEL", ""),
             season_id=int(os.getenv("ER_SEASON_ID", "41")),
             gemini_timeout_seconds=_timeout_from_env(),
-            gemini_thinking_level=os.getenv("GEMINI_THINKING_LEVEL", "").strip().lower(),
+            gemini_thinking_level=_thinking_from_env(),
         )
 
     def require_database(self) -> None:

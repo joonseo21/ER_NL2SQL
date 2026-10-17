@@ -272,9 +272,9 @@ def test_repetitions_are_the_outer_loop_and_configuration_is_recorded(tmp_path: 
     assert manifest["gemini"] == {"timeout_seconds": 90, "thinking_level": "low"}
 
 
-def test_default_configuration_is_recorded_as_model_default(tmp_path: Path) -> None:
+def test_default_configuration_is_recorded(tmp_path: Path) -> None:
     _, _, manifest, _ = run_with_observations(tmp_path, [good(), good()])
-    assert manifest["gemini"] == {"timeout_seconds": 30, "thinking_level": "model_default"}
+    assert manifest["gemini"] == {"timeout_seconds": 30, "thinking_level": "low"}
     assert manifest["repeat"] == 1 and manifest["continue_on_failure"] is False
 
 

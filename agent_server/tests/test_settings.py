@@ -15,10 +15,14 @@ def from_env(**values: str) -> Settings:
         return Settings.from_env()
 
 
-def test_defaults_keep_current_gemini_behaviour() -> None:
+def test_defaults_use_low_thinking_and_thirty_second_attempts() -> None:
     settings = from_env()
     assert settings.gemini_timeout_seconds == 30
-    assert settings.gemini_thinking_level == ""
+    assert settings.gemini_thinking_level == "low"
+
+
+def test_model_default_thinking_must_be_requested_explicitly() -> None:
+    assert from_env(GEMINI_THINKING_LEVEL=" Default ").gemini_thinking_level == ""
 
 
 def test_gemini_options_are_read_from_environment() -> None:
