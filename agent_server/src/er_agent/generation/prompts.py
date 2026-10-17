@@ -43,6 +43,13 @@ the target group; for pick rate use it ONLY in the numerator, never its denomina
 Official named entities use %(name_CATEGORY_CODE)s, e.g. %(name_character_1)s.
 Use every verified named entity in an appropriate code predicate, never as a
 free-standing SELECT constant. Do not use literal codes or name strings as filters.
+Patch comparison: the server already restricts rows to the two patches in the intent.
+Never compare version_major/version_minor (or any other scope column) with a number,
+even inside CASE, FILTER or JOIN conditions. Aggregate per patch with GROUP BY
+version_major, version_minor (per-patch totals with SUM(COUNT(*)) OVER (PARTITION BY
+version_major, version_minor)), then place the older and newer values side by side with
+ARRAY_AGG(value ORDER BY version_major, version_minor) indexed [1] (older) and [2]
+(newer). Keep only groups present in both patches (HAVING COUNT(*) = 2) and state this.
 Use no other placeholders. SQL must read at least one game/participant fact source.
 Aggregate arithmetic and joins must follow the metric definitions.
 For aggregate results, include the actual target group's count in each result row
@@ -88,6 +95,12 @@ An ambiguous/missing official name, unsupported question or unavailable requeste
 scope requires sql=null. Do not substitute another name, patch, tier or date range.
 Question overrides take precedence over selected conditions. Resolve latest in the
 whole season/mode first, before tier filtering. Never guess a patch display label.
+Patch comparison ("4.0보다 5.0에서", "지난 패치보다", "5.0 패치 전후", "늘었/줄었"): set
+intent.patch to mode exact with BOTH versions, chosen from the patches in scopes. The
+previous patch is the one just before the latest (version_major, version_minor) in the
+same season; before/after patch N means N and the patch just before it. Never leave the
+default latest-only patch, and do not return sql=null or unavailable_data when both
+patches exist in scopes.
 Derive name bindings only from unique exact matches in the official catalog.
 For each deduplicated resolved term use name_CATEGORY_CODE. If a target character
 remains after merging question and selected conditions, use character_code INSTEAD

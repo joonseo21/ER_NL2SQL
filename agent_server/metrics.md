@@ -42,6 +42,35 @@ SELECT COUNT(*) FILTER (WHERE s.character_num = 1) AS picks,
 FROM scope s
 ```
 
+## 패치 비교
+
+"4.0보다 5.0에서", "지난 패치보다", "5.0 전후"처럼 패치를 비교하는 질문은 질문 의도(intent)의 패치를 지정(exact)으로 두고 비교할 두 패치를 모두 적는다. 서버가 그 두 패치로 범위를 제한한다. SQL은 패치 번호를 숫자와 비교하지 않고(CASE·FILTER·JOIN 조건 안에서도 같다) `version_major`, `version_minor`로 묶어 패치별 분자와 분모를 따로 계산한 뒤 `ARRAY_AGG(… ORDER BY version_major, version_minor)`의 [1](이전)·[2](이후)로 나란히 놓는다. 두 패치 모두에 출현이 있는 대상만 남기고(`HAVING COUNT(*) = 2`) 그 사실을 밝힌다. 아래는 형태 예시이며 실제 질문의 조건으로 구성해야 한다.
+
+```sql
+WITH per_patch AS (
+    SELECT p.version_major, p.version_minor, p.character_num,
+           COUNT(*) AS picks,
+           SUM(COUNT(*)) OVER (PARTITION BY p.version_major, p.version_minor) AS total_appearances
+    FROM participants p
+    GROUP BY p.version_major, p.version_minor, p.character_num
+), both_patches AS (
+    SELECT pp.character_num,
+           ARRAY_AGG(pp.picks ORDER BY pp.version_major, pp.version_minor) AS picks_by_patch,
+           ARRAY_AGG(100.0 * pp.picks / NULLIF(pp.total_appearances, 0)
+                     ORDER BY pp.version_major, pp.version_minor) AS pick_rates
+    FROM per_patch pp
+    GROUP BY pp.character_num
+    HAVING COUNT(*) = 2
+)
+SELECT c.name_ko AS character_name,
+       bp.picks_by_patch[1] AS picks_before, bp.picks_by_patch[2] AS picks_after,
+       bp.pick_rates[2] - bp.pick_rates[1] AS pick_rate_change
+FROM both_patches bp
+LEFT JOIN characters c ON c.character_code = bp.character_num
+ORDER BY pick_rate_change DESC
+LIMIT 5
+```
+
 ## 승률·TOP 3 비율·평균 순위
 
 | 지표 | 정의 | 반환 시 주의 |

@@ -28,6 +28,21 @@ def test_missing_metric_document_stops_prompt_building() -> None:
 def test_documented_pick_rate_sql_passes_existing_guard() -> None:
     text = METRICS_PATH.read_text(encoding="utf-8")
     examples = re.findall(r"```sql\n(.*?)```", text, flags=re.DOTALL)
-    assert len(examples) == 1
-    guarded = guard_sql(examples[0])
-    assert "LIMIT 200" in guarded.sql
+    assert len(examples) == 2  # pick rate, then patch comparison
+    for example in examples:
+        assert "LIMIT" in guard_sql(example).sql
+
+
+def test_generation_prompt_tells_the_model_to_compare_patches_through_intent() -> None:
+    from er_agent.generation.prompts import SQL_SCOPE_RULES, build_generation_prompt
+    from er_agent.models.context import ContextSnapshot
+    from er_agent.models.names import NameCatalog
+    from er_agent.models.query import QueryConditions, QueryRequest
+
+    snapshot = ContextSnapshot(41, NameCatalog(()), (), ())
+    prompt = build_generation_prompt(QueryRequest("질문", QueryConditions()), snapshot)
+    assert "set\nintent.patch to mode exact with BOTH versions" in prompt
+    assert "지난 패치보다" in prompt
+    # The SQL rules are shared with the repair prompt.
+    assert "ARRAY_AGG(value ORDER BY version_major, version_minor)" in SQL_SCOPE_RULES
+    assert SQL_SCOPE_RULES in prompt

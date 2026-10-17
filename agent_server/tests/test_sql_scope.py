@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from er_agent.generation.prompts import METRICS_PATH
 from er_agent.models.context import ContextSnapshot, QueryIntent, ResolvedContext, TierSelection
 from er_agent.models.names import NameCategory, NameTerm
 from er_agent.models.query import QueryConditions, QueryRequest
@@ -141,3 +142,37 @@ def test_item_metadata_code_accepts_its_own_name_binding(query_snapshot: Context
         resolved,
     )
     assert scoped.parameters["name_item_100001"] == 100001
+
+
+def _metrics_patch_example() -> str:
+    text = METRICS_PATH.read_text(encoding="utf-8")
+    start = text.index("## 패치 비교")
+    block = text[start:].split("```sql\n", 1)[1].split("```", 1)[0]
+    assert "ARRAY_AGG" in block
+    return block
+
+
+def test_metrics_patch_comparison_example_passes_the_guard_with_two_patches(
+    query_snapshot: ContextSnapshot,
+) -> None:
+    from er_agent.models.query import PatchFilter, PatchMode, PatchVersion
+
+    both = PatchFilter(PatchMode.EXACT, (PatchVersion(4, 0), PatchVersion(5, 0)))
+    scoped = scope_sql(_metrics_patch_example(), context(query_snapshot, QueryIntent(patch=both)))
+    assert scoped.parameters["__er_major_0"] == 4
+    assert scoped.parameters["__er_major_1"] == 5
+
+
+@pytest.mark.parametrize(
+    "predicate",
+    [
+        "FILTER (WHERE p.version_major = 4)",
+        "FILTER (WHERE p.version_major IN (4, 5))",
+    ],
+)
+def test_comparing_a_patch_column_with_a_number_is_rejected(
+    query_snapshot: ContextSnapshot, predicate: str
+) -> None:
+    sql = f"SELECT COUNT(*) {predicate} AS samples FROM participants p"
+    with pytest.raises(SqlGuardError):
+        scope_sql(sql, context(query_snapshot))
