@@ -14,5 +14,5 @@ GRANT CONNECT ON DATABASE :"database_name" TO collector, agent_ro;
 GRANT USAGE ON SCHEMA public TO collector, agent_ro;
 -- Tables and their grants are managed by Flyway after role provisioning.
 ALTER ROLE agent_ro SET default_transaction_read_only = on;
-ALTER ROLE agent_ro SET statement_timeout = '5s';
+ALTER ROLE agent_ro SET statement_timeout = '20s';
 SQL

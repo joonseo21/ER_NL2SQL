@@ -70,14 +70,14 @@ class FlywayMigrationIntegrationTest {
 
     @Test
     void initializesEmptyDatabaseAndDoesNotRepeatAppliedMigrations() {
-        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(9);
+        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(10);
         assertThat(
                         jdbc.queryForList(
                                 "SELECT version FROM flyway_schema_history WHERE version IS NOT NULL "
                                         + "ORDER BY installed_rank",
                                 String.class))
-                .containsExactly("1", "2", "3", "4", "5", "6", "7", "8");
-        assertThat(flyway().info().current().getVersion().toString()).isEqualTo("8");
+                .containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9");
+        assertThat(flyway().info().current().getVersion().toString()).isEqualTo("9");
         flyway().validate();
         assertThat(flyway().migrate().migrationsExecuted).isZero();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM tiers", Integer.class)).isEqualTo(14);
@@ -95,7 +95,7 @@ class FlywayMigrationIntegrationTest {
                 .isEqualTo(3);
 
         DatabaseMigration.configure(url, "stage2_test", "").baselineVersion("2").load().baseline();
-        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(7);
+        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(8);
         assertThat(
                         jdbc.queryForObject(
                                 "SELECT type FROM flyway_schema_history WHERE version='2'",
@@ -171,6 +171,7 @@ class FlywayMigrationIntegrationTest {
                         "V6__participants_scope_cover_index.sql",
                         "V7__web_api_storage.sql",
                         "V8__question_requests_and_user_tier_access.sql",
+                        "V9__routes_and_item_materials.sql",
                         "R__runtime_privileges.sql")) {
             try (InputStream resource = getClass().getResourceAsStream("/db/migration/" + file)) {
                 Files.copy(resource, changed.resolve(file));
@@ -232,9 +233,55 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
+    void addsRoutesAfterV8PreservingNamesAndEnforcingKeysAndPrivileges() throws Exception {
+        DatabaseMigration.configure(url, "stage2_test", "").target("8").load().migrate();
+        jdbc.update(
+                "INSERT INTO items(code,name_ko,source,l10n_key,checked_at) VALUES(1,'name','source','key',now())");
+        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT name_ko FROM items WHERE code=1", String.class))
+                .isEqualTo("name");
+        jdbc.update("INSERT INTO routes(season_id,route_id) VALUES(41,7039),(42,7039)");
+        assertThatThrownBy(
+                        () -> jdbc.update("INSERT INTO routes(season_id,route_id) VALUES(41,7039)"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbc.update("INSERT INTO routes(season_id,route_id) VALUES(41,0)"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbc.update("INSERT INTO route_paths VALUES(43,7039,1,170)"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        for (String table : List.of("routes", "route_paths")) {
+            assertThat(
+                            jdbc.queryForObject(
+                                    "SELECT has_table_privilege('agent_ro',?,'SELECT')",
+                                    Boolean.class,
+                                    table))
+                    .isTrue();
+            assertThat(
+                            jdbc.queryForObject(
+                                    "SELECT has_table_privilege('api_server',?,'SELECT')",
+                                    Boolean.class,
+                                    table))
+                    .isFalse();
+        }
+        try (Connection connection = DriverManager.getConnection(url, "agent_ro", "");
+                Statement sql = connection.createStatement()) {
+            assertThat(sql.executeQuery("SELECT * FROM routes").next()).isTrue();
+            sql.executeQuery("SELECT * FROM route_paths");
+            ResultSet result = sql.executeQuery("SHOW statement_timeout");
+            result.next();
+            assertThat(result.getString(1)).isEqualTo("20s");
+            assertThatThrownBy(() -> sql.executeQuery("SELECT user_nickname FROM routes"))
+                    .isInstanceOf(SQLException.class);
+            assertThatThrownBy(() -> sql.executeUpdate("DELETE FROM routes"))
+                    .isInstanceOf(SQLException.class);
+        }
+        flyway().validate();
+        assertThat(flyway().migrate().migrationsExecuted).isZero();
+    }
+
+    @Test
     void upgradeAfterRepeatableWasAppliedAtV4GrantsNewNameTables() {
         DatabaseMigration.configure(url, "stage2_test", "").target("4").load().migrate();
-        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(4);
+        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(5);
         for (String table :
                 List.of(
                         "items",
@@ -274,7 +321,7 @@ class FlywayMigrationIntegrationTest {
                 "INSERT INTO users(season_id,nickname,tier) VALUES (41,'synthetic_user','플래티넘')");
         String usersBefore =
                 jdbc.queryForObject("SELECT row_to_json(users)::text FROM users", String.class);
-        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(2);
+        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(3);
         assertThat(jdbc.queryForObject("SELECT row_to_json(games)::text FROM games", String.class))
                 .isEqualTo(before);
         assertThat(jdbc.queryForObject("SELECT row_to_json(users)::text FROM users", String.class))
