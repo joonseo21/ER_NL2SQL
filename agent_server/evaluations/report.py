@@ -33,6 +33,8 @@ def read_metrics(log_path: Path) -> dict[str, Any]:
         # Includes scope/guard, connection and SQL; not isolated database time.
         "sql_stage_ms": [item["elapsed_ms"] for item in sql_attempts],
         "sql_repaired": len(sql_attempts) > 1,
+        # SQLSTATE 57014 is a statement timeout (cancelled by statement_timeout).
+        "sql_timeouts": sum("57014" in str(item.get("error") or "") for item in sql_attempts),
         "tokens": tokens,
         "exhausted_llm_call": any(
             not item["succeeded"] and not item["retry_scheduled"] for item in attempts

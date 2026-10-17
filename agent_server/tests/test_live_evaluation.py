@@ -162,8 +162,8 @@ def test_missing_usage_is_unknown_and_retries_are_counted(tmp_path: Path) -> Non
             "retry_scheduled": False,
             "tokens": {"total_token_count": 7},
         },
-        {"event": "sql_attempt", "elapsed_ms": 4},
-        {"event": "sql_attempt", "elapsed_ms": 5},
+        {"event": "sql_attempt", "elapsed_ms": 4, "error": "database: SQLSTATE 57014"},
+        {"event": "sql_attempt", "elapsed_ms": 5, "error": None},
         {"event": "query_end", "logical_calls": 1, "physical_calls": 2},
     ]
     path.write_text("\n".join(json.dumps(item) for item in records), encoding="utf-8")
@@ -173,6 +173,7 @@ def test_missing_usage_is_unknown_and_retries_are_counted(tmp_path: Path) -> Non
     assert result["sql_repaired"] is True
     assert result["exhausted_llm_call"] is False
     assert result["sql_stage_ms"] == [4, 5]
+    assert result["sql_timeouts"] == 1
 
 
 @pytest.mark.parametrize("exhausted", [False, True])

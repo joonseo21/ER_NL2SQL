@@ -145,6 +145,11 @@ def observe_case(request: QueryRequest, settings: Settings, log_path: Path) -> d
 
 
 def run_batch(arguments: argparse.Namespace) -> int:
+    return execute_batch(arguments)[0]
+
+
+def execute_batch(arguments: argparse.Namespace) -> tuple[int, Path]:
+    """Run one batch and return its exit code with the result folder it wrote."""
     preflight_only = getattr(arguments, "preflight_only", False)
     if not arguments.allow_live_gemini and not preflight_only:
         raise ValueError("Explicit --allow-live-gemini is required")
@@ -187,12 +192,12 @@ def run_batch(arguments: argparse.Namespace) -> int:
         manifest["preflight_error_category"] = type(exception).__name__
         write_json(output / "manifest.json", manifest)
         print(json.dumps({"status": "preflight_failed", "directory": str(output)}))
-        return 2
+        return 2, output
     write_json(output / "manifest.json", manifest)
     if preflight_only:
         # No Gemini call and no generated SQL; only the fixed read-only checks ran.
         print(json.dumps({"status": "preflight_ok", "directory": str(output)}))
-        return 0
+        return 0, output
     completed: list[dict[str, Any]] = []
     stopped = False
     # Repetitions form the outer loop so each configuration is spread over time.
@@ -216,7 +221,7 @@ def run_batch(arguments: argparse.Namespace) -> int:
     )
     # A completed observation is not a passed correctness test.
     print(json.dumps({"status": "incomplete" if failed else "recorded", "directory": str(output)}))
-    return 2 if failed else 0
+    return (2 if failed else 0), output
 
 
 def main() -> None:

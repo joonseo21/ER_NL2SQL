@@ -1,6 +1,6 @@
 # evaluations: NL2SQL 실제 호출 관찰·실험 도구
 
-에이전트(`er_agent`)를 **실제 Gemini와 읽기 전용 DB**로 돌려 지연·토큰·SQL·응답을 기록하는 도구다. 정답 채점 도구가 아니다. `accuracy`는 항상 null이고 "완료"는 정답을 뜻하지 않는다.
+에이전트(`er_agent`)를 **실제 Gemini와 읽기 전용 DB**로 돌려 지연·토큰·SQL·응답을 기록하는 도구다. `run.py`는 정답을 채점하지 않는다. `accuracy`는 항상 null이고 "완료"는 정답을 뜻하지 않는다. 채점은 `score.py`가 따로 한다(아래 "채점" 절).
 
 - 현재 상태·남은 결정: [docs/parts/agent.md](../../docs/parts/agent.md)
 - 결과의 해석과 근거 수치: [docs/archive/nl2sql_experiments_2026-10-12.md](../../docs/archive/nl2sql_experiments_2026-10-12.md)
@@ -14,6 +14,7 @@
 | `summarize.py` | 결과 폴더를 문항별로 요약하거나(`폴더 경로`), 전체 실행 색인을 출력(`--list`) |
 | `explain.py` | 결과 폴더에 기록된 생성 SQL을 `EXPLAIN`(ANALYZE 없음, 실행하지 않음)으로 확인 |
 | `report.py` | `N.jsonl` 이벤트 로그에서 호출 수·시간·토큰을 집계(run.py가 사용) |
+| `score.py` | 정답 SQL의 결과 표를 저장(`expect`)하고, 결과 폴더를 정답과 대조해 채점(`grade`)하거나, 10문항보다 많은 질문 파일을 나눠 실행한 뒤 한꺼번에 채점(`run`) |
 | `cases/experiment_8.json` | 실험용 8문항(추천 3, 단순 통계 4, 예측 1). 기본 사용 대상 |
 | `cases/recommendations.json` | 사용자가 처음 제시한 추천 질문 3개 |
 | `experiments/gemini_probe.py` | 간단한 프롬프트의 응답 시간 확인. DB 데이터를 보내지 않음 |
@@ -94,6 +95,43 @@ uv run python -m evaluations.explain evaluations\results\<폴더> --target snaps
 Remove-Item Env:AGENT_EVAL_DATABASE_URL
 ```
 
+## 채점 (`score.py`)
+
+정답 파일은 저장소 밖에 둔다. 2026-10-14 사용자와 만든 시범 질문 20개는 `C:\er-analytics\pilot-questions`의 `questions.json`(id·question)과 `gold.json`(같은 id의 정답 SQL·분류·채점 기준)이다. 테스트베드는 V8 준비 이후 TCP 접속에 비밀번호를 요구하므로 `AGENT_EVAL_DATABASE_URL`에 비공개 설정의 agent_ro 접속 문자열을 넣는다(값은 출력·기록하지 않는다).
+
+**1. 정답 표 저장 (Gemini 호출 없음)**: 정답 SQL을 에이전트와 같은 agent_ro·읽기 전용·문장당 20초 제한으로 한 번씩 실행해 결과 표를 저장한다. 시간 초과만 최대 3회 다시 시도한다. 정답 SQL이 바뀌면 다시 저장해야 하며, 채점은 SQL 해시가 다른 정답 표를 `stale_answer_key`로 채점하지 않는다.
+
+```powershell
+uv run python -m evaluations.score expect --gold C:\er-analytics\pilot-questions\gold.json --out C:\er-analytics\pilot-questions\expected-testbed-20261012T055131Z.json --expected-database er_analytics --snapshot-id testbed-20261012T055131Z
+```
+
+**2. 기존 결과 폴더 채점**: 폴더를 여러 개 넘기면 하나의 측정으로 합쳐 채점한다.
+
+```powershell
+uv run python -m evaluations.score grade --gold C:\er-analytics\pilot-questions\gold.json --expected C:\er-analytics\pilot-questions\expected-testbed-20261012T055131Z.json evaluations\results\<폴더1> evaluations\results\<폴더2>
+```
+
+**3. 나눠 실행하고 한꺼번에 채점 (Gemini 호출 발생)**: 질문 파일을 run.py가 받는 10문항 단위로 나눠 차례로 실행한 뒤 모든 결과를 함께 채점한다. 옵션은 run.py와 같다.
+
+```powershell
+uv run python -m evaluations.score run --gold C:\er-analytics\pilot-questions\gold.json --expected C:\er-analytics\pilot-questions\expected-testbed-20261012T055131Z.json --questions C:\er-analytics\pilot-questions\questions.json --target snapshot --expected-database er_analytics --snapshot-id testbed-20261012T055131Z --repeat 3 --thinking-level low --timeout-seconds 60 --continue-on-failure --label "시범 20문항" --allow-live-gemini
+```
+
+판정 규칙:
+
+| 판정 | 뜻 |
+|---|---|
+| correct | 응답 유형이 기대와 같고, 답변이면 결과 표가 채점 기준을 만족 |
+| wrong_kind | 기대한 응답 유형(답변·안내·되묻기)과 다름 |
+| wrong_result | 답변이지만 결과 표가 채점 기준을 만족하지 않음. 이유에 row_count·rows_differ·required_rows_missing·unexpected_rows·too_few_rows |
+| wrong_candidates | 되묻기의 후보에 기대한 이름이 없음 |
+| unscored | 정답 표가 없거나(no_answer_key) 정답 SQL이 바뀜(stale_answer_key). 정답률 분모에서 뺀다 |
+| error | 응답 없이 실행 오류 |
+
+결과 표 비교는 gold.json의 `scoring`을 따른다. `key_columns`(정답 표의 컬럼 이름)의 값만 보며 컬럼 이름·순서·추가 컬럼은 무시한다. 숫자는 0.011 이내이거나 정답 값을 에이전트의 자릿수로 반올림해 같으면 일치로 본다. `mode`는 `all_rows`(행 수와 모든 행 일치), `required`(지정 행 포함), `subset`(에이전트의 모든 행이 정답 표에 있음)이며 `head`·`tail`·`rows`로 반드시 있어야 할 행을 지정한다. `ordered`이면 결과의 첫 `head`행이 정답 표의 첫 `head`행과 같은 순서여야 하며(head_order), `all_rows`에서는 모든 행의 순서가 같아야 한다. 답변의 기준 안내 문구(`required_disclosure`)와 안내·되묻기 문장의 의미는 자동으로 판정하지 않고 `review`에 표시한다. 결과는 `results/score-<UUID>/score.json`과 화면의 표로 남는다.
+
+시간 항목: 관찰마다 전체 시간(`wall_ms`), Gemini 시도별 시간과 합계·최대, SQL 단계별 시간과 합계·최대, SQL 시간 초과 횟수(SQLSTATE 57014), SQL 수정 여부, 논리·물리 호출 수를 남기고 문항·유형·전체별로 중앙값·p90·최대를 낸다. SQL 단계 시간은 범위 적용·가드·접속을 포함해 순수 DB 시간이 아니다. 시간 초과 횟수는 이 항목이 추가된 2026-10-17 이후 run.py 결과에만 있고 이전 결과는 모름(null)으로 둔다.
+
 ## 코드가 하는 일 (`run.py`의 흐름)
 
 1. `--allow-live-gemini`(또는 `--preflight-only`)를 확인한다. 없으면 설정을 읽기 전에 중단한다.
@@ -129,6 +167,7 @@ Remove-Item Env:AGENT_EVAL_DATABASE_URL
 | 0aad7c5d | 10-12 14:11 | 운영 | 180s/기본 | 1×3 | complete | 타임아웃 180초. 호출당 18~82초, 생성 SQL 5초 초과 |
 | 8c4308da | 10-12 14:17 | 운영 | 180s/low | 1×3 | complete | + thinking low. 호출당 2.8~4.9초, matchup 답변 |
 | 3ae928b1 | 10-12 17:26 | 테스트베드 | 60s/low | 3×8 | complete | 0단계 재현성. 24회 완료, API 실패 0건 |
+| 439916f9, e67c38df | 10-17 | 테스트베드 | 30s/기본 | 3×10씩 | incomplete | 시범 20문항 기준 측정(score.py run, 채점 score-91afb3d1). 정답 20/60, 15관찰이 생성 호출 504×3으로 소진. 해석은 docs/parts/agent.md 10-17 기록 |
 
 0aad7c5d와 8c4308da는 당시 `--timeout-seconds`·`--thinking-level` 옵션이 없어 임시 스크립트로 같은 값을 덮어썼다. 지금은 위 옵션으로 같은 실행을 재현할 수 있고, 그 스크립트는 삭제했다.
 
@@ -138,7 +177,7 @@ Remove-Item Env:AGENT_EVAL_DATABASE_URL
 
 | 항목 | 값 |
 |---|---|
-| 컨테이너 | `er-nl2sql-testbed`, postgres:17-alpine(PostgreSQL 17.11), `127.0.0.1:15446`, trust 인증 |
+| 컨테이너 | `er-nl2sql-testbed`, postgres:17-alpine(PostgreSQL 17.11), `127.0.0.1:15446`. 2026-10-13 통합 준비 이후 er_analytics의 TCP 접속은 비밀번호(scram-sha-256) 필요, 컨테이너 안의 local 소켓은 trust |
 | 스냅샷 | 2026-10-12 05:51:31 UTC, 덤프 `er_analytics_testbed_20261012T055131Z.dump`(1,005.5MB), 스냅샷 ID `testbed-20261012T055131Z` |
 | 내용 | V6까지 적용, games 59,151 / participants 1,351,240 / users 107,017, 이름 8개 테이블 2,224행 |
 | 계정 | `collector`, `agent_ro`(비밀번호 없음, agent_ro는 읽기 전용·5초) |
@@ -186,8 +225,8 @@ docker exec er-nl2sql-testbed vacuumdb -U postgres -d er_analytics --analyze --j
 ## 알아 둘 한계
 
 - 같은 설정으로 반복해도 LLM이 만드는 SQL·질문 해석이 달라진다. 설정 비교는 반복(3회 이상)으로 한다.
-- 정답 SQL이 없어 정확도는 판단하지 못한다. 정답 세트는 M1-040으로 후속이다.
+- 정확도는 `score.py`로 정답 SQL이 있는 문항만 판단한다. 정답 SQL은 사용자 검수 전 초안이 많으므로 채점 결과도 그 기준의 수치다.
 - 입력 토큰이 호출당 약 49~65k이고 질문당 2~3회 호출한다. 반복·문항 수에 비례해 비용이 든다.
-- 로컬 속도는 운영보다 빠르다. 5초 SQL 판단은 로컬에서 비교용으로, 최종 확인은 운영 읽기 전용 소량으로 한다.
+- 로컬 속도는 운영보다 빠르다. SQL 제한(2026-10-17부터 20초) 판단은 로컬에서 비교용으로, 최종 확인은 운영 읽기 전용 소량으로 한다.
 - 이 서버(t2.small)에서는 `EXPLAIN (ANALYZE)`의 시간이 부풀려진다. 시간은 psql `\timing`으로 잰다.
 - `results/`와 덤프는 Git에 넣지 않는다.
