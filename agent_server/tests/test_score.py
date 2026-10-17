@@ -112,6 +112,123 @@ def test_subset_rejects_rows_absent_from_answer_key() -> None:
     assert score.compare_result(scoring, expected(TWO), answer([])) == ["too_few_rows"]
 
 
+def test_single_row_answer_passes_when_only_the_first_rank_is_required() -> None:
+    rows = [{"name": "a", "rate": 9}, {"name": "b", "rate": 5}]
+    scoring = {"key_columns": ["name", "rate"], "mode": "required", "head": 1, "ordered": True}
+    assert score.compare_result(scoring, expected(rows), answer([rows[0]])) == []
+    assert score.compare_result(scoring, expected(rows), answer([rows[1], rows[0]])) == [
+        "head_order"
+    ]
+
+
+MONSTERS = [
+    {"monster_code": 1, "monster_name": "닭", "tier": "플래티넘", "kills": "8.99"},
+    {"monster_code": 1, "monster_name": "닭", "tier": "미스릴 이상", "kills": "10.61"},
+    {"monster_code": 2, "monster_name": "박쥐", "tier": "플래티넘", "kills": "1.50"},
+    {"monster_code": 2, "monster_name": "박쥐", "tier": "미스릴 이상", "kills": "2.50"},
+]
+WIDE = {
+    "mode": "grouped",
+    "group_by": "monster_code",
+    "identity_columns": ["monster_code", "monster_name"],
+    "value_columns": ["kills"],
+}
+BY_TIER = {
+    "mode": "grouped",
+    "group_by": "tier",
+    "value_columns": ["kills"],
+    "row_filter": {"monster_code": [1, 2]},
+}
+
+
+def test_grouped_accepts_wide_table_by_code_or_name_with_any_headers() -> None:
+    by_name = answer(
+        [
+            {"동물": "닭", "저티어": "8.99", "고티어(미스릴 이상)": "10.61"},
+            {"동물": "박쥐", "저티어": "1.5", "고티어(미스릴 이상)": "2.5"},
+        ]
+    )
+    assert score.compare_result(WIDE, expected(MONSTERS), by_name) == []
+    by_code = answer([{"c": 1, "a": 10.61, "b": 8.99}, {"c": 2, "a": 2.5, "b": 1.5}])
+    assert score.compare_result(WIDE, expected(MONSTERS), by_code) == []
+
+
+def test_grouped_rejects_missing_group_wrong_value_and_long_table() -> None:
+    wrong = answer(
+        [{"동물": "닭", "저": "8.99", "고": "10.80"}, {"동물": "박쥐", "저": 1.5, "고": 2.5}]
+    )
+    assert score.compare_result(WIDE, expected(MONSTERS), wrong) == ["group_missing"]
+    one = answer([{"동물": "닭", "저": "8.99", "고": "10.61"}])
+    assert score.compare_result(WIDE, expected(MONSTERS), one) == ["group_missing"]
+    long_table = answer(
+        [
+            {"동물": "닭", "tier": "플래티넘", "값": "8.99"},
+            {"동물": "닭", "tier": "미스릴", "값": "10.61"},
+        ]
+    )
+    assert score.compare_result(WIDE, expected(MONSTERS), long_table) == ["group_missing"]
+    limited = {**WIDE, "group_limit": 1}
+    assert score.compare_result(limited, expected(MONSTERS), one) == []
+
+
+def test_grouped_by_tier_accepts_one_row_per_tier_with_animals_as_columns() -> None:
+    rows = answer(
+        [
+            {"tier_group": "저티어 (플래티넘)", "chicken": "8.99", "bat": "1.50", "wolf": 7.67},
+            {"tier_group": "고티어(미스릴 이상)", "chicken": "10.61", "bat": "2.5", "wolf": 8.58},
+        ]
+    )
+    assert score.compare_result(BY_TIER, expected(MONSTERS), rows) == []
+    wrong = answer([{"t": "저", "c": "8.99", "b": "1.50"}, {"t": "고", "c": "10.80", "b": "2.50"}])
+    assert score.compare_result(BY_TIER, expected(MONSTERS), wrong) == ["group_missing"]
+    animal_rows = answer([{"동물": "닭", "저": "8.99", "고": "10.61"}])
+    assert score.compare_result(BY_TIER, expected(MONSTERS), animal_rows) == ["group_missing"]
+
+
+def test_grouped_column_absent_from_answer_key_is_a_gold_error() -> None:
+    with pytest.raises(ValueError, match="Grouped columns"):
+        score.compare_result({**WIDE, "value_columns": ["absent"]}, expected(MONSTERS), answer(TWO))
+
+
+CERES = [
+    {"samples": 100, "win_rate": "12.26", "total_samples": 400, "total_win_rate": "11.50"},
+    {"samples": 300, "win_rate": "11.21", "total_samples": 400, "total_win_rate": "11.50"},
+]
+CERES_SCORING = {
+    "alternatives": [
+        {"key_columns": ["samples", "win_rate"], "mode": "all_rows"},
+        {
+            "all_of": [
+                {"key_columns": ["samples", "win_rate"], "mode": "required", "head": 1},
+                {"key_columns": ["total_samples", "total_win_rate"], "mode": "required", "head": 1},
+            ]
+        },
+    ]
+}
+
+
+def test_alternatives_accept_either_reading_of_the_baseline() -> None:
+    without = answer([{"g": "있음", "n": 100, "w": "12.26"}, {"g": "없음", "n": 300, "w": "11.21"}])
+    assert score.compare_result(CERES_SCORING, expected(CERES), without) == []
+    # Compared against the whole character in one side-by-side row.
+    overall = answer([{"vs": 100, "vs_w": "12.26", "all": 400, "all_w": "11.50"}])
+    assert score.compare_result(CERES_SCORING, expected(CERES), overall) == []
+    # Or in two rows.
+    two_rows = answer([{"g": "있음", "n": 100, "w": "12.26"}, {"g": "전체", "n": 400, "w": "11.5"}])
+    assert score.compare_result(CERES_SCORING, expected(CERES), two_rows) == []
+
+
+def test_alternatives_reject_a_wrong_baseline_and_report_the_first_nearest_failure() -> None:
+    wrong = answer([{"vs": 100, "vs_w": "12.26", "all": 400, "all_w": "13.00"}])
+    # Both readings fail once; the first alternative's reason is reported.
+    assert score.compare_result(CERES_SCORING, expected(CERES), wrong) == ["row_count"]
+    assert score.compare_result(CERES_SCORING["alternatives"][1], expected(CERES), wrong) == [
+        "required_rows_missing"
+    ]
+    other = answer([{"vs": 90, "vs_w": "12.26"}])
+    assert score.compare_result(CERES_SCORING, expected(CERES), other)
+
+
 def test_missing_key_column_is_a_gold_error() -> None:
     scoring = {"key_columns": ["absent"], "mode": "all_rows"}
     with pytest.raises(ValueError, match="Key columns"):
@@ -150,6 +267,13 @@ def test_grade_clarification_checks_expected_candidates() -> None:
     assert graded["verdict"] == "wrong_candidates"
 
 
+def test_gold_accepts_composite_and_grouped_scoring(tmp_path: Path) -> None:
+    scoring = {"alternatives": [CERES_SCORING, WIDE], "note": "either reading"}
+    path = tmp_path / "gold.json"
+    path.write_text(json.dumps({"cases": [case(scoring=scoring)]}), encoding="utf-8")
+    assert score.load_gold(path)["one"]["scoring"] == scoring
+
+
 @pytest.mark.parametrize(
     "bad",
     [
@@ -159,6 +283,23 @@ def test_grade_clarification_checks_expected_candidates() -> None:
         {"cases": [case(scoring={"key_columns": [], "mode": "all_rows"})]},
         {"cases": [case(scoring={"key_columns": ["a"], "mode": "other"})]},
         {"cases": [case(scoring={"key_columns": ["a"], "mode": "required", "rows": [[1, 2]]})]},
+        {"cases": [case(scoring={"alternatives": []})]},
+        {"cases": [case(scoring={"alternatives": [{"key_columns": [], "mode": "all_rows"}]})]},
+        {"cases": [case(scoring={"all_of": [], "mode": "all_rows"})]},
+        {"cases": [case(scoring={"mode": "grouped", "group_by": "a"})]},
+        {"cases": [case(scoring={"mode": "grouped", "value_columns": ["a"]})]},
+        {
+            "cases": [
+                case(
+                    scoring={
+                        "mode": "grouped",
+                        "group_by": "a",
+                        "value_columns": ["a"],
+                        "row_filter": {"a": []},
+                    }
+                )
+            ]
+        },
     ],
 )
 def test_gold_validation(tmp_path: Path, bad: dict[str, Any]) -> None:

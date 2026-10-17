@@ -32,7 +32,7 @@ from . import run
 from .report import write_json
 
 EXPECTED_KIND = {"답변": "answer", "안내": "notice", "되묻기": "clarification"}
-MODES = ("all_rows", "required", "subset")
+MODES = ("all_rows", "required", "subset", "grouped")
 DEFAULT_TOLERANCE = Decimal("0.011")
 EXPECT_ATTEMPTS = 3
 
@@ -65,6 +65,34 @@ def load_gold(path: Path) -> dict[str, dict[str, Any]]:
 
 
 def validate_scoring(case_id: str, scoring: dict[str, Any]) -> None:
+    for composite in ("alternatives", "all_of"):
+        if composite in scoring:
+            parts = scoring[composite]
+            if set(scoring) - {composite, "note"} or not isinstance(parts, list) or not parts:
+                raise ValueError(f"{case_id}: scoring.{composite} must be the only list of parts")
+            for part in parts:
+                validate_scoring(case_id, part)
+            return
+    if scoring.get("mode") == "grouped":
+        group_by = scoring.get("group_by")
+        if not isinstance(group_by, str) or not group_by:
+            raise ValueError(f"{case_id}: scoring.group_by must name a column")
+        for name, required in (("value_columns", True), ("identity_columns", False)):
+            columns = scoring.get(name, [])
+            if (
+                not isinstance(columns, list)
+                or (required and not columns)
+                or not all(isinstance(column, str) for column in columns)
+            ):
+                raise ValueError(f"{case_id}: scoring.{name} must list column names")
+        if type(scoring.get("group_limit", 0)) is not int or scoring.get("group_limit", 0) < 0:
+            raise ValueError(f"{case_id}: scoring.group_limit must be a non-negative integer")
+        row_filter = scoring.get("row_filter", {})
+        if not isinstance(row_filter, dict) or not all(
+            isinstance(values, list) and values for values in row_filter.values()
+        ):
+            raise ValueError(f"{case_id}: scoring.row_filter must map columns to value lists")
+        return
     keys = scoring.get("key_columns")
     if not isinstance(keys, list) or not keys or not all(isinstance(key, str) for key in keys):
         raise ValueError(f"{case_id}: scoring.key_columns must list column names")
@@ -230,10 +258,67 @@ def _match_distinct(
     return all(augment(index, set()) for index in range(len(wanted)))
 
 
+def _compare_grouped(
+    scoring: dict[str, Any], expected: dict[str, Any], response: dict[str, Any]
+) -> list[str]:
+    """Wide-table answers: one agent row holds all of a group's values from the answer key.
+
+    The answer key lists a group on several rows (for example one row per animal and tier).
+    `group_by` splits the key into groups in answer-key order (limited to `group_limit`);
+    `row_filter` keeps only the listed values of other columns. The agent row must show every
+    value of the group's `value_columns` whatever the column names or order, and, when
+    `identity_columns` are given, also one of the group's labels (a code or a name).
+    """
+    identity = scoring.get("identity_columns", [])
+    row_filter = scoring.get("row_filter", {})
+    named = [scoring["group_by"], *scoring["value_columns"], *identity, *row_filter]
+    missing = [column for column in named if column not in expected["columns"]]
+    if missing:
+        raise ValueError(f"Grouped columns are absent from the expected table: {missing}")
+    tolerance = Decimal(str(scoring.get("tolerance", DEFAULT_TOLERANCE)))
+    groups: dict[Any, list[dict[str, Any]]] = {}
+    for row in expected["rows"]:
+        if all(row[column] in values for column, values in row_filter.items()):
+            groups.setdefault(row[scoring["group_by"]], []).append(row)
+    selected = list(groups.values())[: scoring.get("group_limit") or None]
+    columns = response.get("columns") or []
+    rows = [[row.get(column) for column in columns] for row in response.get("rows") or []]
+    for members in selected:
+        values = [row[column] for row in members for column in scoring["value_columns"]]
+        labels = [[members[0][column]] for column in identity] or [[]]
+        if not any(
+            row_matches([*label, *values], cells, tolerance) for label in labels for cells in rows
+        ):
+            return ["group_missing"]
+    return []
+
+
 def compare_result(
     scoring: dict[str, Any], expected: dict[str, Any], response: dict[str, Any]
 ) -> list[str]:
-    """Return failed checks; an empty list means the result matches the answer key."""
+    """Return failed checks; an empty list means the result matches the answer key.
+
+    `alternatives` passes when any part passes (the fewest failures are reported otherwise),
+    `all_of` passes when every part passes, and `grouped` accepts a wide table.
+    """
+    if "alternatives" in scoring:
+        outcomes = [compare_result(part, expected, response) for part in scoring["alternatives"]]
+        return min(outcomes, key=len)
+    if "all_of" in scoring:
+        return [
+            failure
+            for part in scoring["all_of"]
+            for failure in compare_result(part, expected, response)
+        ]
+    if scoring["mode"] == "grouped":
+        return _compare_grouped(scoring, expected, response)
+    return _compare_table(scoring, expected, response)
+
+
+def _compare_table(
+    scoring: dict[str, Any], expected: dict[str, Any], response: dict[str, Any]
+) -> list[str]:
+    """Row-by-row comparison for key_columns scoring (all, required and subset modes)."""
     keys = scoring["key_columns"]
     missing = [key for key in keys if key not in expected["columns"]]
     if missing:
