@@ -1,4 +1,4 @@
-# ER analytics query schema (V5)
+# ER analytics query schema (V9)
 
 Only the tables and columns below may be used. SQL runs as agent_ro with a 20-second statement timeout and at most 200 returned rows.
 
@@ -15,7 +15,7 @@ Allowed columns:
 
 ## `participants`
 
-One row per player per match. participant_id is the numeric key for child joins; game_id joins games. user_id is an anonymous identifier; never guess a nickname from it or answer individual-player-history questions. team_number identifies teammates only within the same game. character_num joins characters.character_code; best_weapon joins weapon_types.code when metadata is available. tier/tier_division are snapshots from mmr_before at match time; version_major/version_minor are copied from games. game_rank=1 means a win. play_time/watch_time/total_time/duration are participant values in seconds; duration may differ between players. Integer 0/1 values remain integers; gambit, kings_gambit and kill_gamma are booleans. The *_credits and other array columns keep ordered values; arrays are 1-indexed in PostgreSQL. skill_order lists skill codes in level-up order. skill_level_info, credit_source and kill_monsters are JSONB maps. kill_monsters maps a wild-animal code (text keys '1'..'12') to kills; no name table exists, and the codes are given in metrics.md. trait_first_core is the core trait. Missing values are NULL; do not invent values. Missing values are NULL; do not invent values.
+One row per player per match. participant_id is the numeric key for child joins; game_id joins games. user_id is an anonymous identifier; never guess a nickname from it or answer individual-player-history questions. team_number identifies teammates only within the same game. character_num joins characters.character_code; best_weapon joins weapon_types.code when metadata is available. tier/tier_division are snapshots from mmr_before at match time; version_major/version_minor are copied from games. game_rank=1 means a win. play_time/watch_time/total_time/duration are participant values in seconds; duration may differ between players. Integer 0/1 values remain integers; gambit, kings_gambit and kill_gamma are booleans. The *_credits and other array columns keep ordered values; arrays are 1-indexed in PostgreSQL. skill_order lists skill codes in level-up order. skill_level_info, credit_source and kill_monsters are JSONB maps. kill_monsters maps a wild-animal code (text keys '1'..'12') to kills; no name table exists, and the codes are given in metrics.md. trait_first_core is the core trait. Missing values are NULL; do not invent values.
 
 Allowed columns:
 - `game_id`, `team_number`, `character_num`, `best_weapon`, `best_weapon_level`, `game_rank`
@@ -57,10 +57,11 @@ Allowed columns:
 
 ## `items`
 
-Join participant_equipment.item_code to code. Includes current equipment and older/non-equipment item names. item_type is Weapon/Armor for current equipment; item_grade is its current metadata grade, and grade_name_ko is the official grade label. equipment_type is the weapon type or armor slot type. Attributes can be NULL for old or non-equipment codes. Historical FINAL grade remains participant_equipment.grade; do not replace it with the current item_grade. Use LEFT JOIN to preserve unnamed codes.
+Join participant_equipment.item_code to code. Includes current equipment and older/non-equipment item names. item_type is Weapon/Armor for current equipment; item_grade is its current metadata grade, and grade_name_ko is the official grade label. equipment_type is the weapon type or armor slot type. Attributes can be NULL for old or non-equipment codes. Historical FINAL grade remains participant_equipment.grade; do not replace it with the current item_grade. Use LEFT JOIN to preserve unnamed codes. make_material_1 and make_material_2 are the two direct crafting materials of a weapon or armor (item codes; NULL when not crafted). Special materials such as 미스릴 (401304), VF 혈액 샘플 (401401), 포스 코어 (401403), 생명의 나무 (401208) and 운석 (401209) always appear as direct materials, so "items made with X" means make_material_1 = X OR make_material_2 = X; no recursion is needed. They are current metadata, not the recipe at a historical patch.
 
 Allowed columns:
 - `code`, `name_ko`, `source`, `l10n_key`, `checked_at`, `item_type`, `item_grade`, `grade_name_ko`, `equipment_type`
+- `make_material_1`, `make_material_2`
 
 ## `trait_names`
 
@@ -139,6 +140,24 @@ Join participant_id. death_seq is 1, 2 or 3. killer_type distinguishes player, w
 Allowed columns:
 - `participant_id`, `death_seq`, `killer_type`, `killer_participant_id`, `killer_character_num`, `killer_name`
 - `killer_weapon`, `cause_of_death`, `place_of_death`
+
+## `routes`
+
+Recommended routes (weaponRoutes/recommend) for participants.route_id_of_start. The key is (season_id, route_id): season_id is the games.season_id in which the route number was seen, because the game resets all routes each season. Join with participants through games: games.season_id = routes.season_id AND participants.route_id_of_start = routes.route_id, as a LEFT JOIN. route_id_of_start = 0 means no route and is never in this table. fetch_status is SUCCESS or INVALID_VERSION for usable metadata; PENDING (not fetched yet), FETCHING, NOT_FOUND, ERROR, INVALID_RESPONSE and INTERRUPTED rows have no metadata. Private routes cannot be fetched, so route answers show tendencies only: report how many appearances had usable route metadata versus none. usage_count is a collection priority over the whole database, not a scoped pick count; count participants for scoped usage. character_code joins characters, weapon_type joins weapon_types.code, tactical_skill_group_code joins tactical_skills.code. weapon_codes (target equipment), trait_codes and remote_transfer_item_codes are integer arrays; cardinality(remote_transfer_item_codes) counts remote transfers. late_game_item_codes is a JSONB map from slot number text to item-code arrays and may contain non-item codes such as 999999. v2_win_rate, v2_accumulate_win_rate, v2_like and v2_accumulate_like are the game company's own aggregates, not win rates computed from collected matches; never present them as our win rate. route_version is the edit count and update_dtm the last edit time. version_season/version_major/version_minor parse the route's game version (for example 12.5.0 matches games 12/5/0) and reflect the last save, not the match patch. All route values are the latest fetched state, not the state at match time.
+
+Allowed columns:
+- `season_id`, `route_id`, `fetch_status`, `usage_count`, `response_code`, `fetched_at`
+- `v2_season_id`, `character_code`, `weapon_type`, `tactical_skill_group_code`, `weapon_codes`, `trait_codes`
+- `remote_transfer_item_codes`, `late_game_item_codes`, `v2_win_rate`, `v2_accumulate_win_rate`, `v2_like`, `v2_accumulate_like`
+- `route_version`, `update_dtm`, `version_season`, `version_major`, `version_minor`, `team_mode`
+- `share`
+
+## `route_paths`
+
+Areas of a fetched route in order. (season_id, route_id, seq) is the key; seq starts at 1. area_code joins areas.code. The route's last area is the row with the largest seq per (season_id, route_id); compute it with MAX(seq) or ROW_NUMBER, never assume a fixed length. Only successful routes have paths.
+
+Allowed columns:
+- `season_id`, `route_id`, `seq`, `area_code`
 
 ## Metric and terminology definitions
 

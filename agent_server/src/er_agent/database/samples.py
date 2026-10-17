@@ -51,7 +51,8 @@ def sample_rows(database_url: str) -> dict[str, Sequence[dict[str, Any]]]:
             FROM participant_deaths ORDER BY participant_id, death_seq LIMIT 3
         """,
         "items": """
-            SELECT code, name_ko, item_type, item_grade, grade_name_ko, equipment_type, checked_at
+            SELECT code, name_ko, item_type, item_grade, grade_name_ko, equipment_type,
+                   make_material_1, make_material_2, checked_at
             FROM items ORDER BY code LIMIT 3
         """,
         "trait_names": """
@@ -66,6 +67,16 @@ def sample_rows(database_url: str) -> dict[str, Sequence[dict[str, Any]]]:
         "areas": "SELECT code, name_ko, name_en, checked_at FROM areas ORDER BY code LIMIT 3",
         "weather_types": """
             SELECT code, name_ko, checked_at FROM weather_types ORDER BY code LIMIT 3
+        """,
+        "routes": """
+            SELECT season_id, route_id, fetch_status, usage_count, character_code, weapon_type,
+                   tactical_skill_group_code, v2_win_rate, version_season, version_major,
+                   version_minor
+            FROM routes ORDER BY usage_count DESC, season_id, route_id LIMIT 3
+        """,
+        "route_paths": """
+            SELECT season_id, route_id, seq, area_code
+            FROM route_paths ORDER BY season_id, route_id, seq LIMIT 3
         """,
     }
     samples: dict[str, Sequence[dict[str, Any]]] = {}

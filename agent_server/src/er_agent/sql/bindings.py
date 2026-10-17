@@ -16,10 +16,10 @@ NAME_COLUMNS = {
         "opponent_character_num",
         "killer_character_num",
     },
-    NameCategory.WEAPON: {"best_weapon", "mastery_code"},
-    NameCategory.ITEM: {"item_code"},
+    NameCategory.WEAPON: {"best_weapon", "mastery_code", "weapon_type"},
+    NameCategory.ITEM: {"item_code", "make_material_1", "make_material_2"},
     NameCategory.TRAIT: {"trait_code", "trait_first_core"},
-    NameCategory.TACTICAL: {"tactical_skill_group"},
+    NameCategory.TACTICAL: {"tactical_skill_group", "tactical_skill_group_code"},
 }
 
 

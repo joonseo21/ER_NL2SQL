@@ -1,4 +1,4 @@
-"""Explicit agent SELECT contract for V1-V5; never infer access from model SQL.
+"""Explicit agent SELECT contract for V1-V9; never infer access from model SQL.
 
 Update with schema_context and runtime grants when a later migration is approved.
 """
@@ -228,6 +228,8 @@ TABLE_COLUMNS: dict[str, tuple[str, ...]] = {
         "item_grade",
         "grade_name_ko",
         "equipment_type",
+        "make_material_1",
+        "make_material_2",
     ),
     "trait_names": (
         "code",
@@ -243,6 +245,35 @@ TABLE_COLUMNS: dict[str, tuple[str, ...]] = {
     "skill_groups": ("code", "name_ko", "source", "l10n_key", "checked_at"),
     "areas": ("code", "name_ko", "source", "l10n_key", "checked_at", "name_en"),
     "weather_types": ("code", "name_ko", "source", "l10n_key", "checked_at"),
+    # V9 recommended routes, keyed by (season_id, route_id); see database contract.
+    "routes": (
+        "season_id",
+        "route_id",
+        "fetch_status",
+        "usage_count",
+        "response_code",
+        "fetched_at",
+        "v2_season_id",
+        "character_code",
+        "weapon_type",
+        "tactical_skill_group_code",
+        "weapon_codes",
+        "trait_codes",
+        "remote_transfer_item_codes",
+        "late_game_item_codes",
+        "v2_win_rate",
+        "v2_accumulate_win_rate",
+        "v2_like",
+        "v2_accumulate_like",
+        "route_version",
+        "update_dtm",
+        "version_season",
+        "version_major",
+        "version_minor",
+        "team_mode",
+        "share",
+    ),
+    "route_paths": ("season_id", "route_id", "seq", "area_code"),
 }
 
 ALLOWED_TABLES = frozenset(TABLE_COLUMNS)
