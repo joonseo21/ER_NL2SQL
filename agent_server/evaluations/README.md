@@ -167,6 +167,8 @@ uv run python -m evaluations.score run --gold C:\er-analytics\pilot-questions\go
 | 0aad7c5d | 10-12 14:11 | 운영 | 180s/기본 | 1×3 | complete | 타임아웃 180초. 호출당 18~82초, 생성 SQL 5초 초과 |
 | 8c4308da | 10-12 14:17 | 운영 | 180s/low | 1×3 | complete | + thinking low. 호출당 2.8~4.9초, matchup 답변 |
 | 3ae928b1 | 10-12 17:26 | 테스트베드 | 60s/low | 3×8 | complete | 0단계 재현성. 24회 완료, API 실패 0건 |
+| 3d440e3f, 7caa0dc0 | 10-17 | 테스트베드(V9) | openai gpt-6.1-sol 30s/low | 3×10씩 | complete | 2차와 같은 조건의 모델 비교(채점 score-efe68538). 정답 41/60, 전체 시간 중앙값 16.4초 |
+| 95edb93d, 09a2391d | 10-17 | 테스트베드(V9) | 30s/low | 3×10씩 | complete | 시범 20문항 2차(채점 score-030b8b2f). 정답 38/60, 전체 시간 중앙값 11.9초, 소진 0. 해석은 docs/archive/nl2sql_pilot_eval_2026-10-17.md |
 | 439916f9, e67c38df | 10-17 | 테스트베드 | 30s/기본 | 3×10씩 | incomplete | 시범 20문항 기준 측정(score.py run, 채점 score-91afb3d1). 정답 20/60, 15관찰이 생성 호출 504×3으로 소진. 해석은 docs/parts/agent.md 10-17 기록 |
 
 0aad7c5d와 8c4308da는 당시 `--timeout-seconds`·`--thinking-level` 옵션이 없어 임시 스크립트로 같은 값을 덮어썼다. 지금은 위 옵션으로 같은 실행을 재현할 수 있고, 그 스크립트는 삭제했다.
