@@ -166,6 +166,54 @@ def test_duplicate_name_references_do_not_duplicate_candidates(snapshot: Context
     assert isinstance(result, ResolvedContext) and len(result.names) == 1
 
 
+def test_misspelled_name_is_confirmed_before_unavailable_data(snapshot: ContextSnapshot) -> None:
+    intent = QueryIntent(
+        names=(NameTerm("합성 장비이", NameCategory.ITEM),),
+        unsupported_reason=UnsupportedReason.UNAVAILABLE_DATA,
+    )
+    result = prepare(snapshot, intent)
+    assert isinstance(result, QueryResponse) and result.kind == ResponseKind.CLARIFICATION
+    assert result.sql is None and result.rows == ()
+    assert result.clarifications[0].candidates[0].code == 10
+
+
+def test_name_without_candidates_stays_unavailable_data(snapshot: ContextSnapshot) -> None:
+    intent = QueryIntent(
+        names=(NameTerm("전혀 다른 말", NameCategory.ITEM),),
+        unsupported_reason=UnsupportedReason.UNAVAILABLE_DATA,
+    )
+    result = prepare(snapshot, intent)
+    assert isinstance(result, QueryResponse) and result.kind == ResponseKind.NOTICE
+    assert result.message == "수집된 경기 데이터로 확인할 수 없는 내용입니다."
+
+
+def test_verified_names_with_unavailable_data_stay_a_notice(snapshot: ContextSnapshot) -> None:
+    intent = QueryIntent(
+        names=(NameTerm("합성 장비", NameCategory.ITEM),),
+        unsupported_reason=UnsupportedReason.UNAVAILABLE_DATA,
+    )
+    result = prepare(snapshot, intent)
+    assert isinstance(result, QueryResponse) and result.kind == ResponseKind.NOTICE
+
+
+@pytest.mark.parametrize(
+    "reason",
+    [
+        UnsupportedReason.PERSONAL_HISTORY,
+        UnsupportedReason.PREDICTION,
+        UnsupportedReason.UNRELATED,
+    ],
+)
+def test_other_unsupported_reasons_are_not_replaced_by_name_confirmation(
+    snapshot: ContextSnapshot, reason: UnsupportedReason
+) -> None:
+    intent = QueryIntent(
+        names=(NameTerm("합성 장비이", NameCategory.ITEM),), unsupported_reason=reason
+    )
+    result = prepare(snapshot, intent)
+    assert isinstance(result, QueryResponse) and result.kind == ResponseKind.NOTICE
+
+
 @pytest.mark.parametrize("reason", list(UnsupportedReason))
 def test_unsupported_intent_returns_reason_and_examples_without_sql(
     snapshot: ContextSnapshot,

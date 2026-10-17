@@ -143,9 +143,16 @@ def prepare_context(
     elapsed_ms: int = 0,
 ) -> ResolvedContext | QueryResponse:
     """Validate supplied intent; early responses contain neither SQL nor result rows."""
-    if intent.unsupported_reason is not None:
-        return _notice(request, log_id, elapsed_ms, REASON_MESSAGES[intent.unsupported_reason])
+    reason = intent.unsupported_reason
+    if reason is not None and reason != UnsupportedReason.UNAVAILABLE_DATA:
+        return _notice(request, log_id, elapsed_ms, REASON_MESSAGES[reason])
     resolved, unresolved = _resolve_names(intent, snapshot.catalog)
+    if reason is not None:
+        # A misspelled official name reads as missing data to the model, so ask about any name
+        # that has candidates first. Names with no candidate are plain missing data.
+        unresolved = tuple(item for item in unresolved if item.candidates)
+        if not unresolved:
+            return _notice(request, log_id, elapsed_ms, REASON_MESSAGES[reason])
     if unresolved:
         return QueryResponse(
             ResponseKind.CLARIFICATION,

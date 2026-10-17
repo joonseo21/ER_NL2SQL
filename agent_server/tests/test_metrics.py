@@ -46,3 +46,16 @@ def test_generation_prompt_tells_the_model_to_compare_patches_through_intent() -
     # The SQL rules are shared with the repair prompt.
     assert "ARRAY_AGG(value ORDER BY version_major, version_minor)" in SQL_SCOPE_RULES
     assert SQL_SCOPE_RULES in prompt
+
+
+def test_generation_prompt_asks_for_name_confirmation_before_unavailable_data() -> None:
+    from er_agent.generation.prompts import build_generation_prompt
+    from er_agent.models.context import ContextSnapshot
+    from er_agent.models.names import NameCatalog
+    from er_agent.models.query import QueryConditions, QueryRequest
+
+    snapshot = ContextSnapshot(41, NameCatalog(()), (), ())
+    prompt = build_generation_prompt(QueryRequest("질문", QueryConditions()), snapshot)
+    assert "looks like a misspelling of an official name" in prompt
+    assert "unsupported_reason=null" in prompt
+    assert "Use unavailable_data only when every named term is a verified exact match" in prompt
