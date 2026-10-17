@@ -50,7 +50,7 @@ Claude와 Codex가 같은 작업 폴더를 쓴다. Codex는 [AGENTS.md](AGENTS.m
 
 ## 파트와 계약
 
-개발은 pipeline, agent, api-server, frontend 네 파트로 나누고 대화도 파트별로 둔다. 파트의 범위는 각 폴더의 AGENTS.md에 있다.
+개발은 pipeline, agent, api-server, frontend 네 파트로 나누고 대화도 파트별로 둔다. 파트의 범위는 각 폴더의 AGENTS.md에 있다. 수집기(pipeline)와 웹 API(api-server)는 하나의 Spring 프로그램(backend/pipeline)에 있고 코드 묶음(패키지)으로 나뉜다. 두 묶음은 서로의 코드를 가져다 쓰지 않으며 Checkstyle의 import 규칙이 검사한다.
 
 - 파트 사이에는 코드가 아니라 docs/contracts의 계약 문서를 공유한다. database는 pipeline, agent-http는 agent, web-api는 api-server가 주인이다.
 - 계약은 주인 파트만 고친다. 계약에 닿는 코드를 바꾸면 같은 작업에서 계약 문서를 고친다.

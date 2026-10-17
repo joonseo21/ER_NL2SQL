@@ -5,7 +5,15 @@
 
 <!-- 구현 기술의 의존 경계만 검사한다. 클래스 이름의 의미는 코드 리뷰로 판단한다. -->
 <import-control pkg="io.eranalytics.pipeline" strategyOnMismatch="allowed">
+    <!-- 웹 API와 수집은 한 프로그램 안의 별도 파트다. 서로의 코드를 가져다 쓰지 않는다. -->
+    <subpackage name="webapi">
+        <disallow pkg="io.eranalytics.pipeline.collection"/>
+        <disallow pkg="io.eranalytics.pipeline.erapi"/>
+        <disallow pkg="io.eranalytics.pipeline.persistence"/>
+        <disallow pkg="io.eranalytics.pipeline.migration"/>
+    </subpackage>
     <subpackage name="collection">
+        <disallow pkg="io.eranalytics.pipeline.webapi"/>
         <disallow pkg="io.eranalytics.pipeline.persistence"/>
         <disallow pkg="java.sql"/>
         <disallow pkg="jakarta.persistence"/>
@@ -13,6 +21,7 @@
         <disallow pkg="org.springframework.data.jpa"/>
     </subpackage>
     <subpackage name="erapi">
+        <disallow pkg="io.eranalytics.pipeline.webapi"/>
         <disallow pkg="io.eranalytics.pipeline.collection"/>
         <disallow pkg="io.eranalytics.pipeline.persistence"/>
         <disallow pkg="java.sql"/>
@@ -21,6 +30,7 @@
         <disallow pkg="org.springframework.data.jpa"/>
     </subpackage>
     <subpackage name="persistence">
+        <disallow pkg="io.eranalytics.pipeline.webapi"/>
         <disallow class="io.eranalytics.pipeline.erapi.ErApiClient"/>
         <disallow pkg="io.eranalytics.pipeline.collection.runtime"/>
         <disallow class="io.eranalytics.pipeline.collection.game.GameCollectionProcessor"/>

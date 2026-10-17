@@ -13,10 +13,12 @@ Codex가 자동으로 읽는 파일이다. 규칙의 본문은 [CLAUDE.md](CLAUD
 
 | 파트 | 폴더 | 주인인 계약 | 읽는 계약 |
 |---|---|---|---|
-| pipeline | backend/pipeline, db | database | 없음 |
-| agent | agent_server, tools | agent-http | database |
-| api-server | backend/api-server | web-api | agent-http, database |
-| frontend | frontend | 없음 | web-api |
+| pipeline (수집과 DB) | backend/pipeline의 수집 코드 묶음, db | database | 없음 |
+| agent (질문 답변) | agent_server, tools | agent-http | database |
+| api-server (웹 API) | backend/pipeline의 webapi 코드 묶음 | web-api | agent-http, database |
+| frontend (화면) | frontend | 없음 | web-api |
+
+수집기와 웹 API는 하나의 Spring 프로그램(backend/pipeline)이지만 파트와 대화는 따로다. 두 파트의 경계는 backend/pipeline/AGENTS.md에 있다.
 
 계약은 docs/contracts에 있다. 계약과 파트 경계의 규칙은 CLAUDE.md의 "파트와 계약" 절을 따른다. 리뷰를 맡은 대화는 파트 경계에 묶이지 않는다.
 
