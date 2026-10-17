@@ -86,6 +86,25 @@ def test_typo_candidates_are_never_resolved_or_taken_from_other_categories(
     assert len(result.candidates) <= 5
 
 
+@pytest.mark.parametrize(
+    "typo,expected",
+    [("셀리느", "셀린"), ("재기", "재키"), ("아드리야나", "아드리아나"), ("블링그", "블링크")],
+)
+def test_hangul_typos_suggest_the_letter_level_closest_name(typo: str, expected: str) -> None:
+    # Syllable comparison scored 셀리느/셀린 at 0.4 and returned no candidate (2026-10-17 run).
+    names = ["셀린", "헨리", "리오", "펠릭스", "세레스", "재키", "제니", "캐시"]
+    names += ["아드리아나", "아디나", "프리야", "블링크", "블레어"]
+    catalog = NameCatalog(
+        tuple(
+            NameCandidate(NameCategory.CHARACTER, index, name)
+            for index, name in enumerate(names, start=1)
+        )
+    )
+    result = NameResolver(catalog).resolve(NameTerm(typo, NameCategory.CHARACTER))
+    assert isinstance(result, NameClarification)
+    assert [candidate.name for candidate in result.candidates] == [expected]
+
+
 def test_aliases_and_unknown_names_do_not_automatically_get_a_code(catalog: NameCatalog) -> None:
     assert isinstance(
         NameResolver(catalog).resolve(NameTerm("양검", NameCategory.WEAPON)), NameClarification
