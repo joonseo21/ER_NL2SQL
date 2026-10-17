@@ -71,4 +71,4 @@ uv run er-agent ask "수집된 경기는 몇 판이야?"
 
 실제 수집은 ER API 호출과 DB 쓰기를 수행하고 ask는 Gemini quota를 소비한다. 상세 설정과 배포는 [operations.md](docs/operations.md)를 따른다.
 
-SQL 생성에는 [metrics.md](agent_server/metrics.md)의 지표·용어 정의가 함께 들어간다. 7-3에서 질문 의미와 SQL 초안을 한 호출로 받고 공식 이름·조회 범위를 검증한 뒤 실행하며, 가드/SQL 실행 오류는 한 번만 수정한다. 호출별 기록과 바인딩한 조회 범위를 포함한 내부 응답 계약은 [operations의 7-3 절](docs/operations.md#7-3-gemini-호출sql-실행1회-수정)을 따른다. CLI는 성공 시 결과 행 배열을 출력하며 안내·이름 확인은 메시지와 종료 코드 1로 전달한다. 요약과 전체 응답 계약의 CLI 연결은 7-4에 남아 있다.
+SQL 생성에는 [metrics.md](agent_server/metrics.md)의 지표·용어 정의가 함께 들어간다. 질문 의미와 SQL 초안을 한 호출로 받고 공식 이름·조회 범위를 검증한 뒤 실행하며, 가드/SQL 실행 오류는 한 번만 수정한다. 7-4에서 결과 셀을 인용한 요약과 집단별 표본·단위·경고를 연결했다. 요약이 실패해도 SQL과 표를 반환한다. `ask`는 답변·안내·이름 확인 모두 전체 JSON 응답을 stdout에 출력한다(답변 종료 코드 0, 안내·이름 확인 1). 기존 행 배열을 처리하는 호출자는 `rows`를 읽도록 바꿔야 한다. 호출·기록·검증 한계는 [operations의 7-4 절](docs/operations.md#7-4-결과-근거요약전체-cli-응답), 응답 필드는 [agent-http 계약](docs/contracts/agent-http.md)을 따른다. 내부 HTTP 서버는 `agent_server/src/er_agent/http/`, 실제 Gemini 정확도 측정(시범 20문항 채점)은 `agent_server/evaluations/score.py`이며 결과 해석은 docs의 agent 파트 문서와 archive 기록을 따른다.
