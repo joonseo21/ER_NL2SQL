@@ -1,4 +1,6 @@
-# From repository root: docker compose -f compose.yaml -f agent_server/compose.agent.yaml ...
+# Superseded: the agent service now lives in the root compose.yaml (profiles agent, app).
+# Do not combine this file with compose.yaml; kept only as the original reference.
+# Formerly, from repository root: docker compose -f compose.yaml -f agent_server/compose.agent.yaml ...
 services:
   agent:
     profiles: [agent]

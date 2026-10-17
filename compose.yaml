@@ -22,8 +22,10 @@ services:
       timeout: 3s
       retries: 12
 
+  # One Spring program: the collector and the web API (static frontend + /api).
+  # Start everything with: docker compose --profile app up -d
   collector:
-    profiles: ["collector"]
+    profiles: ["collector", "app"]
     image: er-analytics-pipeline:local
     build:
       context: .
@@ -32,6 +34,13 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # The only port published to the outside. Loopback by default; set
+    # WEB_BIND_ADDRESS=0.0.0.0 on the server that serves invited users.
+    ports:
+      - "${WEB_BIND_ADDRESS:-127.0.0.1}:${WEB_PORT:-8080}:8080"
+    volumes:
+      # Built frontend (npm run build). Without it the screen is 404; /api still works.
+      - ./frontend/dist:/app/frontend-dist:ro
     environment:
       COLLECTOR_DATABASE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-er_analytics}
       COLLECTOR_PASSWORD: ${COLLECTOR_PASSWORD:?Set COLLECTOR_PASSWORD in .env}
@@ -39,9 +48,19 @@ services:
       ER_WEB_API_ENABLED: ${ER_WEB_API_ENABLED:-false}
       API_SERVER_DATABASE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-er_analytics}
       API_SERVER_PASSWORD: ${API_SERVER_PASSWORD:?Set API_SERVER_PASSWORD in .env}
+      WEB_API_FRONTEND_LOCATION: file:/app/frontend-dist/
+      WEB_API_AGENT_MODE: ${WEB_API_AGENT_MODE:-http}
+      # Fixed to the Compose service name; AGENT_BASE_URL in .env is for host runs.
+      AGENT_BASE_URL: http://agent:8000
+      # Same value as the agent service. Spring refuses to start in http mode without it.
+      AGENT_INTERNAL_TOKEN: ${AGENT_INTERNAL_TOKEN:-}
+      AGENT_CONNECT_TIMEOUT_MS: ${AGENT_CONNECT_TIMEOUT_MS:-3000}
+      AGENT_READ_TIMEOUT_MS: ${AGENT_READ_TIMEOUT_MS:-330000}
       ER_SEASON_ID: ${ER_SEASON_ID:?Set ER_SEASON_ID in .env}
       ER_REQUESTS_PER_SECOND: ${ER_REQUESTS_PER_SECOND:-0.5}
-      ER_COLLECTION_ENABLED: "true"
+      # Not ER_COLLECTION_ENABLED: that name is false in host-run .env files and
+      # would silently stop the deployed collector.
+      ER_COLLECTION_ENABLED: ${APP_COLLECTION_ENABLED:-true}
       ER_COLLECTION_CONTINUOUS: ${ER_COLLECTION_CONTINUOUS:-true}
       ER_REVISIT_INTERVAL: ${ER_REVISIT_INTERVAL:-4h}
       ER_MAX_PAGES_PER_USER: ${ER_MAX_PAGES_PER_USER:-30}
@@ -67,5 +86,33 @@ services:
     entrypoint: ["java", "-Dloader.main=io.eranalytics.pipeline.migration.DatabaseMigration", "-cp", "/app/app.jar", "org.springframework.boot.loader.launch.PropertiesLauncher"]
     command: ["migrate"]
 
+  # Internal NL2SQL agent. Only Spring calls it, at http://agent:8000.
+  agent:
+    profiles: ["agent", "app"]
+    image: er-analytics-agent:local
+    build:
+      context: ./agent_server
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Override AGENT_CONTAINER_DATABASE_URL when the password needs URL encoding.
+      AGENT_DATABASE_URL: ${AGENT_CONTAINER_DATABASE_URL:-postgresql://agent_ro:${AGENT_RO_PASSWORD}@postgres:5432/${POSTGRES_DB:-er_analytics}}
+      # The agent refuses to start when the token, key or model is missing.
+      AGENT_INTERNAL_TOKEN: ${AGENT_INTERNAL_TOKEN:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-}
+      GEMINI_TIMEOUT_SECONDS: ${GEMINI_TIMEOUT_SECONDS:-30}
+      GEMINI_THINKING_LEVEL: ${GEMINI_THINKING_LEVEL:-}
+      ER_SEASON_ID: ${ER_SEASON_ID:-41}
+    volumes:
+      - er_agent_logs:/app/agent_server/logs
+    # No ports mapping on purpose: the agent must not be reachable from the host
+    # or the outside. expose documents the container port; it publishes nothing.
+    expose: ["8000"]
+
 volumes:
   er_postgres_data:
+  er_agent_logs:
