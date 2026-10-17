@@ -11,10 +11,13 @@ from .ports import RecordSink
 
 
 class TrialRecorder:
-    def __init__(self, sink: RecordSink, question: str, model: str) -> None:
+    def __init__(
+        self, sink: RecordSink, question: str, model: str, provider: str = "gemini"
+    ) -> None:
         self.sink = sink
         self.question = question
         self.model = model
+        self.provider = provider
         self.log_id = str(uuid4())
         self.started = time.perf_counter()
         self.logical_calls = 0
@@ -39,6 +42,7 @@ class TrialRecorder:
                 "timestamp": datetime.now(UTC).isoformat(),
                 "question": self.question,
                 "model": self.model,
+                "provider": self.provider,
                 **values,
             }
         )

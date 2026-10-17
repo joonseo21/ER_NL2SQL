@@ -31,7 +31,9 @@ class RetryingCaller:
                 reply = self.transport.complete(prompt, schema)
                 text = reply.text
                 tokens = reply.tokens
-                if not text or not text.strip():
+                if reply.error_category:
+                    failure = LlmCallError(reply.error_category)
+                elif not text or not text.strip():
                     failure = LlmCallError("empty_response")
             except LlmCallError as exception:
                 failure = exception
@@ -53,4 +55,4 @@ class RetryingCaller:
             if not retry:
                 raise failure from None
             time.sleep(2 ** (attempt - 1))
-        raise RuntimeError("Unreachable Gemini retry state")
+        raise RuntimeError("Unreachable LLM retry state")

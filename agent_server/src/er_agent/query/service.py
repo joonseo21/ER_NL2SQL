@@ -50,7 +50,7 @@ class QueryService:
         try:
             self.recorder.append("query_start", selected_conditions=asdict(request.conditions))
             self.settings.require_database()
-            self.settings.require_gemini()
+            self.settings.require_llm()
             response = self._process(request)
             payload = response.to_dict()
         except LlmCallError as exception:

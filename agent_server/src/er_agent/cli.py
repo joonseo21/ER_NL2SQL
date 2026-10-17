@@ -13,7 +13,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="ER analytics read-only SQL runner")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    ask_parser = subparsers.add_parser("ask", help="Generate and execute SQL with Gemini")
+    ask_parser = subparsers.add_parser("ask", help="Generate and execute SQL with the selected LLM")
     ask_parser.add_argument("question")
 
     manual_parser = subparsers.add_parser("manual", help="Run a predefined read-only smoke query")

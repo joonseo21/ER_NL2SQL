@@ -158,8 +158,8 @@ def _status(manifest: dict[str, Any], observations: int) -> str:
 def list_runs() -> str:
     """One line per result directory: when, what, with which settings, how it ended."""
     lines = [
-        "| id | started (KST) | target | gemini (timeout/thinking) | repeat x cases | status | "
-        "purpose |",
+        "| id | started (KST) | target | provider/model (timeout/reasoning) | "
+        "repeat x cases | status | purpose |",
         "|---|---|---|---|---|---|---|",
     ]
     entries = []
@@ -174,7 +174,16 @@ def list_runs() -> str:
             manifest, observations = load(directory)
             started = manifest.get("started_at", "")
             gemini = manifest.get("gemini")
-            settings = f"{gemini['timeout_seconds']}s/{gemini['thinking_level']}" if gemini else "-"
+            llm = manifest.get("llm")
+            if llm:
+                settings = f"{llm['timeout_seconds']}s/{llm['reasoning_level']}"
+            else:
+                settings = (
+                    f"{gemini['timeout_seconds']}s/{gemini['thinking_level']}" if gemini else "-"
+                )
+            settings = (
+                f"{manifest.get('provider', 'gemini')}/{manifest.get('model', '-')} ({settings})"
+            )
             row = (
                 directory.name[:8],
                 started,

@@ -69,5 +69,5 @@ def generation_text() -> Callable[..., str]:
 def fake_client() -> Iterator[MagicMock]:
     client = MagicMock()
     client.__enter__.return_value = client
-    with patch("er_agent.bootstrap.create_client", return_value=client):
+    with patch("er_agent.generation.factory.gemini.create_client", return_value=client):
         yield client

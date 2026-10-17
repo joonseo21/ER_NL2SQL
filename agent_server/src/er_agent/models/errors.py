@@ -5,7 +5,7 @@ class LlmCallError(RuntimeError):
     def __init__(self, category: str, code: int | None = None) -> None:
         self.category = category
         self.code = code
-        super().__init__(f"Gemini {category}" + (f" (HTTP {code})" if code is not None else ""))
+        super().__init__(f"LLM {category}" + (f" (HTTP {code})" if code is not None else ""))
 
 
 class GenerationFormatError(ValueError):

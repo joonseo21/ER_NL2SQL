@@ -323,7 +323,10 @@ def test_default_runner_records_model_failure_and_returns_notice(tmp_path, query
     log_path = tmp_path / "query.jsonl"
     with (
         patch("er_agent.bootstrap.PostgresContextRepository.load", return_value=query_snapshot),
-        patch("er_agent.bootstrap.create_client", side_effect=LlmCallError("api_error", 503)),
+        patch(
+            "er_agent.generation.factory.gemini.create_client",
+            side_effect=LlmCallError("api_error", 503),
+        ),
         TestClient(create_app(SETTINGS, HttpSettings(TOKEN, log_path))) as http,
     ):
         result = http.post("/v1/query", headers=HEADERS, json={"question": "질문"})

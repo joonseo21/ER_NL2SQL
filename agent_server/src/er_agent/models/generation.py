@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .context import QueryIntent
 from .evidence import SampleColumn
@@ -15,6 +15,17 @@ TOKEN_FIELDS = (
 
 
 @dataclass(frozen=True)
+class ModelSettings:
+    """Selected provider configuration; SDK details stay in generation adapters."""
+
+    provider: str
+    model: str
+    api_key: str = field(repr=False)
+    timeout_seconds: int
+    reasoning_level: str
+
+
+@dataclass(frozen=True)
 class Generation:
     intent: QueryIntent
     sql: str | None
@@ -25,3 +36,4 @@ class Generation:
 class ModelReply:
     text: str | None
     tokens: dict[str, int | None]
+    error_category: str | None = None

@@ -61,20 +61,38 @@ def selected_settings(target: str, snapshot_id: str | None) -> Settings:
     elif snapshot_id is not None:
         raise ValueError("Production observations must not claim a fixed snapshot")
     settings.require_database()
-    settings.require_gemini()
     return settings
 
 
 def with_overrides(
-    settings: Settings, timeout_seconds: int | None, thinking_level: str | None
+    settings: Settings,
+    timeout_seconds: int | None,
+    thinking_level: str | None,
+    provider: str | None = None,
+    model: str | None = None,
+    reasoning_effort: str | None = None,
 ) -> Settings:
-    """Apply per-run Gemini overrides; Settings validates them again."""
+    """Apply only the selected provider's options, preserving legacy Gemini defaults."""
     changes: dict[str, Any] = {}
+    provider = provider or settings.llm_provider
+    if provider not in ("gemini", "openai"):
+        raise ValueError("Unsupported LLM provider")
+    changes["llm_provider"] = provider
     if timeout_seconds is not None:
-        changes["gemini_timeout_seconds"] = timeout_seconds
+        changes[f"{provider}_timeout_seconds"] = timeout_seconds
+    if model is not None:
+        changes[f"{provider}_model"] = model
     if thinking_level is not None:
+        if provider != "gemini":
+            raise ValueError("--thinking-level is Gemini-only; use --reasoning-effort for OpenAI")
         changes["gemini_thinking_level"] = thinking_level
-    return replace(settings, **changes) if changes else settings
+    if reasoning_effort is not None:
+        if provider != "openai":
+            raise ValueError("--reasoning-effort is OpenAI-only")
+        changes["openai_reasoning_effort"] = (
+            "" if reasoning_effort == "default" else reasoning_effort
+        )
+    return replace(settings, **changes)
 
 
 def preflight(settings: Settings, expected_database: str) -> dict[str, Any]:
@@ -151,8 +169,9 @@ def run_batch(arguments: argparse.Namespace) -> int:
 def execute_batch(arguments: argparse.Namespace) -> tuple[int, Path]:
     """Run one batch and return its exit code with the result folder it wrote."""
     preflight_only = getattr(arguments, "preflight_only", False)
-    if not arguments.allow_live_gemini and not preflight_only:
-        raise ValueError("Explicit --allow-live-gemini is required")
+    allow_live_llm = getattr(arguments, "allow_live_llm", False)
+    if not (allow_live_llm or arguments.allow_live_gemini or preflight_only):
+        raise ValueError("Explicit --allow-live-llm (legacy: --allow-live-gemini) is required")
     repeat = getattr(arguments, "repeat", 1)
     if type(repeat) is not int or not 1 <= repeat <= MAX_REPEAT:
         raise ValueError(f"Repeat must be an integer from 1 to {MAX_REPEAT}")
@@ -162,7 +181,13 @@ def execute_batch(arguments: argparse.Namespace) -> tuple[int, Path]:
         selected_settings(arguments.target, arguments.snapshot_id),
         getattr(arguments, "timeout_seconds", None),
         getattr(arguments, "thinking_level", None),
+        getattr(arguments, "provider", None),
+        getattr(arguments, "model", None),
+        getattr(arguments, "reasoning_effort", None),
     )
+    settings.require_llm()
+    if settings.llm_provider == "openai" and not (allow_live_llm or preflight_only):
+        raise ValueError("OpenAI calls require --allow-live-llm")
     output = EVALUATION_ROOT / "results" / str(uuid4())
     output.mkdir(parents=True)
     manifest = {
@@ -171,11 +196,23 @@ def execute_batch(arguments: argparse.Namespace) -> tuple[int, Path]:
         "snapshot_id_declared": arguments.snapshot_id,
         "git_revision": git_revision(),
         "agent_source_sha256": source_fingerprint(),
-        "model": settings.gemini_model,
-        "gemini": {
-            "timeout_seconds": settings.gemini_timeout_seconds,
-            "thinking_level": settings.gemini_thinking_level or "model_default",
+        "model": settings.llm.model,
+        "provider": settings.llm.provider,
+        "llm": {
+            "timeout_seconds": settings.llm.timeout_seconds,
+            "reasoning_level": settings.llm.reasoning_level or "model_default",
         },
+        # Keep the old manifest field for existing Gemini analysis tools.
+        **(
+            {
+                "gemini": {
+                    "timeout_seconds": settings.gemini_timeout_seconds,
+                    "thinking_level": settings.gemini_thinking_level or "model_default",
+                }
+            }
+            if settings.llm_provider == "gemini"
+            else {}
+        ),
         "season_id": settings.season_id,
         "label": getattr(arguments, "label", None),
         "cases_file": Path(arguments.cases).name,
@@ -224,6 +261,26 @@ def execute_batch(arguments: argparse.Namespace) -> tuple[int, Path]:
     return (2 if failed else 0), output
 
 
+def add_model_arguments(parser: argparse.ArgumentParser) -> None:
+    """Shared provider options for observation and scored batch entry points."""
+    parser.add_argument("--allow-live-llm", action="store_true")
+    parser.add_argument(
+        "--allow-live-gemini", action="store_true", help="Legacy Gemini-only opt-in"
+    )
+    parser.add_argument("--provider", choices=("gemini", "openai"))
+    parser.add_argument("--model", help="Override the selected provider's model ID")
+    parser.add_argument(
+        "--reasoning-effort",
+        choices=("default", "none", "minimal", "low", "medium", "high", "xhigh", "max"),
+    )
+    parser.add_argument(
+        "--timeout-seconds", type=int, help="Override the selected provider's timeout"
+    )
+    parser.add_argument(
+        "--thinking-level", choices=("low", "high"), help="Override GEMINI_THINKING_LEVEL"
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target", choices=("production", "snapshot"), required=True)
@@ -232,7 +289,7 @@ def main() -> None:
     parser.add_argument(
         "--cases", type=Path, default=EVALUATION_ROOT / "cases/recommendations.json"
     )
-    parser.add_argument("--allow-live-gemini", action="store_true")
+    add_model_arguments(parser)
     parser.add_argument("--repeat", type=int, default=1, help=f"1 to {MAX_REPEAT} repetitions")
     parser.add_argument(
         "--continue-on-failure",
@@ -242,13 +299,9 @@ def main() -> None:
     parser.add_argument(
         "--preflight-only",
         action="store_true",
-        help="Run only the read-only database checks; no Gemini call, no opt-in flag needed",
+        help="Run only the read-only database checks; no LLM call, no opt-in flag needed",
     )
     parser.add_argument("--label", help="Short purpose recorded in manifest.json")
-    parser.add_argument("--timeout-seconds", type=int, help="Override GEMINI_TIMEOUT_SECONDS")
-    parser.add_argument(
-        "--thinking-level", choices=("low", "high"), help="Override GEMINI_THINKING_LEVEL"
-    )
     arguments = parser.parse_args()
     try:
         code = run_batch(arguments)

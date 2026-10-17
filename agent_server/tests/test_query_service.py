@@ -35,7 +35,7 @@ class ConfiguredQuery:
     def require_database(self) -> None:
         pass
 
-    def require_gemini(self) -> None:
+    def require_llm(self) -> None:
         pass
 
 

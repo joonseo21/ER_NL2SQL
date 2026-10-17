@@ -12,7 +12,7 @@ from .database.context_repository import PostgresContextRepository
 from .database.manual_queries import MANUAL_QUERIES
 from .database.query_executor import PostgresQueryExecutor, execute_select
 from .generation.agent import SqlGenerationAgent
-from .generation.gemini import GeminiTransport, create_client
+from .generation.factory import model_transport
 from .generation.retry import RetryingCaller
 from .generation.session import QueryGenerationAgent
 from .generation.summary import ResultSummaryAgent
@@ -32,8 +32,7 @@ class QueryFailed(RuntimeError):
 
 @contextmanager
 def _generation_session(settings: Settings, recorder: QueryRecorder) -> Iterator[QueryGenerator]:
-    with create_client(settings.gemini_api_key, settings.gemini_timeout_seconds) as client:
-        transport = GeminiTransport(client, settings.gemini_model, settings.gemini_thinking_level)
+    with model_transport(settings.llm) as transport:
         caller = RetryingCaller(transport, recorder)
         yield QueryGenerationAgent(SqlGenerationAgent(caller, recorder), ResultSummaryAgent(caller))
 
@@ -41,7 +40,9 @@ def _generation_session(settings: Settings, recorder: QueryRecorder) -> Iterator
 def run_query(
     request: QueryRequest, settings: Settings, log_path: Path = DEFAULT_LOG_PATH
 ) -> QueryResponse:
-    recorder = TrialRecorder(JsonlSink(log_path), request.question, settings.gemini_model)
+    recorder = TrialRecorder(
+        JsonlSink(log_path), request.question, settings.llm.model, settings.llm.provider
+    )
     service = QueryService(
         settings,
         PostgresContextRepository(settings.database_url),

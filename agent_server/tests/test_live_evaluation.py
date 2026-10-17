@@ -278,6 +278,88 @@ def test_default_configuration_is_recorded(tmp_path: Path) -> None:
     assert manifest["repeat"] == 1 and manifest["continue_on_failure"] is False
 
 
+def test_openai_overrides_do_not_change_gemini_configuration() -> None:
+    configured = Settings("database", "gemini-key", "gemini-model", openai_api_key="openai-key")
+    selected = run.with_overrides(configured, 60, None, "openai", "test-gpt", "low")
+    selected.require_llm()
+    assert selected.llm.model == "test-gpt" and selected.llm.reasoning_level == "low"
+    assert selected.llm.timeout_seconds == 60 and selected.llm.api_key == "openai-key"
+    assert selected.gemini_model == "gemini-model"
+    assert selected.gemini_timeout_seconds == 30
+
+
+@pytest.mark.parametrize(
+    "provider,thinking,effort",
+    [
+        ("openai", "low", None),
+        ("gemini", None, "low"),
+    ],
+)
+def test_provider_specific_flags_cannot_silently_change_meaning(provider, thinking, effort) -> None:
+    with pytest.raises(ValueError):
+        run.with_overrides(SETTINGS, None, thinking, provider, reasoning_effort=effort)
+
+
+def test_openai_manifest_uses_selected_settings_without_secrets(tmp_path: Path) -> None:
+    configured = Settings("production-url", openai_api_key="openai-secret")
+    with (
+        patch.object(run, "EVALUATION_ROOT", tmp_path),
+        patch.object(run, "selected_settings", return_value=configured),
+        patch.object(run, "git_revision", return_value="revision"),
+        patch.object(run, "preflight", return_value={"database": "production"}),
+        patch.object(run, "observe_case", return_value=good()) as observe,
+    ):
+        _, folder = run.execute_batch(
+            arguments(
+                two_case_file(tmp_path),
+                allow_live_gemini=False,
+                allow_live_llm=True,
+                provider="openai",
+                model="test-gpt",
+                reasoning_effort="low",
+                timeout_seconds=60,
+            )
+        )
+    saved = (folder / "manifest.json").read_text(encoding="utf-8")
+    manifest = json.loads(saved)
+    assert manifest["provider"] == "openai" and manifest["model"] == "test-gpt"
+    assert manifest["llm"] == {"timeout_seconds": 60, "reasoning_level": "low"}
+    assert "gemini" not in manifest
+    assert "openai-secret" not in saved and "production-url" not in saved
+    assert observe.call_args.args[1].llm.model == "test-gpt"
+
+
+def test_legacy_gemini_flag_cannot_authorize_openai(tmp_path: Path) -> None:
+    configured = Settings(
+        "database", llm_provider="openai", openai_api_key="key", openai_model="gpt"
+    )
+    with (
+        patch.object(run, "selected_settings", return_value=configured),
+        patch.object(run, "preflight") as preflight,
+        pytest.raises(ValueError, match="--allow-live-llm"),
+    ):
+        run.execute_batch(arguments(two_case_file(tmp_path)))
+    preflight.assert_not_called()
+
+
+def test_model_argument_parser_accepts_openai_configuration() -> None:
+    parser = argparse.ArgumentParser()
+    run.add_model_arguments(parser)
+    values = parser.parse_args(
+        [
+            "--provider",
+            "openai",
+            "--model",
+            "test-gpt",
+            "--reasoning-effort",
+            "low",
+            "--allow-live-llm",
+        ]
+    )
+    assert values.provider == "openai" and values.model == "test-gpt"
+    assert values.allow_live_llm is True and values.allow_live_gemini is False
+
+
 def test_failure_stops_by_default_and_continue_flag_runs_the_rest(tmp_path: Path) -> None:
     code, observe, _, report = run_with_observations(tmp_path, [failed(), good(), good(), good()])
     assert code == 2 and observe.call_count == 1 and len(report) == 1

@@ -65,6 +65,10 @@ def violations(source: str, module: str) -> list[tuple[int, str]]:
     allowed = PURE_STDLIB | LAYER_IMPORTS[layer]
     if module == "er_agent.generation.gemini":
         allowed = allowed | {"google.genai", "google"}
+    if module == "er_agent.generation.openai_transport":
+        allowed = allowed | {"openai"}
+    if module == "er_agent.generation.factory":
+        allowed = allowed | {"collections.abc", "contextlib"}
     return [
         (line, name)
         for line, name in imported_modules(source, module)
@@ -94,6 +98,8 @@ def test_source_dependencies_respect_layers() -> None:
         ("er_agent.query.service", "from ..generation.agent import SqlGenerationAgent"),
         ("er_agent.sql.scope", "from ..recording.jsonl import JsonlSink"),
         ("er_agent.generation.retry", "from google import genai"),
+        ("er_agent.generation.retry", "import openai"),
+        ("er_agent.query.service", "from openai import OpenAI"),
         ("er_agent.generation.agent", "from ..database.connection import _analytics_connection"),
         ("er_agent.recording.trial", "from ..query.service import QueryService"),
     ],
@@ -109,6 +115,7 @@ def test_forbidden_imports_are_detected(module: str, source: str) -> None:
         ("er_agent.query.service", "from .ports import QueryExecutor"),
         ("er_agent.sql.scope", "from sqlglot.optimizer.scope import traverse_scope"),
         ("er_agent.generation.gemini", "from google import genai"),
+        ("er_agent.generation.openai_transport", "from openai import OpenAI"),
         ("er_agent.generation.retry", "from .ports import ModelTransport"),
         ("er_agent.recording.trial", "from .ports import RecordSink"),
     ],

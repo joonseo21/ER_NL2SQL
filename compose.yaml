@@ -102,10 +102,15 @@ services:
       AGENT_DATABASE_URL: ${AGENT_CONTAINER_DATABASE_URL:-postgresql://agent_ro:${AGENT_RO_PASSWORD}@postgres:5432/${POSTGRES_DB:-er_analytics}}
       # The agent refuses to start when the token, key or model is missing.
       AGENT_INTERNAL_TOKEN: ${AGENT_INTERNAL_TOKEN:-}
+      LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-}
       GEMINI_TIMEOUT_SECONDS: ${GEMINI_TIMEOUT_SECONDS:-30}
       GEMINI_THINKING_LEVEL: ${GEMINI_THINKING_LEVEL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      OPENAI_TIMEOUT_SECONDS: ${OPENAI_TIMEOUT_SECONDS:-30}
+      OPENAI_REASONING_EFFORT: ${OPENAI_REASONING_EFFORT:-}
       ER_SEASON_ID: ${ER_SEASON_ID:-41}
     volumes:
       - er_agent_logs:/app/agent_server/logs

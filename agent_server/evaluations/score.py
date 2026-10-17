@@ -281,7 +281,7 @@ def _milliseconds(values: Any) -> list[int]:
 
 
 def observation_timing(observation: dict[str, Any]) -> dict[str, Any]:
-    """Gemini attempts and SQL stages as recorded by run.py; SQL includes guard and connection."""
+    """LLM attempts and SQL stages as recorded by run.py; SQL includes guard and connection."""
     llm = _milliseconds(observation.get("llm_attempt_ms"))
     sql = _milliseconds(observation.get("sql_stage_ms"))
     return {
@@ -484,10 +484,9 @@ def render(summary: dict[str, Any]) -> str:
         line("전체", summary["overall"]),
         *(line(name, value) for name, value in summary["groups"].items()),
         "",
-        "시간(초): 전체·Gemini 호출 합계·SQL 단계 합계는 관찰 한 건 기준. "
-        "SQL 단계는 검사·접속 포함",
+        "시간(초): 전체·LLM 호출 합계·SQL 단계 합계는 관찰 한 건 기준. SQL 단계는 검사·접속 포함",
         "",
-        "| 문항 | 정답/채점 가능 | 판정 | 전체 중앙값 | 전체 최대 | Gemini 중앙값 "
+        "| 문항 | 정답/채점 가능 | 판정 | 전체 중앙값 | 전체 최대 | LLM 중앙값 "
         "| SQL 중앙값 | SQL 한 번 최대 | SQL 시간 초과 |",
         "|---|---:|---|---:|---:|---:|---:|---:|---:|",
         *(
@@ -529,8 +528,8 @@ def split_questions(path: Path, gold: dict[str, dict[str, Any]], folder: Path) -
 
 
 def run_and_grade(arguments: argparse.Namespace) -> int:
-    if not arguments.allow_live_gemini:
-        raise ValueError("Explicit --allow-live-gemini is required")
+    if not (getattr(arguments, "allow_live_llm", False) or arguments.allow_live_gemini):
+        raise ValueError("Explicit --allow-live-llm (legacy: --allow-live-gemini) is required")
     gold = load_gold(arguments.gold)
     json.loads(arguments.expected.read_text(encoding="utf-8"))
     batches = split_questions(
@@ -575,12 +574,10 @@ def main() -> None:
     batch.add_argument("--target", choices=("production", "snapshot"), required=True)
     batch.add_argument("--expected-database", required=True)
     batch.add_argument("--snapshot-id")
-    batch.add_argument("--allow-live-gemini", action="store_true")
+    run.add_model_arguments(batch)
     batch.add_argument("--repeat", type=int, default=1)
     batch.add_argument("--continue-on-failure", action="store_true")
     batch.add_argument("--label")
-    batch.add_argument("--timeout-seconds", type=int)
-    batch.add_argument("--thinking-level", choices=("low", "high"))
 
     arguments = parser.parse_args()
     try:

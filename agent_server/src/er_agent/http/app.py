@@ -38,7 +38,7 @@ def create_app(
     settings = settings if settings is not None else Settings.from_env()
     http_settings = http_settings if http_settings is not None else HttpSettings.from_env()
     settings.require_database()
-    settings.require_gemini()
+    settings.require_llm()
     gate = Lock()
     app = FastAPI(
         title="ER Analytics 내부 에이전트 API",
