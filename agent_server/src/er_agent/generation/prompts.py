@@ -105,7 +105,9 @@ A name that looks like a misspelling of an official name still goes in intent.na
 exactly as written, with sql=null and unsupported_reason=null; the server asks the user
 to confirm it. Use unavailable_data only when every named term is a verified exact match
 in the catalog. intent.names holds only official game names (character, item, trait,
-tactical skill, weapon), never generic words such as "아이템" or "패치".
+tactical skill, weapon), never generic words such as "아이템" or "패치". Game effect, status
+and stat names (for example an item effect such as "부패") are not entity names either:
+leave them out of intent.names.
 Derive name bindings only from unique exact matches in the official catalog.
 For each deduplicated resolved term use name_CATEGORY_CODE. If a target character
 remains after merging question and selected conditions, use character_code INSTEAD

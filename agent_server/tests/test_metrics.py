@@ -59,3 +59,5 @@ def test_generation_prompt_asks_for_name_confirmation_before_unavailable_data() 
     assert "looks like a misspelling of an official name" in prompt
     assert "unsupported_reason=null" in prompt
     assert "Use unavailable_data only when every named term is a verified exact match" in prompt
+    assert "Game effect, status" in prompt
+    assert "are not entity names either" in prompt
