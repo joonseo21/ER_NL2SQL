@@ -154,6 +154,11 @@ def test_blocks_private_columns_and_bypasses(sql: str) -> None:
         "SELECT x.code,s.name_ko FROM participants p CROSS JOIN LATERAL unnest(p.skill_order) x(code) LEFT JOIN skill_groups s ON s.code=x.code",
         "SELECT g.main_weather,w.name_ko FROM games g LEFT JOIN weather_types w ON w.code=g.main_weather",
         "SELECT p.place_of_start,a.name_ko FROM participants p LEFT JOIN areas a ON a.code=p.place_of_start",
+        # Allowed names that sqlglot parses under other names (2026-10-17 pilot run).
+        "SELECT p.game_id, BOOL_OR(p.game_rank = 1) AS won FROM participants p GROUP BY p.game_id",
+        "SELECT p.game_id, BOOL_AND(p.give_up = 0) AS kept FROM participants p GROUP BY p.game_id",
+        "SELECT VAR_POP(p.mmr_gain) AS spread FROM participants p",
+        "SELECT JSON_AGG(p.tier) AS tiers FROM participants p",
     ],
 )
 def test_allows_safe_v4_analytics(sql: str) -> None:

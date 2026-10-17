@@ -94,6 +94,16 @@ ALLOWED_FUNCTIONS = frozenset(
 )
 
 
+# sqlglot parses some allowed PostgreSQL functions into differently named expressions.
+# Map those parsed names back so the allow-list above is what actually applies.
+PARSED_FUNCTION_NAMES = {
+    "LOGICAL_OR": "BOOL_OR",
+    "LOGICAL_AND": "BOOL_AND",
+    "VARIANCE_POP": "VAR_POP",
+    "J_S_O_N_ARRAY_AGG": "JSON_AGG",
+}
+
+
 class SqlGuardError(ValueError):
     pass
 
@@ -174,6 +184,7 @@ def _validate_structure(statement: exp.Select) -> None:
             raise SqlGuardError("Use explicit columns; only COUNT(*) may use a star")
         if isinstance(node, exp.Func):
             name = node.name.upper() if isinstance(node, exp.Anonymous) else node.sql_name().upper()
+            name = PARSED_FUNCTION_NAMES.get(name, name)
             if name not in ALLOWED_FUNCTIONS:
                 raise SqlGuardError(f"Function is not allowed: {name}")
             if isinstance(node.parent, exp.Dot):
