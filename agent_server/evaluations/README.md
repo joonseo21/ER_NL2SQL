@@ -170,6 +170,7 @@ uv run python -m evaluations.score run --gold C:\er-analytics\pilot-questions\go
 | 252d00b9, b196c65e | 10-17 | 테스트베드(V9) | 30s/low | 3×10씩 | complete | 시범 20문항 3차 Gemini(코드 b006e3b, 채점 score-5eb44a39). 정답 40/60, 호출 109회(HTTP 402 1회). 해석은 docs/archive/nl2sql_pilot_eval_2026-10-17.md |
 | 5625a25b, 0969dad2 | 10-17 | 테스트베드(V9) | openai gpt-6.1-sol 30s/low | 3×10씩 | complete | 시범 20문항 3차 GPT(채점 score-1c497e6a). 정답 47/60. 5625a25b는 질문 1~10번, 0969dad2는 11~20번을 429 중단 뒤 다시 실행 |
 | 4c727d1d | 10-17 | 테스트베드(V9) | openai gpt-6.1-sol 30s/low | 3×10 중 8건 | 중단 | 3차 GPT 두 번째 묶음. OpenAI 429가 연속 3회 나 중단. 채점에서 제외 |
+| 37e9dc7e | 10-17 | 테스트베드(V9) | 30s/low | 3×7 | complete | 안내·되묻기 기대 7문항 확인 측정(코드 ea58daf, 채점 score-529db390). 정답 15/21, '부패' 3/3·오타 3/3. 743e71e3(HTTP 402 중단)의 재시도 |
 | 743e71e3 | 10-17 | 테스트베드(V9) | 30s/low | 3×7 중 13건 | 중단 | 안내·되묻기 기대 7문항 확인 측정. Gemini HTTP 402가 연속 나 성공 호출 없이 중단. 채점 제외 |
 | score-c9ff6ef0, score-b81466d3 | 10-17 | 재채점(LLM 호출 없음) | - | 60관찰씩 | graded | 3차 최종 기준(5.0 패치 전후 한 행 답 인정)으로 Gemini 3차(252d00b9·b196c65e)와 GPT 3차(5625a25b·0969dad2)를 다시 채점. Gemini 43/60, GPT 50/60. 같은 기준의 2차 재채점은 score-c023511c(41/60)·score-546260ad(43/60) |
 | score-10f834b4, score-62631d39 | 10-17 | 재채점(LLM 호출 없음) | - | 60관찰씩 | graded | D-19 채점 기준과 새 정답 표(testbed-20261017-v9-d19)로 Gemini 2차(95edb93d·09a2391d)와 GPT(3d440e3f·7caa0dc0)를 다시 채점. Gemini 41/60, GPT 43/60. 해석은 docs/archive/nl2sql_pilot_eval_2026-10-17.md |
