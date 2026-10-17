@@ -19,6 +19,10 @@ import io.eranalytics.pipeline.collection.metadata.NameMetadataMapper;
 import io.eranalytics.pipeline.collection.model.DeathRow;
 import io.eranalytics.pipeline.collection.model.MappedMatch;
 import io.eranalytics.pipeline.collection.model.MappedParticipant;
+import io.eranalytics.pipeline.collection.route.RouteFixture;
+import io.eranalytics.pipeline.collection.route.RouteKey;
+import io.eranalytics.pipeline.collection.route.RouteMapper;
+import io.eranalytics.pipeline.collection.route.RouteStore;
 import io.eranalytics.pipeline.collection.user.SeedUser;
 import io.eranalytics.pipeline.collection.user.UserCollectionCandidate;
 import io.eranalytics.pipeline.collection.user.UserCollectionRepository;
@@ -80,6 +84,82 @@ class GamePersistenceIntegrationTest {
     @Autowired JdbcTemplate jdbc;
     @Autowired UserCollectionRepository frontier;
     @Autowired JpaNameMetadataStore names;
+    @Autowired RouteStore routes;
+
+    @Test
+    void routePoolCountsWholeDatabaseIsIdempotentAndKeepsSeasonIdentity() throws Exception {
+        List<JsonNode> results = game(420001, "2026-10-09T00:00:00Z", 5000);
+        results.forEach(row -> ((ObjectNode) row).put("routeIdOfStart", 7039));
+        service.store(results);
+        service.store(results);
+        assertThat(routeUses(41, 7039)).isEqualTo(results.size());
+        routes.initializePool();
+        assertThat(routeUses(41, 7039)).isEqualTo(results.size());
+        jdbc.update("INSERT INTO routes(season_id,route_id,usage_count) VALUES(42,7039,1)");
+        Instant now = Instant.now();
+        RouteKey key = routes.claimNext(now).orElseThrow();
+        assertThat(key).isEqualTo(new RouteKey(41, 7039));
+        routes.save(key, new RouteMapper(JSON).map(key, RouteFixture.response(7039)), now);
+        assertThat(
+                        jdbc.queryForList(
+                                "SELECT area_code FROM route_paths ORDER BY seq", Integer.class))
+                .containsExactly(170, 130);
+        assertThat(routes.claimNext(now)).contains(new RouteKey(42, 7039));
+        routes.fail(new RouteKey(42, 7039), "NOT_FOUND", 404, now);
+        routes.initializePool();
+        assertThat(routes.claimNext(now)).isEmpty();
+        ((ObjectNode) results.getFirst()).put("routeIdOfStart", 7040);
+        service.store(results);
+        assertThat(routeUses(41, 7039)).isEqualTo(results.size() - 1);
+        assertThat(routeUses(41, 7040)).isEqualTo(1);
+    }
+
+    private long routeUses(int season, int route) {
+        return jdbc.queryForObject(
+                "SELECT usage_count FROM routes WHERE season_id=? AND route_id=?",
+                Long.class,
+                season,
+                route);
+    }
+
+    @Test
+    void itemRecipesPersistClearRemovedRecipeAndJoinAsAgent() throws Exception {
+        Map<String, JsonNode> tables = MetadataFixture.tables();
+        ObjectNode weapon = (ObjectNode) tables.get("ItemWeapon").path("data").get(0);
+        weapon.put("makeMaterial1", 900001).put("makeMaterial2", 0);
+        names.save(
+                NameMetadataMapper.map(
+                        tables,
+                        KoreanLocalization.parse(MetadataFixture.localization()),
+                        Instant.now()));
+        assertThat(
+                        jdbc.queryForObject(
+                                "SELECT make_material_1 FROM items WHERE code=100001",
+                                Integer.class))
+                .isEqualTo(900001);
+        try (Connection connection = DriverManager.getConnection(testUrl(), "agent_ro", "");
+                Statement sql = connection.createStatement()) {
+            ResultSet result =
+                    sql.executeQuery(
+                            "SELECT m.name_ko FROM items i JOIN items m ON m.code=i.make_material_1 WHERE i.code=100001");
+            assertThat(result.next()).isTrue();
+            assertThat(result.getString(1)).isEqualTo("과거 아이템");
+            result = sql.executeQuery("SHOW statement_timeout");
+            result.next();
+            assertThat(result.getString(1)).isEqualTo("20s");
+        }
+        weapon.put("makeMaterial1", 0);
+        names.save(
+                NameMetadataMapper.map(
+                        tables,
+                        KoreanLocalization.parse(MetadataFixture.localization()),
+                        Instant.now()));
+        assertThat(
+                        jdbc.queryForObject(
+                                "SELECT make_material_1 IS NULL AND make_material_2 IS NULL FROM items WHERE code=100001",
+                                Boolean.class))
+                .isTrue();
+    }
 
     @DynamicPropertySource
     static void database(DynamicPropertyRegistry properties) throws Exception {
@@ -133,7 +213,7 @@ class GamePersistenceIntegrationTest {
         try (Connection connection = admin();
                 Statement sql = connection.createStatement()) {
             sql.execute(
-                    "TRUNCATE games, users, characters, weapon_types, items, trait_names, tactical_skills, "
+                    "TRUNCATE routes, games, users, characters, weapon_types, items, trait_names, tactical_skills, "
                             + "skill_groups, areas, weather_types, rankers, collect_queue, api_call_log RESTART IDENTITY CASCADE");
         }
         jdbc.update(

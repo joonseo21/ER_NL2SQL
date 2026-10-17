@@ -15,7 +15,20 @@ public record MetadataName(
             String equipmentType,
             Integer groupCode,
             String traitGroup,
-            Boolean active) {
+            Boolean active,
+            Integer makeMaterial1,
+            Integer makeMaterial2) {
+        public Details(
+                String type,
+                String grade,
+                String gradeKo,
+                String equipmentType,
+                Integer groupCode,
+                String traitGroup,
+                Boolean active) {
+            this(type, grade, gradeKo, equipmentType, groupCode, traitGroup, active, null, null);
+        }
+
         public static final Details EMPTY = new Details(null, null, null, null, null, null, null);
     }
 }

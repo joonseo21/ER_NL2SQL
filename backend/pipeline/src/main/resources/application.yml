@@ -55,3 +55,4 @@ er:
     min-version-major: ${ER_MIN_VERSION_MAJOR:4}
     min-seed-mmr: ${ER_MIN_SEED_MMR:3600}
     balance-basis: ${ER_BALANCE_BASIS:LATEST_PATCH}
+    routes-per-game: ${ER_ROUTES_PER_GAME:1}

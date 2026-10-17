@@ -5,6 +5,7 @@ import static org.mockito.Mockito.*;
 
 import io.eranalytics.pipeline.collection.game.GameCollectionProcessor;
 import io.eranalytics.pipeline.collection.metadata.NameMetadataRefresher;
+import io.eranalytics.pipeline.collection.route.RouteCollectionProcessor;
 import io.eranalytics.pipeline.collection.user.UserCollectionCoordinator;
 import io.eranalytics.pipeline.config.ErApiProperties;
 import java.time.Duration;
@@ -16,6 +17,7 @@ class CollectionWorkerTest {
     private final UserCollectionCoordinator users = mock(UserCollectionCoordinator.class);
     private final NameMetadataRefresher metadata = mock(NameMetadataRefresher.class);
     private final CollectionSleeper sleeper = mock(CollectionSleeper.class);
+    private final RouteCollectionProcessor routes = mock(RouteCollectionProcessor.class);
 
     private CollectionWorker worker(boolean continuous) {
         return new CollectionWorker(
@@ -24,7 +26,8 @@ class CollectionWorkerTest {
                 metadata,
                 sleeper,
                 new ErApiProperties("https://example.invalid", "synthetic-key", 41, 0.5),
-                settings(30, continuous));
+                settings(30, continuous),
+                routes);
     }
 
     @Test
@@ -32,14 +35,17 @@ class CollectionWorkerTest {
         when(games.processNext()).thenReturn(true, false, true, false);
         when(users.collectNext()).thenReturn(true, false);
         worker(false).run(null);
-        InOrder order = inOrder(metadata, games, users);
+        InOrder order = inOrder(metadata, games, users, routes);
+        order.verify(routes).initializePool();
         order.verify(metadata).refreshIfDue();
         order.verify(games).processNext();
+        order.verify(routes).processBatch();
         order.verify(metadata).refreshIfDue();
         order.verify(games).processNext();
         order.verify(users).collectNext();
         order.verify(metadata).refreshIfDue();
         order.verify(games).processNext();
+        order.verify(routes).processBatch();
         order.verify(metadata).refreshIfDue();
         order.verify(games).processNext();
         order.verify(users).collectNext();

@@ -46,6 +46,21 @@ class ErApiClientTest {
     }
 
     @Test
+    void routePayload404UsesTheSharedClientAndNormalizedCallLog() {
+        Setup setup = setup();
+        setup.server()
+                .expect(requestTo("https://open-api.bser.io/v1/weaponRoutes/recommend/7039"))
+                .andRespond(withSuccess("{\"code\":404}", MediaType.APPLICATION_JSON));
+        assertThatThrownBy(() -> setup.client().recommendRoute(7039))
+                .isInstanceOfSatisfying(
+                        ErApiException.class,
+                        error -> assertThat(error.getStatusCode()).isEqualTo(404));
+        verify(setup.repository())
+                .logApiCall(eq("/v1/weaponRoutes/recommend/{routeId}"), eq(404), anyLong());
+        setup.server().verify();
+    }
+
+    @Test
     void followsIntegerNextThroughTypedPageAndNormalizesLoggedEndpoint() {
         ErApiClientTest.Setup setup = setup();
         setup.server()

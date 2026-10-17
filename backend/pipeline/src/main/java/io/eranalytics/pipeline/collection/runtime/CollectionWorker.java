@@ -2,6 +2,7 @@ package io.eranalytics.pipeline.collection.runtime;
 
 import io.eranalytics.pipeline.collection.game.GameCollectionProcessor;
 import io.eranalytics.pipeline.collection.metadata.NameMetadataRefresher;
+import io.eranalytics.pipeline.collection.route.RouteCollectionProcessor;
 import io.eranalytics.pipeline.collection.user.UserCollectionCoordinator;
 import io.eranalytics.pipeline.config.CollectionProperties;
 import io.eranalytics.pipeline.config.ErApiProperties;
@@ -25,6 +26,7 @@ final class CollectionWorker implements ApplicationRunner {
     private final CollectionSleeper sleeper;
     private final ErApiProperties apiSettings;
     private final CollectionProperties settings;
+    private final RouteCollectionProcessor routes;
 
     CollectionWorker(
             GameCollectionProcessor games,
@@ -32,13 +34,15 @@ final class CollectionWorker implements ApplicationRunner {
             NameMetadataRefresher metadata,
             CollectionSleeper sleeper,
             ErApiProperties apiSettings,
-            CollectionProperties settings) {
+            CollectionProperties settings,
+            RouteCollectionProcessor routes) {
         this.games = games;
         this.users = users;
         this.metadata = metadata;
         this.sleeper = sleeper;
         this.apiSettings = apiSettings;
         this.settings = settings;
+        this.routes = routes;
     }
 
     @Override
@@ -51,9 +55,13 @@ final class CollectionWorker implements ApplicationRunner {
                     "ER_SEASON_ID and ER_API_KEY must be set when collection is enabled");
         }
         try {
+            routes.initializePool();
             while (!Thread.currentThread().isInterrupted()) {
                 metadata.refreshIfDue();
-                if (games.processNext()) continue;
+                if (games.processNext()) {
+                    routes.processBatch();
+                    continue;
+                }
                 if (users.collectNext()) continue;
                 if (!settings.continuous()) {
                     log.info("No eligible games/users; collection finished");

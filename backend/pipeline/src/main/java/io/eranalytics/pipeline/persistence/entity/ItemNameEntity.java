@@ -20,11 +20,22 @@ public class ItemNameEntity extends NamedMetadataEntity {
     @Column(name = "equipment_type", columnDefinition = "text")
     private String equipmentType;
 
+    @Column(name = "make_material_1")
+    private Integer makeMaterial1;
+
+    @Column(name = "make_material_2")
+    private Integer makeMaterial2;
+
     @Override
     protected void applyDetails(MetadataName.Details details) {
         if (details.type() != null) this.itemType = details.type();
         if (details.grade() != null) this.itemGrade = details.grade();
         if (details.gradeKo() != null) this.gradeNameKo = details.gradeKo();
         if (details.equipmentType() != null) this.equipmentType = details.equipmentType();
+        // Keep absent source items, but clear a present item's removed recipe.
+        if (details.type() != null) {
+            this.makeMaterial1 = details.makeMaterial1();
+            this.makeMaterial2 = details.makeMaterial2();
+        }
     }
 }

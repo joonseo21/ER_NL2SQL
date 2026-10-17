@@ -123,6 +123,13 @@ public class ErApiClient {
         return List.copyOf(participants);
     }
 
+    public JsonNode recommendRoute(int routeId) {
+        return get(
+                "/v1/weaponRoutes/recommend/{routeId}",
+                Map.of("routeId", routeId),
+                "/v1/weaponRoutes/recommend/{routeId}");
+    }
+
     private JsonNode execute(
             Supplier<RestClient.RequestHeadersSpec<?>> requestSupplier, String logEndpoint) {
         rateGate.awaitTurn();

@@ -66,6 +66,15 @@ public final class NameMetadataMapper {
 
     private NameMetadataMapper() {}
 
+    private static Integer material(JsonNode row, String field) {
+        JsonNode value = row.path(field);
+        if (value.isMissingNode() || value.isNull()) return null;
+        if (!value.isIntegralNumber() || !value.canConvertToInt() || value.intValue() < 0) {
+            throw new IllegalArgumentException("Invalid item material code");
+        }
+        return value.intValue() == 0 ? null : value.intValue();
+    }
+
     public static NameMetadataBatch map(
             Map<String, JsonNode> tables, Map<String, String> localization, Instant checkedAt) {
         EnumMap<NameKind, List<MetadataName>> names =
@@ -128,7 +137,9 @@ public final class NameMetadataMapper {
                             row.has("armorType") ? text(row, "armorType") : text(row, "weaponType"),
                             null,
                             null,
-                            null);
+                            null,
+                            material(row, "makeMaterial1"),
+                            material(row, "makeMaterial2"));
                 });
         Map<Integer, JsonNode> traits = integerIndex(tables, "Trait", "code");
         localized(
