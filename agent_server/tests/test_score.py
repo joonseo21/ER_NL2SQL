@@ -185,6 +185,50 @@ def test_grouped_by_tier_accepts_one_row_per_tier_with_animals_as_columns() -> N
     assert score.compare_result(BY_TIER, expected(MONSTERS), animal_rows) == ["group_missing"]
 
 
+BEFORE_AFTER = [
+    {"patch": 4, "pick_rate": "0.83", "win_rate": "12.25", "picks": 6581},
+    {"patch": 5, "pick_rate": "0.74", "win_rate": "11.55", "picks": 4139},
+]
+ONE_ROW = {"mode": "grouped", "value_columns": ["pick_rate", "win_rate"]}
+
+
+def test_grouped_without_group_by_needs_every_row_values_in_one_agent_row() -> None:
+    side_by_side = answer(
+        [
+            {
+                "before_pick": "0.8277",
+                "after_pick": "0.7443",
+                "before_win": "12.2474",
+                "after_win": "11.5487",
+                "diff": "-0.70",
+            }
+        ]
+    )
+    assert score.compare_result(ONE_ROW, expected(BEFORE_AFTER), side_by_side) == []
+    # One row per patch spreads the values over two rows, so this reading does not apply.
+    per_patch = answer(
+        [{"p": 4, "pick": "0.83", "win": "12.25"}, {"p": 5, "pick": "0.74", "win": "11.55"}]
+    )
+    assert score.compare_result(ONE_ROW, expected(BEFORE_AFTER), per_patch) == ["group_missing"]
+    wrong = answer([{"a": "0.83", "b": "0.74", "c": "12.25", "d": "10.00"}])
+    assert score.compare_result(ONE_ROW, expected(BEFORE_AFTER), wrong) == ["group_missing"]
+
+
+def test_before_after_accepts_either_shape_through_alternatives() -> None:
+    scoring = {
+        "alternatives": [
+            {"key_columns": ["patch", "pick_rate", "win_rate"], "mode": "all_rows"},
+            ONE_ROW,
+        ]
+    }
+    per_patch = answer(
+        [{"p": 4, "pick": "0.83", "win": "12.25"}, {"p": 5, "pick": "0.74", "win": "11.55"}]
+    )
+    one_row = answer([{"x": "0.83", "y": "0.74", "z": "12.25", "w": "11.55"}])
+    assert score.compare_result(scoring, expected(BEFORE_AFTER), per_patch) == []
+    assert score.compare_result(scoring, expected(BEFORE_AFTER), one_row) == []
+
+
 def test_grouped_column_absent_from_answer_key_is_a_gold_error() -> None:
     with pytest.raises(ValueError, match="Grouped columns"):
         score.compare_result({**WIDE, "value_columns": ["absent"]}, expected(MONSTERS), answer(TWO))
@@ -286,8 +330,8 @@ def test_gold_accepts_composite_and_grouped_scoring(tmp_path: Path) -> None:
         {"cases": [case(scoring={"alternatives": []})]},
         {"cases": [case(scoring={"alternatives": [{"key_columns": [], "mode": "all_rows"}]})]},
         {"cases": [case(scoring={"all_of": [], "mode": "all_rows"})]},
+        {"cases": [case(scoring={"mode": "grouped", "group_by": ""})]},
         {"cases": [case(scoring={"mode": "grouped", "group_by": "a"})]},
-        {"cases": [case(scoring={"mode": "grouped", "value_columns": ["a"]})]},
         {
             "cases": [
                 case(

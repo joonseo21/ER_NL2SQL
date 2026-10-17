@@ -75,7 +75,7 @@ def validate_scoring(case_id: str, scoring: dict[str, Any]) -> None:
             return
     if scoring.get("mode") == "grouped":
         group_by = scoring.get("group_by")
-        if not isinstance(group_by, str) or not group_by:
+        if group_by is not None and (not isinstance(group_by, str) or not group_by):
             raise ValueError(f"{case_id}: scoring.group_by must name a column")
         for name, required in (("value_columns", True), ("identity_columns", False)):
             columns = scoring.get(name, [])
@@ -264,14 +264,17 @@ def _compare_grouped(
     """Wide-table answers: one agent row holds all of a group's values from the answer key.
 
     The answer key lists a group on several rows (for example one row per animal and tier).
-    `group_by` splits the key into groups in answer-key order (limited to `group_limit`);
-    `row_filter` keeps only the listed values of other columns. The agent row must show every
-    value of the group's `value_columns` whatever the column names or order, and, when
-    `identity_columns` are given, also one of the group's labels (a code or a name).
+    `group_by` splits the key into groups in answer-key order (limited to `group_limit`); without
+    it every kept row is one group, so a single agent row must hold all of them (for example a
+    before/after comparison answered side by side). `row_filter` keeps only the listed values
+    of other columns. The agent row must show every value of the group's `value_columns`
+    whatever the column names or order, and, when `identity_columns` are given, also one of
+    the group's labels (a code or a name).
     """
     identity = scoring.get("identity_columns", [])
     row_filter = scoring.get("row_filter", {})
-    named = [scoring["group_by"], *scoring["value_columns"], *identity, *row_filter]
+    group_by = scoring.get("group_by")
+    named = [*([group_by] if group_by else []), *scoring["value_columns"], *identity, *row_filter]
     missing = [column for column in named if column not in expected["columns"]]
     if missing:
         raise ValueError(f"Grouped columns are absent from the expected table: {missing}")
@@ -279,7 +282,7 @@ def _compare_grouped(
     groups: dict[Any, list[dict[str, Any]]] = {}
     for row in expected["rows"]:
         if all(row[column] in values for column, values in row_filter.items()):
-            groups.setdefault(row[scoring["group_by"]], []).append(row)
+            groups.setdefault(row[group_by] if group_by else None, []).append(row)
     selected = list(groups.values())[: scoring.get("group_limit") or None]
     columns = response.get("columns") or []
     rows = [[row.get(column) for column in columns] for row in response.get("rows") or []]
