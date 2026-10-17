@@ -460,12 +460,14 @@ def test_execution_is_capped_to_200(database: dict[str, str]) -> None:
 def test_readonly_account_cannot_write_or_own_schema(database: dict[str, str]) -> None:
     with psycopg.connect(database["agent"], autocommit=True) as agent:
         assert agent.execute("SHOW default_transaction_read_only").fetchone()[0] == "on"
-        assert agent.execute("SHOW statement_timeout").fetchone()[0] == "5s"
+        # V9 raised the agent_ro role default to match SQL_TIMEOUT_SECONDS (spec D-15).
+        assert agent.execute("SHOW statement_timeout").fetchone()[0] == "20s"
         with pytest.raises(psycopg.errors.ReadOnlySqlTransaction):
             agent.execute("CREATE TABLE stage4_forbidden(id integer)")
 
 
-def test_five_second_timeout_and_recovery(database: dict[str, str]) -> None:
+def test_statement_timeout_and_recovery(database: dict[str, str]) -> None:
+    # Each analytics transaction also sets SQL_TIMEOUT_SECONDS locally.
     joins = " ".join(f"CROSS JOIN participants p{i}" for i in range(1, 15))
     with pytest.raises(psycopg.errors.QueryCanceled):
         execute_select(database["agent"], f"SELECT count(*) FROM participants p0 {joins}")

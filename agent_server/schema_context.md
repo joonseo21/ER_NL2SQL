@@ -1,6 +1,6 @@
 # ER analytics query schema (V5)
 
-Only the tables and columns below may be used. SQL runs as agent_ro with a 5-second statement timeout and at most 200 returned rows.
+Only the tables and columns below may be used. SQL runs as agent_ro with a 20-second statement timeout and at most 200 returned rows.
 
 Player nicknames, the raw response, ranker flags, users, rankers, collection/ API logs, migration history and system catalogs are inaccessible. Do not query them or try whole-row/JSON conversion to recover them.
 
