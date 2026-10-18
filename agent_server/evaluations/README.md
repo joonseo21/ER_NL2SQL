@@ -167,6 +167,7 @@ uv run python -m evaluations.score run --gold C:\er-analytics\pilot-questions\go
 | 0aad7c5d | 10-12 14:11 | 운영 | 180s/기본 | 1×3 | complete | 타임아웃 180초. 호출당 18~82초, 생성 SQL 5초 초과 |
 | 8c4308da | 10-12 14:17 | 운영 | 180s/low | 1×3 | complete | + thinking low. 호출당 2.8~4.9초, matchup 답변 |
 | 3ae928b1 | 10-12 17:26 | 테스트베드 | 60s/low | 3×8 | complete | 0단계 재현성. 24회 완료, API 실패 0건 |
+| 43b89949, 4cdb882c | 10-18 | 테스트베드(V10·루트 995) | 30s/low | 3×10씩 | complete | 시범 20문항 4차 Gemini(코드 c3bc9e2, 채점 score-f745e3b4). 정답 52/60, 호출 111회 실패 0. 같은 이름 코드 하나로 정하기·루트 문항 전환 반영. 해석은 docs/archive/nl2sql_pilot_eval_2026-10-17.md |
 | 252d00b9, b196c65e | 10-17 | 테스트베드(V9) | 30s/low | 3×10씩 | complete | 시범 20문항 3차 Gemini(코드 b006e3b, 채점 score-5eb44a39). 정답 40/60, 호출 109회(HTTP 402 1회). 해석은 docs/archive/nl2sql_pilot_eval_2026-10-17.md |
 | 5625a25b, 0969dad2 | 10-17 | 테스트베드(V9) | openai gpt-6.1-sol 30s/low | 3×10씩 | complete | 시범 20문항 3차 GPT(채점 score-1c497e6a). 정답 47/60. 5625a25b는 질문 1~10번, 0969dad2는 11~20번을 429 중단 뒤 다시 실행 |
 | 4c727d1d | 10-17 | 테스트베드(V9) | openai gpt-6.1-sol 30s/low | 3×10 중 8건 | 중단 | 3차 GPT 두 번째 묶음. OpenAI 429가 연속 3회 나 중단. 채점에서 제외 |
