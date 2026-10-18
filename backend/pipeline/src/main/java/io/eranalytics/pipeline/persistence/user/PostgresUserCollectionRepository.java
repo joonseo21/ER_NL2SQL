@@ -102,9 +102,9 @@ public class PostgresUserCollectionRepository implements UserCollectionRepositor
                     AND version_major >= :major AND version_minor IS NOT NULL
                   ORDER BY version_major DESC, version_minor DESC LIMIT 1
                 )
-                SELECT p.tier, count(*) FROM participants p
-                JOIN games g ON g.game_id = p.game_id
-                JOIN latest_patch v ON p.version_major = v.version_major AND p.version_minor = v.version_minor
+                SELECT p.tier, count(*) FROM games g
+                JOIN latest_patch v ON g.version_major = v.version_major AND g.version_minor = v.version_minor
+                JOIN participants p ON p.game_id = g.game_id
                 WHERE g.season_id = :season AND g.matching_mode = 3 AND g.matching_team_mode = 3
                 GROUP BY p.tier
                 """)
