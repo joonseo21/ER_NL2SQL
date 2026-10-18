@@ -25,31 +25,45 @@ class CollectionWorkerTest {
     }
 
     private CollectionWorker worker(boolean continuous, CollectionMode mode) {
+        return worker(continuous, mode, 0);
+    }
+
+    private CollectionWorker worker(boolean continuous, CollectionMode mode, int top) {
         return new CollectionWorker(
                 games,
                 users,
                 metadata,
                 sleeper,
                 new ErApiProperties("https://example.invalid", "synthetic-key", 41, 0.5),
-                settings(30, continuous, mode),
+                settings(30, continuous, mode, top),
                 routes);
     }
 
     @Test
     void routesOnlyDrainsPoolAndExitsEvenWhenContinuousWithoutCollectingAnythingElse() {
-        when(routes.processNext()).thenReturn(true, true, false);
+        when(routes.processNext(0)).thenReturn(true, true, false);
         worker(true, CollectionMode.ROUTES_ONLY).run(null);
         InOrder order = inOrder(routes);
         order.verify(routes).initializePool();
-        order.verify(routes, times(3)).processNext();
+        order.verify(routes, times(3)).processNext(0);
         verifyNoMoreInteractions(routes);
         verifyNoInteractions(games, users, metadata, sleeper);
     }
 
     @Test
     void routesOnlyStopsOnInterruptionWithoutStartingNormalCollection() {
-        when(routes.processNext()).thenThrow(new CollectionInterruptedException());
+        when(routes.processNext(0)).thenThrow(new CollectionInterruptedException());
         worker(false, CollectionMode.ROUTES_ONLY).run(null);
+        verifyNoInteractions(games, users, metadata, sleeper);
+    }
+
+    @Test
+    void routesOnlyPassesTheTopBoundaryAndNeverUsesUnboundedProcessing() {
+        when(routes.processNext(995)).thenReturn(true, false);
+        worker(false, CollectionMode.ROUTES_ONLY, 995).run(null);
+        verify(routes).initializePool();
+        verify(routes, times(2)).processNext(995);
+        verifyNoMoreInteractions(routes);
         verifyNoInteractions(games, users, metadata, sleeper);
     }
 
@@ -57,7 +71,7 @@ class CollectionWorkerTest {
     void drainsGamesThenDiscoversUserGamesThenReturnsToGamePriorityWithoutFixedSleep() {
         when(games.processNext()).thenReturn(true, false, true, false);
         when(users.collectNext()).thenReturn(true, false);
-        worker(false).run(null);
+        worker(false, CollectionMode.FULL, 995).run(null);
         InOrder order = inOrder(metadata, games, users, routes);
         order.verify(routes).initializePool();
         order.verify(metadata).refreshIfDue();

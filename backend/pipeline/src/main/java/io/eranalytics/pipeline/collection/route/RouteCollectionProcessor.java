@@ -43,8 +43,14 @@ public class RouteCollectionProcessor {
 
     /** True means a claimed route finished, including terminal API failures. */
     public boolean processNext() {
+        return processNext(0);
+    }
+
+    public boolean processNext(int top) {
+        if (top < 0) throw new IllegalArgumentException("routes-top must be nonnegative");
         if (Thread.currentThread().isInterrupted()) throw new CollectionInterruptedException();
-        Optional<RouteKey> next = store.claimNext(clock.instant());
+        Optional<RouteKey> next =
+                top == 0 ? store.claimNext(clock.instant()) : store.claimNext(clock.instant(), top);
         if (next.isEmpty()) return false;
         fetch(next.get());
         return true;

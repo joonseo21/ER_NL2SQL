@@ -98,6 +98,31 @@ class GamePersistenceIntegrationTest {
     @Autowired NameMatchUsageStore nameUsage;
 
     @Test
+    void topRouteBoundaryIncludesTerminalRowsAndDoesNotExpandAfterFailures() {
+        jdbc.update(
+                """
+                INSERT INTO routes(season_id,route_id,usage_count,fetch_status,fetched_at) VALUES
+                (41,101,100,'SUCCESS',now()),(41,102,90,'PENDING',NULL),
+                (41,103,90,'PENDING',NULL),(42,1,90,'PENDING',NULL),
+                (41,104,80,'PENDING',NULL)
+                """);
+        Instant now = Instant.now();
+        assertThat(routes.claimNext(now, 3)).contains(new RouteKey(41, 102));
+        routes.fail(new RouteKey(41, 102), "NOT_FOUND", 404, now);
+        assertThat(routes.claimNext(now, 3)).contains(new RouteKey(41, 103));
+        routes.fail(new RouteKey(41, 103), "ERROR", 503, now);
+        assertThat(routes.claimNext(now, 3)).isEmpty();
+        assertThat(routes.claimNext(now.plusSeconds(60), 3)).isEmpty();
+        assertThat(
+                        jdbc.queryForObject(
+                                "SELECT count(*) FROM routes WHERE fetch_status='PENDING'",
+                                Integer.class))
+                .isEqualTo(2);
+        assertThat(routes.claimNext(now, 4)).contains(new RouteKey(42, 1));
+        assertThat(routes.claimNext(now)).contains(new RouteKey(41, 104));
+    }
+
+    @Test
     void routeDrainUsesPriorityAndPreservesMatchesNamesAndTerminalResults() throws Exception {
         seedUsageNames();
         // Three uses each, then two and one. Existing terminal rows have no new request.

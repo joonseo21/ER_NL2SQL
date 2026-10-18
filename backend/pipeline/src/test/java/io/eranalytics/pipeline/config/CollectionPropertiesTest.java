@@ -14,6 +14,7 @@ class CollectionPropertiesTest {
     void defaultsToFullAndBindsExplicitRoutesOnlyMode() {
         assertThat(bind(Map.of("er.collection.enabled", "true")).mode())
                 .isEqualTo(CollectionMode.FULL);
+        assertThat(bind(Map.of("er.collection.enabled", "true")).routesTop()).isZero();
         assertThat(
                         bind(Map.of(
                                         "er.collection.enabled",
@@ -22,6 +23,17 @@ class CollectionPropertiesTest {
                                         "ROUTES_ONLY"))
                                 .mode())
                 .isEqualTo(CollectionMode.ROUTES_ONLY);
+    }
+
+    @Test
+    void bindsTopBoundaryAndRejectsNegativeBoundary() {
+        assertThat(bind(Map.of("er.collection.routes-top", "995")).routesTop()).isEqualTo(995);
+        assertThatThrownBy(
+                        () ->
+                                io.eranalytics.pipeline.collection.CollectionTestSettings.settings(
+                                                30, false, CollectionMode.ROUTES_ONLY, -1)
+                                        .validate())
+                .isInstanceOf(IllegalStateException.class);
     }
 
     @Test

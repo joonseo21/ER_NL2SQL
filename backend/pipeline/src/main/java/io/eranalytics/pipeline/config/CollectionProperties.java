@@ -15,15 +15,21 @@ public record CollectionProperties(
         Duration metaRefresh,
         int minVersionMajor,
         int minSeedMmr,
-        BalanceBasis balanceBasis) {
+        BalanceBasis balanceBasis,
+        @DefaultValue("0") int routesTop) {
     public void validate() {
         if (mode == null) throw new IllegalStateException("Collection mode must be configured");
+        if (routesTop < 0) throw new IllegalStateException("routes-top must be nonnegative");
         if (balanceBasis != BalanceBasis.LATEST_PATCH) {
             throw new IllegalStateException("Collection balance basis must be LATEST_PATCH");
         }
         if (maxPagesPerUser < 1 || minVersionMajor < 0 || minSeedMmr < 0) {
             throw new IllegalStateException("Collection page/version/MMR settings are invalid");
         }
+        validateDurations();
+    }
+
+    private void validateDurations() {
         for (Duration duration : new Duration[] {revisitInterval, idleSleep, metaRefresh}) {
             if (duration == null || duration.isNegative() || duration.isZero()) {
                 throw new IllegalStateException("Collection durations must be positive");

@@ -82,11 +82,15 @@ final class CollectionWorker implements ApplicationRunner {
 
     private void drainRoutes() {
         long processed = 0;
-        while (!Thread.currentThread().isInterrupted() && routes.processNext()) {
+        while (!Thread.currentThread().isInterrupted()
+                && routes.processNext(settings.routesTop())) {
             processed++;
             if (processed % 100 == 0) log.info("Routes-only progress: processed={}", processed);
         }
         if (Thread.currentThread().isInterrupted()) throw new CollectionInterruptedException();
-        log.info("Routes-only collection finished; processed={}", processed);
+        log.info(
+                "Routes-only collection finished; top={}, processed={}",
+                settings.routesTop(),
+                processed);
     }
 }

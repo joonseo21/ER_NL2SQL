@@ -29,6 +29,17 @@ class RouteCollectionProcessorTest {
     }
 
     @Test
+    void boundedClaimCannotFallBackToTheUnlimitedPool() {
+        when(store.claimNext(now, 995)).thenReturn(Optional.of(first), Optional.empty());
+        when(api.recommendRoute(7039)).thenReturn(RouteFixture.response(7039));
+        RouteCollectionProcessor processor = processor(1);
+        assertThat(processor.processNext(995)).isTrue();
+        assertThat(processor.processNext(995)).isFalse();
+        verify(store, never()).claimNext(now);
+        verify(api, times(1)).recommendRoute(7039);
+    }
+
+    @Test
     void emptyPoolReturnsFalseWithoutAnApiCall() {
         when(store.claimNext(now)).thenReturn(Optional.empty());
         assertThat(processor(1).processNext()).isFalse();

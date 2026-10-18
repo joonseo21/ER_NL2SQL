@@ -48,6 +48,7 @@ er:
   collection:
     enabled: ${ER_COLLECTION_ENABLED:false}
     mode: ${ER_COLLECTION_MODE:FULL}
+    routes-top: ${ER_ROUTES_TOP:0}
     continuous: ${ER_COLLECTION_CONTINUOUS:false}
     revisit-interval: ${ER_REVISIT_INTERVAL:4h}
     max-pages-per-user: ${ER_MAX_PAGES_PER_USER:30}

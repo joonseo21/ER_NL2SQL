@@ -14,6 +14,9 @@ public interface RouteStore {
 
     Optional<RouteKey> claimNext(Instant now);
 
+    /** Top includes terminal rows, so restarts/failures cannot move the selected boundary. */
+    Optional<RouteKey> claimNext(Instant now, int top);
+
     void save(RouteKey key, RouteSnapshot snapshot, Instant now);
 
     void fail(RouteKey key, String status, Integer responseCode, Instant now);

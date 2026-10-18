@@ -12,6 +12,11 @@ public final class CollectionTestSettings {
 
     public static CollectionProperties settings(
             int pages, boolean continuous, CollectionMode mode) {
+        return settings(pages, continuous, mode, 0);
+    }
+
+    public static CollectionProperties settings(
+            int pages, boolean continuous, CollectionMode mode, int top) {
         return new CollectionProperties(
                 true,
                 mode,
@@ -22,6 +27,7 @@ public final class CollectionTestSettings {
                 Duration.ofHours(24),
                 4,
                 3600,
-                BalanceBasis.LATEST_PATCH);
+                BalanceBasis.LATEST_PATCH,
+                top);
     }
 }

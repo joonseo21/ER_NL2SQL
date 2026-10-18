@@ -84,6 +84,13 @@ public class PostgresRouteStore implements RouteStore {
     @Override
     @Transactional
     public Optional<RouteKey> claimNext(Instant now) {
+        return claimNext(now, 0);
+    }
+
+    @Override
+    @Transactional
+    public Optional<RouteKey> claimNext(Instant now, int top) {
+        if (top < 0) throw new IllegalArgumentException("routes-top must be nonnegative");
         List<RouteKey> keys =
                 jdbc.query(
                         """
@@ -91,12 +98,17 @@ public class PostgresRouteStore implements RouteStore {
                 WHERE (season_id,route_id) = (
                     SELECT season_id,route_id FROM routes
                     WHERE fetch_status='PENDING' AND usage_count>0
+                      AND (?=0 OR (season_id,route_id) IN (
+                        SELECT season_id,route_id FROM routes WHERE usage_count>0
+                        ORDER BY usage_count DESC,season_id,route_id LIMIT ?))
                     ORDER BY usage_count DESC, season_id, route_id
                     LIMIT 1 FOR UPDATE SKIP LOCKED)
                 RETURNING season_id,route_id
                 """,
                         (rs, index) -> new RouteKey(rs.getInt(1), rs.getInt(2)),
-                        Timestamp.from(now));
+                        Timestamp.from(now),
+                        top,
+                        top);
         return keys.stream().findFirst();
     }
 
