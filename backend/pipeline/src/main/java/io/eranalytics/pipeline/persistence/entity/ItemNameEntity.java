@@ -7,7 +7,7 @@ import jakarta.persistence.Table;
 
 @Entity
 @Table(name = "items")
-public class ItemNameEntity extends NamedMetadataEntity {
+public class ItemNameEntity extends MatchUsedMetadataEntity {
     @Column(name = "item_type", columnDefinition = "text")
     private String itemType;
 
