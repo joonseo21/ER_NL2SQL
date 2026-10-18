@@ -1,9 +1,10 @@
 package io.eranalytics.pipeline.collection.runtime;
 
 import io.eranalytics.pipeline.collection.game.GameCollectionProcessor;
-import io.eranalytics.pipeline.collection.metadata.NameMetadataRefresher;
+import io.eranalytics.pipeline.collection.metadata.CollectionMetadataRefresher;
 import io.eranalytics.pipeline.collection.route.RouteCollectionProcessor;
 import io.eranalytics.pipeline.collection.user.UserCollectionCoordinator;
+import io.eranalytics.pipeline.config.CollectionMode;
 import io.eranalytics.pipeline.config.CollectionProperties;
 import io.eranalytics.pipeline.config.ErApiProperties;
 import org.slf4j.Logger;
@@ -22,7 +23,7 @@ final class CollectionWorker implements ApplicationRunner {
     private static final Logger log = LoggerFactory.getLogger(CollectionWorker.class);
     private final GameCollectionProcessor games;
     private final UserCollectionCoordinator users;
-    private final NameMetadataRefresher metadata;
+    private final CollectionMetadataRefresher metadata;
     private final CollectionSleeper sleeper;
     private final ErApiProperties apiSettings;
     private final CollectionProperties settings;
@@ -31,7 +32,7 @@ final class CollectionWorker implements ApplicationRunner {
     CollectionWorker(
             GameCollectionProcessor games,
             UserCollectionCoordinator users,
-            NameMetadataRefresher metadata,
+            CollectionMetadataRefresher metadata,
             CollectionSleeper sleeper,
             ErApiProperties apiSettings,
             CollectionProperties settings,
@@ -56,6 +57,10 @@ final class CollectionWorker implements ApplicationRunner {
         }
         try {
             routes.initializePool();
+            if (settings.mode() == CollectionMode.ROUTES_ONLY) {
+                drainRoutes();
+                return;
+            }
             while (!Thread.currentThread().isInterrupted()) {
                 metadata.refreshIfDue();
                 if (games.processNext()) {
@@ -73,5 +78,15 @@ final class CollectionWorker implements ApplicationRunner {
         } catch (CollectionInterruptedException exception) {
             log.info("Collection stopped after interruption");
         }
+    }
+
+    private void drainRoutes() {
+        long processed = 0;
+        while (!Thread.currentThread().isInterrupted() && routes.processNext()) {
+            processed++;
+            if (processed % 100 == 0) log.info("Routes-only progress: processed={}", processed);
+        }
+        if (Thread.currentThread().isInterrupted()) throw new CollectionInterruptedException();
+        log.info("Routes-only collection finished; processed={}", processed);
     }
 }

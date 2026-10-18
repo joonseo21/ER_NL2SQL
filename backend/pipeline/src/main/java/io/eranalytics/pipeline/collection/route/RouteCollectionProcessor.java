@@ -37,10 +37,17 @@ public class RouteCollectionProcessor {
 
     public void processBatch() {
         for (int index = 0; index < perGame; index++) {
-            Optional<RouteKey> next = store.claimNext(clock.instant());
-            if (next.isEmpty()) return;
-            fetch(next.get());
+            if (!processNext()) return;
         }
+    }
+
+    /** True means a claimed route finished, including terminal API failures. */
+    public boolean processNext() {
+        if (Thread.currentThread().isInterrupted()) throw new CollectionInterruptedException();
+        Optional<RouteKey> next = store.claimNext(clock.instant());
+        if (next.isEmpty()) return false;
+        fetch(next.get());
+        return true;
     }
 
     private void fetch(RouteKey key) {

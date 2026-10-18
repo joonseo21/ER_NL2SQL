@@ -2,10 +2,12 @@ package io.eranalytics.pipeline.config;
 
 import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.DefaultValue;
 
 @ConfigurationProperties("er.collection")
 public record CollectionProperties(
         boolean enabled,
+        @DefaultValue("FULL") CollectionMode mode,
         boolean continuous,
         Duration revisitInterval,
         int maxPagesPerUser,
@@ -15,6 +17,7 @@ public record CollectionProperties(
         int minSeedMmr,
         BalanceBasis balanceBasis) {
     public void validate() {
+        if (mode == null) throw new IllegalStateException("Collection mode must be configured");
         if (balanceBasis != BalanceBasis.LATEST_PATCH) {
             throw new IllegalStateException("Collection balance basis must be LATEST_PATCH");
         }

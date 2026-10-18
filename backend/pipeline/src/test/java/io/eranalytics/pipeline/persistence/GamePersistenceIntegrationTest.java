@@ -2,6 +2,7 @@ package io.eranalytics.pipeline.persistence;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -14,11 +15,13 @@ import io.eranalytics.pipeline.collection.metadata.KoreanLocalization;
 import io.eranalytics.pipeline.collection.metadata.MetadataFixture;
 import io.eranalytics.pipeline.collection.metadata.MetadataName;
 import io.eranalytics.pipeline.collection.metadata.NameKind;
+import io.eranalytics.pipeline.collection.metadata.NameMatchUsageStore;
 import io.eranalytics.pipeline.collection.metadata.NameMetadataBatch;
 import io.eranalytics.pipeline.collection.metadata.NameMetadataMapper;
 import io.eranalytics.pipeline.collection.model.DeathRow;
 import io.eranalytics.pipeline.collection.model.MappedMatch;
 import io.eranalytics.pipeline.collection.model.MappedParticipant;
+import io.eranalytics.pipeline.collection.route.RouteCollectionProcessor;
 import io.eranalytics.pipeline.collection.route.RouteFixture;
 import io.eranalytics.pipeline.collection.route.RouteKey;
 import io.eranalytics.pipeline.collection.route.RouteMapper;
@@ -26,6 +29,8 @@ import io.eranalytics.pipeline.collection.route.RouteStore;
 import io.eranalytics.pipeline.collection.user.SeedUser;
 import io.eranalytics.pipeline.collection.user.UserCollectionCandidate;
 import io.eranalytics.pipeline.collection.user.UserCollectionRepository;
+import io.eranalytics.pipeline.erapi.ErApiClient;
+import io.eranalytics.pipeline.erapi.ErApiException;
 import io.eranalytics.pipeline.migration.DatabaseMigration;
 import io.eranalytics.pipeline.persistence.game.GamePersistenceService;
 import io.eranalytics.pipeline.persistence.metadata.JpaNameMetadataStore;
@@ -36,10 +41,13 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -53,6 +61,7 @@ import java.util.stream.IntStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -63,6 +72,7 @@ import org.springframework.test.context.DynamicPropertySource;
 @SpringBootTest(
         properties = {
             "er.collection.enabled=false",
+            "er.api.season-id=41",
             "spring.config.import=",
             "spring.datasource.hikari.maximum-pool-size=6"
         })
@@ -85,6 +95,195 @@ class GamePersistenceIntegrationTest {
     @Autowired UserCollectionRepository frontier;
     @Autowired JpaNameMetadataStore names;
     @Autowired RouteStore routes;
+    @Autowired NameMatchUsageStore nameUsage;
+
+    @Test
+    void routeDrainUsesPriorityAndPreservesMatchesNamesAndTerminalResults() throws Exception {
+        seedUsageNames();
+        // Three uses each, then two and one. Existing terminal rows have no new request.
+        int[] routeIds = {7039, 7040, 7050};
+        for (int index = 0; index < routeIds.length; index++) {
+            List<JsonNode> rows = usageGame(410001 + index, 41, 3, 3, false);
+            int routeId = routeIds[index];
+            rows.forEach(row -> ((ObjectNode) row).put("routeIdOfStart", routeId));
+            if (index == 2) ((ObjectNode) rows.getFirst()).put("routeIdOfStart", 7060);
+            service.store(rows);
+        }
+        jdbc.update(
+                "INSERT INTO routes(season_id,route_id,fetch_status,fetched_at)"
+                        + " VALUES(41,7000,'SUCCESS',now()),(41,7001,'FETCHING',now())");
+        queue.enqueueGame(999999);
+        Map<String, List<String>> before = snapshot();
+        List<Map<String, Object>> queueBefore = jdbc.queryForList("SELECT * FROM collect_queue");
+        List<Map<String, Object>> namesBefore =
+                jdbc.queryForList("SELECT * FROM items ORDER BY code");
+        ErApiClient api = mock(ErApiClient.class);
+        when(api.recommendRoute(7039)).thenReturn(RouteFixture.response(7039));
+        when(api.recommendRoute(7040)).thenThrow(new ErApiException(404, "synthetic missing"));
+        when(api.recommendRoute(7050)).thenThrow(new ErApiException(503, "synthetic error"));
+        when(api.recommendRoute(7060)).thenReturn(RouteFixture.response(9999));
+        RouteCollectionProcessor processor =
+                new RouteCollectionProcessor(
+                        routes, api, new RouteMapper(JSON), Clock.systemUTC(), 1);
+        processor.initializePool();
+        int processed = 0;
+        while (processor.processNext()) processed++;
+        assertThat(processed).isEqualTo(4);
+        InOrder order = inOrder(api);
+        for (int id : List.of(7039, 7040, 7050, 7060)) order.verify(api).recommendRoute(id);
+        verifyNoMoreInteractions(api);
+        assertThat(
+                        jdbc.queryForList(
+                                "SELECT fetch_status FROM routes ORDER BY route_id", String.class))
+                .containsExactly(
+                        "SUCCESS",
+                        "INTERRUPTED",
+                        "SUCCESS",
+                        "NOT_FOUND",
+                        "ERROR",
+                        "INVALID_RESPONSE");
+        assertThat(snapshot()).isEqualTo(before);
+        assertThat(count("games")).isEqualTo(3);
+        assertThat(jdbc.queryForList("SELECT * FROM collect_queue")).isEqualTo(queueBefore);
+        assertThat(jdbc.queryForList("SELECT * FROM items ORDER BY code")).isEqualTo(namesBefore);
+        processor.initializePool();
+        assertThat(processor.processNext()).isFalse();
+        verifyNoMoreInteractions(api);
+    }
+
+    @Test
+    void nameUsageBackfillDistinguishesUnknownUnusedAndOtherSeasonOrMode() throws Exception {
+        service.store(usageGame(410001, 41, 3, 3, false));
+        service.store(usageGame(410002, 42, 3, 3, true));
+        service.store(usageGame(410003, 41, 2, 3, true));
+        service.store(usageGame(410004, 41, 3, 2, true));
+        seedUsageNames();
+        assertThat(usageFlag("items", 100002)).isNull();
+        assertThat(usageFlag("items", 100001)).isNull();
+        Instant checked = Instant.parse("2026-10-17T00:00:00Z");
+        nameUsage.initializeMissing(41, checked);
+        for (String table : List.of("items", "trait_names", "tactical_skills")) {
+            assertThat(usageFlag(table, usageCode(table, false))).isTrue();
+            assertThat(usageFlag(table, usageCode(table, true))).isFalse();
+            assertThat(
+                            jdbc.queryForObject(
+                                    "SELECT usage_season_id=41 AND usage_checked_at=? FROM "
+                                            + table
+                                            + " WHERE code=?",
+                                    Boolean.class,
+                                    java.sql.Timestamp.from(checked),
+                                    usageCode(table, true)))
+                    .isTrue();
+        }
+        assertThat(count("games")).isEqualTo(4);
+    }
+
+    @Test
+    void usageInitializationIsIdempotentAndMetadataRefreshPreservesEvidence() throws Exception {
+        seedUsageNames();
+        service.store(usageGame(410001, 41, 3, 3, false));
+        Instant checked = Instant.parse("2026-10-17T00:00:00Z");
+        nameUsage.initializeMissing(41, checked);
+        List<Map<String, Object>> before =
+                jdbc.queryForList(
+                        "SELECT code,seen_in_matches,usage_season_id,usage_checked_at FROM items ORDER BY code");
+        nameUsage.initializeMissing(41, checked.plusSeconds(86400));
+        names.save(
+                NameMetadataMapper.map(
+                        MetadataFixture.tables(),
+                        KoreanLocalization.parse(MetadataFixture.localization()),
+                        checked.plusSeconds(86400)));
+        assertThat(
+                        jdbc.queryForList(
+                                "SELECT code,seen_in_matches,usage_season_id,usage_checked_at FROM items ORDER BY code"))
+                .isEqualTo(before);
+    }
+
+    @Test
+    void gameReplayClearsOnlyCodesNoLongerUsedByAnyEligibleGame() throws Exception {
+        seedUsageNames();
+        nameUsage.initializeMissing(41, Instant.now());
+        service.store(usageGame(410001, 41, 3, 3, false));
+        service.store(usageGame(410002, 41, 3, 3, false));
+        service.store(usageGame(410001, 41, 3, 3, true));
+        for (String table : List.of("items", "trait_names", "tactical_skills")) {
+            assertThat(usageFlag(table, usageCode(table, false))).isTrue();
+            assertThat(usageFlag(table, usageCode(table, true))).isTrue();
+        }
+        service.store(usageGame(410002, 41, 3, 3, true));
+        for (String table : List.of("items", "trait_names", "tactical_skills")) {
+            assertThat(usageFlag(table, usageCode(table, false))).isFalse();
+            assertThat(usageFlag(table, usageCode(table, true))).isTrue();
+        }
+    }
+
+    @Test
+    void seasonSwitchReplacesTheMeaningOfUsageFlags() throws Exception {
+        seedUsageNames();
+        service.store(usageGame(410001, 41, 3, 3, false));
+        service.store(usageGame(410002, 42, 3, 3, true));
+        nameUsage.initializeMissing(42, Instant.now());
+        for (String table : List.of("items", "trait_names", "tactical_skills")) {
+            assertThat(usageFlag(table, usageCode(table, false))).isFalse();
+            assertThat(usageFlag(table, usageCode(table, true))).isTrue();
+        }
+        nameUsage.initializeMissing(41, Instant.now());
+        assertThat(usageFlag("tactical_skills", 120)).isTrue();
+        assertThat(usageFlag("tactical_skills", 500120)).isFalse();
+    }
+
+    private void seedUsageNames() {
+        names.save(
+                NameMetadataMapper.map(
+                        MetadataFixture.tables(),
+                        KoreanLocalization.parse(MetadataFixture.localization()),
+                        Instant.now()));
+        for (String table : List.of("items", "trait_names", "tactical_skills")) {
+            String extraColumn = table.equals("tactical_skills") ? ",skill_group_code" : "";
+            jdbc.update(
+                    "INSERT INTO "
+                            + table
+                            + "(code,name_ko,source,l10n_key,checked_at"
+                            + extraColumn
+                            + ") SELECT ?,name_ko,source,l10n_key,checked_at"
+                            + extraColumn
+                            + " FROM "
+                            + table
+                            + " WHERE code=?",
+                    usageCode(table, true),
+                    usageCode(table, false));
+        }
+    }
+
+    private Boolean usageFlag(String table, int code) {
+        return jdbc.queryForObject(
+                "SELECT seen_in_matches FROM " + table + " WHERE code=?", Boolean.class, code);
+    }
+
+    private static int usageCode(String table, boolean alternate) {
+        return switch (table) {
+            case "items" -> alternate ? 100002 : 100001;
+            case "trait_names" -> alternate ? 700002 : 700001;
+            case "tactical_skills" -> alternate ? 500120 : 120;
+            default -> throw new IllegalArgumentException("Unknown synthetic name table");
+        };
+    }
+
+    private static List<JsonNode> usageGame(
+            long id, int season, int mode, int team, boolean alternate) throws Exception {
+        List<JsonNode> rows = game(id, "2026-10-09T00:00:00Z", 5000);
+        for (JsonNode row : rows) {
+            ObjectNode data = (ObjectNode) row;
+            data.put("seasonId", season)
+                    .put("matchingMode", mode)
+                    .put("matchingTeamMode", team)
+                    .put("tacticalSkillGroup", usageCode("tactical_skills", alternate))
+                    .put("traitFirstCore", usageCode("trait_names", alternate));
+            data.putObject("equipment").put("0", usageCode("items", alternate));
+            data.putObject("equipmentGrade").put("0", 5);
+        }
+        return rows;
+    }
 
     @Test
     void routePoolCountsWholeDatabaseIsIdempotentAndKeepsSeasonIdentity() throws Exception {
@@ -751,6 +950,75 @@ class GamePersistenceIntegrationTest {
     }
 
     @Test
+    void latestPatchTierOrderMatchesLegacyQueryAcrossSeasonModeAndMissingPatchCases() {
+        seedCandidates();
+        sample(101, 41, 4, 1, "다이아몬드", 10);
+        sample(102, 41, 5, 1, "플래티넘", 4);
+        sample(103, 41, 5, 1, "다이아몬드", 1);
+        sample(104, 41, 5, 1, "메테오라이트", 2);
+        sample(105, 41, 5, 1, "미스릴 이상", 3);
+        sample(106, 40, 99, 1, "다이아몬드", 30);
+        sample(107, 41, 5, 0, "다이아몬드", 20);
+        sample(108, 41, 90, 1, "다이아몬드", 30);
+        jdbc.update("UPDATE games SET matching_mode=2 WHERE game_id=108");
+        sample(109, 41, 91, 1, "메테오라이트", 30);
+        jdbc.update("UPDATE games SET matching_team_mode=2 WHERE game_id=109");
+        sample(110, 41, 100, 1, "플래티넘", 30);
+        jdbc.update("UPDATE games SET version_minor=NULL WHERE game_id=110");
+        jdbc.update("UPDATE participants SET version_minor=NULL WHERE game_id=110");
+        sample(111, 41, 3, 99, "미스릴 이상", 20);
+        sample(112, 41, 5, 1, null, 7);
+        Map<String, Long> legacy = new HashMap<>();
+        jdbc.query(
+                """
+                WITH latest_patch AS (
+                  SELECT version_major, version_minor FROM games
+                  WHERE season_id=? AND matching_mode=3 AND matching_team_mode=3
+                    AND version_major>=? AND version_minor IS NOT NULL
+                  ORDER BY version_major DESC,version_minor DESC LIMIT 1
+                )
+                SELECT p.tier,count(*) FROM participants p
+                JOIN games g ON g.game_id=p.game_id
+                JOIN latest_patch v ON p.version_major=v.version_major AND p.version_minor=v.version_minor
+                WHERE g.season_id=? AND g.matching_mode=3 AND g.matching_team_mode=3
+                GROUP BY p.tier
+                """,
+                rs -> {
+                    legacy.put(rs.getString(1), rs.getLong(2));
+                },
+                41,
+                4,
+                41);
+        List<String> expected = new ArrayList<>(List.of("플래티넘", "다이아몬드", "메테오라이트", "미스릴 이상"));
+        expected.sort(Comparator.comparingLong(tier -> legacy.getOrDefault(tier, 0L)));
+        assertThat(expected).containsExactly("다이아몬드", "메테오라이트", "미스릴 이상", "플래티넘");
+        assertThat(
+                        jdbc.queryForObject(
+                                "SELECT count(*) FROM participants p JOIN games g USING(game_id)"
+                                        + " WHERE p.version_major IS DISTINCT FROM g.version_major"
+                                        + " OR p.version_minor IS DISTINCT FROM g.version_minor",
+                                Integer.class))
+                .isZero();
+        for (String tier : expected) {
+            UserCollectionCandidate candidate = nextCandidate();
+            assertThat(
+                            jdbc.queryForObject(
+                                    "SELECT tier FROM users WHERE user_id=?",
+                                    String.class,
+                                    candidate.userId()))
+                    .isEqualTo(tier);
+            frontier.fail(candidate, true, "synthetic completed tier check");
+        }
+        jdbc.update("UPDATE users SET crawl_status='NEW' WHERE last_mmr>=3600");
+        // No qualifying patch: every tier has zero samples, retaining the original tie order.
+        assertThat(
+                        frontier.selectNext(41, 101, 3600, OffsetDateTime.now().minusHours(4))
+                                .orElseThrow()
+                                .nickname())
+                .isEqualTo("synthetic_platinum");
+    }
+
+    @Test
     void includesZeroSampleTierAndSkipsIneligibleCandidatesBeforeMovingToNextTier() {
         seedCandidates();
         sample(101, 41, 5, 1, "플래티넘", 1);
@@ -895,6 +1163,9 @@ class GamePersistenceIntegrationTest {
 
     @Test
     void queueDeleteFailureRollsBackGameUsersParticipantsAndChildren() throws Exception {
+        seedUsageNames();
+        nameUsage.initializeMissing(41, Instant.now());
+        List<JsonNode> rows = usageGame(410001, 41, 3, 3, false);
         long gameId = fixture().getFirst().get("gameId").longValue();
         queue.enqueueGame(gameId);
         GameCollectionJob job = queue.claimNextGame().orElseThrow();
@@ -910,13 +1181,17 @@ class GamePersistenceIntegrationTest {
                             + "FOR EACH ROW EXECUTE FUNCTION fail_test_queue_delete()");
         }
         try {
-            assertThatThrownBy(() -> collectedGames.completeGame(job, fixture()))
-                    .isInstanceOf(RuntimeException.class);
+            assertThatThrownBy(() -> collectedGames.completeGame(job, rows))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasStackTraceContaining("synthetic queue delete failure");
             assertThat(count("games")).isZero();
             assertThat(count("users")).isZero();
             assertThat(count("participants")).isZero();
             for (String child : CHILDREN) assertThat(count(child)).isZero();
             assertThat(count("collect_queue")).isEqualTo(1);
+            for (String table : List.of("items", "trait_names", "tactical_skills")) {
+                assertThat(usageFlag(table, usageCode(table, false))).isFalse();
+            }
         } finally {
             try (Connection connection = admin();
                     Statement sql = connection.createStatement()) {

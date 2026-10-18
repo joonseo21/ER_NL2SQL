@@ -47,6 +47,7 @@ er:
     requests-per-second: ${ER_REQUESTS_PER_SECOND:0.5}
   collection:
     enabled: ${ER_COLLECTION_ENABLED:false}
+    mode: ${ER_COLLECTION_MODE:FULL}
     continuous: ${ER_COLLECTION_CONTINUOUS:false}
     revisit-interval: ${ER_REVISIT_INTERVAL:4h}
     max-pages-per-user: ${ER_MAX_PAGES_PER_USER:30}

@@ -4,9 +4,10 @@ import static io.eranalytics.pipeline.collection.CollectionTestSettings.settings
 import static org.mockito.Mockito.*;
 
 import io.eranalytics.pipeline.collection.game.GameCollectionProcessor;
-import io.eranalytics.pipeline.collection.metadata.NameMetadataRefresher;
+import io.eranalytics.pipeline.collection.metadata.CollectionMetadataRefresher;
 import io.eranalytics.pipeline.collection.route.RouteCollectionProcessor;
 import io.eranalytics.pipeline.collection.user.UserCollectionCoordinator;
+import io.eranalytics.pipeline.config.CollectionMode;
 import io.eranalytics.pipeline.config.ErApiProperties;
 import java.time.Duration;
 import org.junit.jupiter.api.Test;
@@ -15,19 +16,41 @@ import org.mockito.InOrder;
 class CollectionWorkerTest {
     private final GameCollectionProcessor games = mock(GameCollectionProcessor.class);
     private final UserCollectionCoordinator users = mock(UserCollectionCoordinator.class);
-    private final NameMetadataRefresher metadata = mock(NameMetadataRefresher.class);
+    private final CollectionMetadataRefresher metadata = mock(CollectionMetadataRefresher.class);
     private final CollectionSleeper sleeper = mock(CollectionSleeper.class);
     private final RouteCollectionProcessor routes = mock(RouteCollectionProcessor.class);
 
     private CollectionWorker worker(boolean continuous) {
+        return worker(continuous, CollectionMode.FULL);
+    }
+
+    private CollectionWorker worker(boolean continuous, CollectionMode mode) {
         return new CollectionWorker(
                 games,
                 users,
                 metadata,
                 sleeper,
                 new ErApiProperties("https://example.invalid", "synthetic-key", 41, 0.5),
-                settings(30, continuous),
+                settings(30, continuous, mode),
                 routes);
+    }
+
+    @Test
+    void routesOnlyDrainsPoolAndExitsEvenWhenContinuousWithoutCollectingAnythingElse() {
+        when(routes.processNext()).thenReturn(true, true, false);
+        worker(true, CollectionMode.ROUTES_ONLY).run(null);
+        InOrder order = inOrder(routes);
+        order.verify(routes).initializePool();
+        order.verify(routes, times(3)).processNext();
+        verifyNoMoreInteractions(routes);
+        verifyNoInteractions(games, users, metadata, sleeper);
+    }
+
+    @Test
+    void routesOnlyStopsOnInterruptionWithoutStartingNormalCollection() {
+        when(routes.processNext()).thenThrow(new CollectionInterruptedException());
+        worker(false, CollectionMode.ROUTES_ONLY).run(null);
+        verifyNoInteractions(games, users, metadata, sleeper);
     }
 
     @Test

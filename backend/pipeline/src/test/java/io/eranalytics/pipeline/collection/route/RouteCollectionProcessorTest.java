@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.eranalytics.pipeline.collection.runtime.CollectionInterruptedException;
 import io.eranalytics.pipeline.erapi.ErApiClient;
 import io.eranalytics.pipeline.erapi.ErApiException;
 import java.time.Clock;
@@ -25,6 +26,25 @@ class RouteCollectionProcessorTest {
                 new RouteMapper(new ObjectMapper()),
                 Clock.fixed(now, ZoneOffset.UTC),
                 count);
+    }
+
+    @Test
+    void emptyPoolReturnsFalseWithoutAnApiCall() {
+        when(store.claimNext(now)).thenReturn(Optional.empty());
+        assertThat(processor(1).processNext()).isFalse();
+        verifyNoInteractions(api);
+    }
+
+    @Test
+    void interruptionBeforeClaimDoesNotLeaveAnotherFetchingRoute() {
+        Thread.currentThread().interrupt();
+        try {
+            assertThatThrownBy(() -> processor(1).processNext())
+                    .isInstanceOf(CollectionInterruptedException.class);
+            verifyNoInteractions(store, api);
+        } finally {
+            Thread.interrupted();
+        }
     }
 
     @Test

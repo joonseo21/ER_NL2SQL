@@ -4,6 +4,8 @@ import static io.eranalytics.pipeline.erapi.jackson.BattleJsonValues.invalid;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import io.eranalytics.pipeline.collection.mapping.BattleUserResultMapper;
+import io.eranalytics.pipeline.collection.metadata.MatchNameCodes;
+import io.eranalytics.pipeline.collection.metadata.NameMatchUsageStore;
 import io.eranalytics.pipeline.collection.model.MappedMatch;
 import io.eranalytics.pipeline.collection.model.MappedParticipant;
 import io.eranalytics.pipeline.collection.route.RouteKey;
@@ -65,6 +67,7 @@ public class GamePersistenceService {
     private final TransactionAdvisoryLock lock;
     private final Clock clock;
     private final RouteStore routes;
+    private final NameMatchUsageStore nameUsage;
 
     @Transactional
     public void store(List<JsonNode> results) {
@@ -99,6 +102,7 @@ public class GamePersistenceService {
         // 경기 저장
         lock.acquire("game:" + gameId);
         Map<RouteKey, Long> previousRoutes = routes.gameUsage(gameId);
+        MatchNameCodes previousNames = nameUsage.gameCodes(gameId);
         // Acquire shared users in a stable order before creating or updating any of them.
         List<String> nicknames =
                 match.participants().stream()
@@ -204,6 +208,7 @@ public class GamePersistenceService {
                 deaths, deaths.findAllByIdParticipantIdIn(ids), deathRows, DeathEntity::updateFrom);
         deaths.flush(); // Fail inside this transaction if any final child violates a DB constraint.
         routes.registerGame(gameId, previousRoutes);
+        nameUsage.recordGame(gameId, previousNames, now.toInstant());
     }
 
     private static TierEntity boundary(List<TierEntity> boundaries, Integer mmr) {
