@@ -36,7 +36,7 @@ from er_agent.query.context_resolver import prepare_context
 from er_agent.query.name_resolver import NameResolver
 from er_agent.settings import Settings
 from er_agent.sql.guard import SqlGuardError, guard_sql
-from er_agent.sql.schema import TABLE_COLUMNS
+from er_agent.sql.schema import SERVER_ONLY_COLUMNS, TABLE_COLUMNS
 from er_agent.sql.scope import scope_sql
 
 pytestmark = pytest.mark.postgres
@@ -221,8 +221,10 @@ def test_column_contract_matches_database_grants(database: dict[str, str]) -> No
     found: dict[str, list[str]] = {}
     for table, column in actual:
         found.setdefault(table, []).append(column)
+    # V10 adds name-usage columns that only the server's name loader reads.
     assert {table: set(columns) for table, columns in found.items()} == {
-        table: set(columns) for table, columns in TABLE_COLUMNS.items()
+        table: set(columns) | set(SERVER_ONLY_COLUMNS.get(table, ()))
+        for table, columns in TABLE_COLUMNS.items()
     }
 
 

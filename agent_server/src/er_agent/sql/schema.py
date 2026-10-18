@@ -9,6 +9,14 @@ from ..models.limits import MAX_ROWS as MAX_ROWS
 
 BLOCKED_COLUMNS = frozenset({"nickname", "raw", "is_ranker"})
 
+# V10 columns of the name tables. agent_ro can read them, but only the server's name loader does
+# (it keeps one code per official name, spec D-20); generated SQL never sees them.
+SERVER_ONLY_COLUMNS: dict[str, tuple[str, ...]] = {
+    "items": ("seen_in_matches", "usage_season_id", "usage_checked_at"),
+    "trait_names": ("seen_in_matches", "usage_season_id", "usage_checked_at"),
+    "tactical_skills": ("seen_in_matches", "usage_season_id", "usage_checked_at"),
+}
+
 TABLE_COLUMNS: dict[str, tuple[str, ...]] = {
     "games": (
         "game_id",
