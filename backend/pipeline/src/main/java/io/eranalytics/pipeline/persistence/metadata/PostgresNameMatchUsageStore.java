@@ -43,7 +43,7 @@ public class PostgresNameMatchUsageStore implements NameMatchUsageStore {
         }
 
         private String codes() {
-            return "SELECT "
+            return "SELECT DISTINCT "
                     + code
                     + " FROM games g JOIN participants p USING(game_id) "
                     + child
