@@ -41,6 +41,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import org.flywaydb.core.Flyway;
+import org.flywaydb.core.api.MigrationInfoService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -95,20 +96,15 @@ class WebApiLogicIntegrationTest {
             sql.execute("DROP SCHEMA public CASCADE");
             sql.execute("CREATE SCHEMA public");
         }
-        Flyway.configure()
-                .dataSource(url, "stage2_test", "")
-                .locations("classpath:db/migration")
-                .load()
-                .migrate();
-        assertThat(
-                        Flyway.configure()
-                                .dataSource(url, "stage2_test", "")
-                                .load()
-                                .info()
-                                .current()
-                                .getVersion()
-                                .getVersion())
-                .isEqualTo("8");
+        Flyway flyway =
+                Flyway.configure()
+                        .dataSource(url, "stage2_test", "")
+                        .locations("classpath:db/migration")
+                        .load();
+        flyway.migrate();
+        MigrationInfoService migrations = flyway.info();
+        assertThat(migrations.current()).isNotNull();
+        assertThat(migrations.pending()).isEmpty();
         properties.add("spring.datasource.url", () -> url);
         properties.add("spring.datasource.username", () -> "collector");
         properties.add("spring.datasource.password", () -> "");
