@@ -11,6 +11,7 @@ import io.eranalytics.pipeline.persistence.repository.UserRepository;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.Query;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -24,11 +25,13 @@ import org.springframework.transaction.annotation.Transactional;
 @Repository
 public class PostgresUserCollectionRepository implements UserCollectionRepository {
     private static final List<String> TIERS = List.of("플래티넘", "다이아몬드", "메테오라이트", "미스릴 이상");
+    private static final Duration TIER_SAMPLE_REFRESH = Duration.ofHours(1);
     private final EntityManager entityManager;
     private final UserRepository users;
     private final TierRepository tiers;
     private final TransactionAdvisoryLock lock;
     private final Clock clock;
+    private final TierSampleCache tierSamples;
 
     public PostgresUserCollectionRepository(
             EntityManager entityManager,
@@ -41,6 +44,7 @@ public class PostgresUserCollectionRepository implements UserCollectionRepositor
         this.tiers = tiers;
         this.lock = lock;
         this.clock = clock;
+        this.tierSamples = new TierSampleCache(TIER_SAMPLE_REFRESH, clock);
     }
 
     @Override
@@ -81,43 +85,17 @@ public class PostgresUserCollectionRepository implements UserCollectionRepositor
     /**
      * 티어별로 고르게 게임을 뽑을 다음 사람을 선택해 반환.
      *
-     * @param seasonId
-     * @param minVersionMajor
-     * @param minMmr
-     * @param revisitBefore
-     * @return
+     * <p>티어별 표본 수는 1시간 간격으로만 다시 센다. 센 값을 갱신하다 실패해도 이 메서드가 하나의 트랜잭션에 묶여 있으면 이후 조회가 모두 막히므로, 메서드 전체를
+     * 트랜잭션 없이 실행한다.
      */
     @Override
-    @Transactional(readOnly = true)
     public Optional<UserCollectionCandidate> selectNext(
             int seasonId, int minVersionMajor, int minMmr, OffsetDateTime revisitBefore) {
-        // Aggregation/picking are PostgreSQL-specific queries; entity writes remain JPA.
-        List rows =
-                entityManager
-                        .createNativeQuery(
-                                """
-                WITH latest_patch AS (
-                  SELECT version_major, version_minor FROM games
-                  WHERE season_id = :season AND matching_mode = 3 AND matching_team_mode = 3
-                    AND version_major >= :major AND version_minor IS NOT NULL
-                  ORDER BY version_major DESC, version_minor DESC LIMIT 1
-                )
-                SELECT p.tier, count(*) FROM games g
-                JOIN latest_patch v ON g.version_major = v.version_major AND g.version_minor = v.version_minor
-                JOIN participants p ON p.game_id = g.game_id
-                WHERE g.season_id = :season AND g.matching_mode = 3 AND g.matching_team_mode = 3
-                GROUP BY p.tier
-                """)
-                        .setParameter("season", seasonId)
-                        .setParameter("major", minVersionMajor)
-                        .getResultList();
-
-        // <티어별, participants(참가자 god) 개수> 맵 생성
-        Map<String, Long> samples = new HashMap<>();
-        for (Object row : rows) {
-            Object[] values = (Object[]) row;
-            samples.put((String) values[0], ((Number) values[1]).longValue());
-        }
+        Map<String, Long> samples =
+                tierSamples.get(
+                        seasonId,
+                        minVersionMajor,
+                        () -> countLatestPatchTiers(seasonId, minVersionMajor));
         // 참가자 수별 티어 내림차수 정렬 리스트
         List<String> order = new ArrayList<>(TIERS);
         order.sort(Comparator.comparingLong(tier -> samples.getOrDefault(tier, 0L)));
@@ -129,6 +107,56 @@ public class PostgresUserCollectionRepository implements UserCollectionRepositor
             if (candidate.isPresent()) return candidate;
         }
         return Optional.empty();
+    }
+
+    /** 강제로 다음 선택 때 티어별 표본 수를 다시 센다. */
+    public void refreshTierSamples() {
+        tierSamples.invalidate();
+    }
+
+    /**
+     * 최신 패치 참가자의 티어별 개수. 경기 번호를 먼저 뽑고 그 번호의 참가자만 세어야 participants 본체 대신 V6 커버링 인덱스만 읽는다. 캐시를 거치지 않고
+     * 매번 DB를 읽으므로 선택 경로에서 직접 호출하지 않는다.
+     */
+    public Map<String, Long> countLatestPatchTiers(int seasonId, int minVersionMajor) {
+        // Aggregation/picking are PostgreSQL-specific queries; entity writes remain JPA.
+        List<?> rows =
+                entityManager
+                        .createNativeQuery(
+                                """
+                SELECT p.tier, count(*) FROM participants p
+                WHERE p.game_id = ANY (ARRAY(
+                  SELECT g.game_id FROM games g
+                  WHERE g.season_id = :season AND g.matching_mode = 3 AND g.matching_team_mode = 3
+                    AND g.version_major = (
+                      SELECT max(version_major) FROM games
+                      WHERE season_id = :season AND matching_mode = 3 AND matching_team_mode = 3
+                        AND version_major >= :major AND version_minor IS NOT NULL)
+                    AND g.version_minor = (
+                      SELECT max(version_minor) FROM games
+                      WHERE season_id = :season AND matching_mode = 3 AND matching_team_mode = 3
+                        AND version_minor IS NOT NULL
+                        AND version_major = (
+                          SELECT max(version_major) FROM games
+                          WHERE season_id = :season AND matching_mode = 3 AND matching_team_mode = 3
+                            AND version_major >= :major AND version_minor IS NOT NULL))))
+                GROUP BY p.tier
+                """)
+                        .setParameter("season", seasonId)
+                        .setParameter("major", minVersionMajor)
+                        .getResultList();
+
+        // <티어별, participants(참가자 god) 개수> 맵 생성
+        Map<String, Long> samples = new HashMap<>();
+        for (Object row : rows) {
+            Object[] values = (Object[]) row;
+            // A NULL tier is not one of the sampled tiers, and the cache copies the map.
+            if (values[0] == null) {
+                continue;
+            }
+            samples.put((String) values[0], ((Number) values[1]).longValue());
+        }
+        return samples;
     }
 
     /** fresh true -> 새로운 유저 찾아서 랜덤으로 fresh false -> 완료된 사람 중 오래된 순서로 */

@@ -34,6 +34,7 @@ import io.eranalytics.pipeline.erapi.ErApiException;
 import io.eranalytics.pipeline.migration.DatabaseMigration;
 import io.eranalytics.pipeline.persistence.game.GamePersistenceService;
 import io.eranalytics.pipeline.persistence.metadata.JpaNameMetadataStore;
+import io.eranalytics.pipeline.persistence.user.PostgresUserCollectionRepository;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -93,6 +94,7 @@ class GamePersistenceIntegrationTest {
     @Autowired BattleUserResultMapper mapper;
     @Autowired JdbcTemplate jdbc;
     @Autowired UserCollectionRepository frontier;
+    @Autowired PostgresUserCollectionRepository tierSamples;
     @Autowired JpaNameMetadataStore names;
     @Autowired RouteStore routes;
     @Autowired NameMatchUsageStore nameUsage;
@@ -446,6 +448,8 @@ class GamePersistenceIntegrationTest {
                 "syntheticranger",
                 700,
                 "SYNTHETICRANGER");
+        // The tier counts are cached for an hour, so each test starts from a fresh count.
+        tierSamples.refreshTierSamples();
     }
 
     @Test
@@ -972,6 +976,77 @@ class GamePersistenceIntegrationTest {
         sample(106, 40, 99, 1, "다이아몬드", 30);
         sample(107, 41, 5, 0, "다이아몬드", 20);
         assertThat(nextCandidate().nickname()).isEqualTo("synthetic_diamond");
+    }
+
+    @Test
+    void cachedTierCountsAreRecomputedOnlyAfterRefreshAndNotPerSelection() {
+        seedCandidates();
+        sample(201, 41, 5, 1, "플래티넘", 1);
+        sample(202, 41, 5, 1, "다이아몬드", 3);
+        sample(203, 41, 5, 1, "메테오라이트", 3);
+        sample(204, 41, 5, 1, "미스릴 이상", 3);
+        assertThat(nextCandidate().nickname()).isEqualTo("synthetic_platinum");
+        jdbc.update("DELETE FROM participants WHERE game_id=202");
+        jdbc.update("DELETE FROM participants WHERE game_id=203");
+        jdbc.update("DELETE FROM participants WHERE game_id=204");
+        sample(205, 41, 5, 1, "플래티넘", 9);
+        // Still the first count (platinum fewest): the second selection did not recount.
+        assertThat(nextCandidate().nickname()).isEqualTo("synthetic_platinum");
+        tierSamples.refreshTierSamples();
+        // Platinum now has the most; the other tiers have none, so the tie order puts diamond
+        // first.
+        assertThat(nextCandidate().nickname()).isEqualTo("synthetic_diamond");
+    }
+
+    @Test
+    void tierCountQueryMatchesLegacyQueryAcrossSeasonModeAndMissingPatchCases() {
+        sample(101, 41, 4, 1, "다이아몬드", 10);
+        sample(102, 41, 5, 1, "플래티넘", 4);
+        sample(103, 41, 5, 1, "다이아몬드", 1);
+        sample(104, 41, 5, 1, "메테오라이트", 2);
+        sample(105, 41, 5, 1, "미스릴 이상", 3);
+        sample(106, 40, 99, 1, "다이아몬드", 30);
+        sample(107, 41, 5, 0, "다이아몬드", 20);
+        sample(108, 41, 90, 1, "다이아몬드", 30);
+        jdbc.update("UPDATE games SET matching_mode=2 WHERE game_id=108");
+        sample(109, 41, 91, 1, "메테오라이트", 30);
+        jdbc.update("UPDATE games SET matching_team_mode=2 WHERE game_id=109");
+        sample(110, 41, 100, 1, "플래티넘", 30);
+        jdbc.update("UPDATE games SET version_minor=NULL WHERE game_id=110");
+        sample(111, 41, 3, 99, "미스릴 이상", 20);
+        sample(112, 41, 5, 1, null, 7);
+        sample(113, 41, 5, 1, "플래티넘", 2);
+        for (int major : List.of(0, 4, 5, 6, 101)) {
+            Map<String, Long> legacy = new HashMap<>();
+            jdbc.query(
+                    """
+                    WITH latest_patch AS (
+                      SELECT version_major, version_minor FROM games
+                      WHERE season_id = ? AND matching_mode = 3 AND matching_team_mode = 3
+                        AND version_major >= ? AND version_minor IS NOT NULL
+                      ORDER BY version_major DESC, version_minor DESC LIMIT 1
+                    )
+                    SELECT p.tier, count(*) FROM games g
+                    JOIN latest_patch v ON g.version_major = v.version_major AND g.version_minor = v.version_minor
+                    JOIN participants p ON p.game_id = g.game_id
+                    WHERE g.season_id = ? AND g.matching_mode = 3 AND g.matching_team_mode = 3
+                    GROUP BY p.tier
+                    """,
+                    rs -> {
+                        if (rs.getString(1) != null) legacy.put(rs.getString(1), rs.getLong(2));
+                    },
+                    41,
+                    major,
+                    41);
+            assertThat(tierSamples.countLatestPatchTiers(41, major)).isEqualTo(legacy);
+        }
+        assertThat(tierSamples.countLatestPatchTiers(41, 0))
+                .containsOnly(
+                        Map.entry("플래티넘", 6L),
+                        Map.entry("다이아몬드", 1L),
+                        Map.entry("메테오라이트", 2L),
+                        Map.entry("미스릴 이상", 3L));
+        assertThat(tierSamples.countLatestPatchTiers(41, 101)).isEmpty();
     }
 
     @Test

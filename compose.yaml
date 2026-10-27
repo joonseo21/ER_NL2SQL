@@ -10,6 +10,15 @@ services:
       COLLECTOR_PASSWORD: ${COLLECTOR_PASSWORD:?Set COLLECTOR_PASSWORD in .env}
       AGENT_RO_PASSWORD: ${AGENT_RO_PASSWORD:?Set AGENT_RO_PASSWORD in .env}
       API_SERVER_PASSWORD: ${API_SERVER_PASSWORD:?Set API_SERVER_PASSWORD in .env}
+    # Sized for the 3.8GiB instance. Changing these needs a postgres restart.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=768MB
+      - -c
+      - effective_cache_size=2GB
+      - -c
+      - track_io_timing=on
     ports:
       - "127.0.0.1:5433:5432"
     volumes:

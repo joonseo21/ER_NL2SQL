@@ -70,14 +70,14 @@ class FlywayMigrationIntegrationTest {
 
     @Test
     void initializesEmptyDatabaseAndDoesNotRepeatAppliedMigrations() {
-        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(11);
+        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(12);
         assertThat(
                         jdbc.queryForList(
                                 "SELECT version FROM flyway_schema_history WHERE version IS NOT NULL "
                                         + "ORDER BY installed_rank",
                                 String.class))
-                .containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10");
-        assertThat(flyway().info().current().getVersion().toString()).isEqualTo("10");
+                .containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11");
+        assertThat(flyway().info().current().getVersion().toString()).isEqualTo("11");
         flyway().validate();
         assertThat(flyway().migrate().migrationsExecuted).isZero();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM tiers", Integer.class)).isEqualTo(14);
@@ -95,7 +95,7 @@ class FlywayMigrationIntegrationTest {
                 .isEqualTo(3);
 
         DatabaseMigration.configure(url, "stage2_test", "").baselineVersion("2").load().baseline();
-        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(9);
+        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(10);
         assertThat(
                         jdbc.queryForObject(
                                 "SELECT type FROM flyway_schema_history WHERE version='2'",
@@ -173,6 +173,7 @@ class FlywayMigrationIntegrationTest {
                         "V8__question_requests_and_user_tier_access.sql",
                         "V9__routes_and_item_materials.sql",
                         "V10__name_match_usage.sql",
+                        "V11__autovacuum_ratios_for_large_tables.sql",
                         "R__runtime_privileges.sql")) {
             try (InputStream resource = getClass().getResourceAsStream("/db/migration/" + file)) {
                 Files.copy(resource, changed.resolve(file));
@@ -249,7 +250,7 @@ class FlywayMigrationIntegrationTest {
                             + extraValue
                             + ")");
         }
-        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(1);
+        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(2);
         for (String table : List.of("items", "trait_names", "tactical_skills")) {
             assertThat(
                             jdbc.queryForObject(
@@ -287,11 +288,54 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
+    void lowersAutovacuumRatiosOnLargeTablesWithoutChangingData() throws Exception {
+        DatabaseMigration.configure(url, "stage2_test", "").target("10").load().migrate();
+        jdbc.update("INSERT INTO games(game_id,season_id) VALUES (810001,41)");
+        String before =
+                jdbc.queryForObject("SELECT row_to_json(games)::text FROM games", String.class);
+        List<String> tables =
+                List.of(
+                        "participants",
+                        "participant_equipment",
+                        "participant_traits",
+                        "participant_mastery",
+                        "participant_matchups",
+                        "participant_deaths",
+                        "games");
+        for (String table : tables) {
+            assertThat(reloptions(table)).isNull();
+        }
+
+        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(1);
+
+        for (String table : tables) {
+            assertThat(reloptions(table))
+                    .containsExactlyInAnyOrder(
+                            "autovacuum_analyze_scale_factor=0.02",
+                            "autovacuum_vacuum_insert_scale_factor=0.02");
+        }
+        assertThat(jdbc.queryForObject("SELECT row_to_json(games)::text FROM games", String.class))
+                .isEqualTo(before);
+        flyway().validate();
+        assertThat(flyway().migrate().migrationsExecuted).isZero();
+    }
+
+    private String[] reloptions(String table) {
+        return jdbc.queryForObject(
+                "SELECT reloptions FROM pg_class WHERE oid = ?::regclass",
+                (rs, row) -> {
+                    java.sql.Array array = rs.getArray(1);
+                    return array == null ? null : (String[]) array.getArray();
+                },
+                table);
+    }
+
+    @Test
     void addsRoutesAfterV8PreservingNamesAndEnforcingKeysAndPrivileges() throws Exception {
         DatabaseMigration.configure(url, "stage2_test", "").target("8").load().migrate();
         jdbc.update(
                 "INSERT INTO items(code,name_ko,source,l10n_key,checked_at) VALUES(1,'name','source','key',now())");
-        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(2);
+        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(3);
         assertThat(jdbc.queryForObject("SELECT name_ko FROM items WHERE code=1", String.class))
                 .isEqualTo("name");
         jdbc.update("INSERT INTO routes(season_id,route_id) VALUES(41,7039),(42,7039)");
@@ -335,7 +379,7 @@ class FlywayMigrationIntegrationTest {
     @Test
     void upgradeAfterRepeatableWasAppliedAtV4GrantsNewNameTables() {
         DatabaseMigration.configure(url, "stage2_test", "").target("4").load().migrate();
-        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(6);
+        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(7);
         for (String table :
                 List.of(
                         "items",
@@ -375,7 +419,7 @@ class FlywayMigrationIntegrationTest {
                 "INSERT INTO users(season_id,nickname,tier) VALUES (41,'synthetic_user','플래티넘')");
         String usersBefore =
                 jdbc.queryForObject("SELECT row_to_json(users)::text FROM users", String.class);
-        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(4);
+        assertThat(flyway().migrate().migrationsExecuted).isEqualTo(5);
         assertThat(jdbc.queryForObject("SELECT row_to_json(games)::text FROM games", String.class))
                 .isEqualTo(before);
         assertThat(jdbc.queryForObject("SELECT row_to_json(users)::text FROM users", String.class))
