@@ -96,6 +96,22 @@ describe('가짜 서버의 동작', () => {
     expect((await api.askQuestion(request, 'CODE')).remaining_today).toBe(4)
   })
 
+  it('다른 질문 처리 중 시나리오는 접수 전 503 QUESTION_BUSY로 거절되어 횟수를 소비하지 않는다', async () => {
+    let scenario: MockScenarioId = 'error-question-busy'
+    const statuses: string[] = []
+    const api = createMockApi({ delayMs: 0, scenario: () => scenario, initialRemaining: 5 })
+    await expect(api.askQuestion(request, 'CODE', (s) => statuses.push(s))).rejects.toMatchObject({
+      code: 'QUESTION_BUSY',
+      status: 503,
+      accepted: null,
+      message: expect.stringContaining('이번 시도는 질문 횟수에 포함되지 않습니다'),
+    })
+    expect(statuses).toEqual([])
+
+    scenario = 'answer'
+    expect((await api.askQuestion(request, 'CODE')).remaining_today).toBe(4)
+  })
+
   it('접수한 뒤 에이전트가 실패하면 횟수는 소비된 채 오류가 된다', async () => {
     let scenario: MockScenarioId = 'error-agent'
     const statuses: string[] = []

@@ -8,7 +8,8 @@ interface Props {
 
 const STATUS_TEXT: Record<QuestionStatus | 'sending', string> = {
   sending: '질문을 보내는 중입니다…',
-  accepted: '질문이 접수되었습니다. 처리 순서를 기다리는 중입니다…',
+  // 처리 중인 질문이 있으면 서버가 접수 전에 거절하므로(spec D-22) 접수된 질문은 곧 처리가 시작된다.
+  accepted: '질문이 접수되었습니다. 곧 처리를 시작합니다…',
   processing: '전적 DB를 조회하고 답변을 만드는 중입니다…',
   // completed·failed는 곧 결과나 오류 화면으로 바뀌므로 짧게 머문다.
   completed: '결과를 불러오는 중입니다…',

@@ -8,6 +8,8 @@ export type ApiErrorCode =
   | 'QUESTION_NOT_FOUND'
   | 'STORAGE_BUSY'
   | 'COLLECTION_UNAVAILABLE'
+  // 다른 질문을 처리 중이라 접수 전에 거절(HTTP 503, spec D-22). 접수되지 않아 횟수를 쓰지 않는다.
+  | 'QUESTION_BUSY'
   // 상태 조회 본문(HTTP 200)에서 status=failed일 때 오는 처리 실패 코드 (계약의 "상태 조회와 비동기 실패")
   | 'AGENT_AUTH_FAILED'
   | 'AGENT_REQUEST_REJECTED'
@@ -50,6 +52,19 @@ const FAILURE_MESSAGES: Partial<Record<ApiErrorCode, string>> = {
 
 const GENERIC_FAILURE_MESSAGE = '질문을 처리하지 못했습니다. 잠시 뒤 다시 시도해 주세요.'
 
+/** 처리 중이라 접수 전에 거절됐을 때의 안내 문구(spec D-22). 서버 message가 비어 있을 때만 쓴다. */
+export const QUESTION_BUSY_MESSAGE =
+  '지금 다른 질문을 처리하고 있습니다. 잠시 뒤 다시 질문해 주세요. 이번 시도는 질문 횟수에 포함되지 않습니다.'
+
+/** HTTP 오류 본문에 message가 없을 때 코드별로 쓰는 문구다. 없는 코드는 상태 코드가 든 기본 문구를 쓴다. */
+const HTTP_ERROR_MESSAGES: Partial<Record<ApiErrorCode, string>> = {
+  QUESTION_BUSY: QUESTION_BUSY_MESSAGE,
+}
+
+export function httpErrorMessage(code: ApiErrorCode, status: number): string {
+  return HTTP_ERROR_MESSAGES[code] ?? `요청을 처리하지 못했습니다. (HTTP ${status})`
+}
+
 /** 서버가 보낸 문자열이 알려진 오류 코드면 그대로, 아니면 UNKNOWN으로 바꾼다. */
 export function toApiErrorCode(value: unknown): ApiErrorCode {
   if (typeof value !== 'string') return 'UNKNOWN'
@@ -66,6 +81,7 @@ const SERVER_CODE_SET: Record<string, true> = {
   QUESTION_NOT_FOUND: true,
   STORAGE_BUSY: true,
   COLLECTION_UNAVAILABLE: true,
+  QUESTION_BUSY: true,
   AGENT_AUTH_FAILED: true,
   AGENT_REQUEST_REJECTED: true,
   AGENT_INTERNAL_ERROR: true,
@@ -110,17 +126,21 @@ export class ApiError extends Error {
   readonly status: number | null
   /** 질문을 접수한 뒤에 난 오류면 접수 정보. 접수 전 오류면 null */
   readonly accepted: AcceptedInfo | null
+  /** 접수 전 오류 본문에 서버가 오늘 남은 횟수(remaining_today)를 담아 보냈으면 그 값. 없으면 null */
+  readonly remainingToday: number | null
 
   constructor(
     code: ApiErrorCode,
     message: string,
     status: number | null = null,
     accepted: AcceptedInfo | null = null,
+    remainingToday: number | null = null,
   ) {
     super(message)
     this.name = 'ApiError'
     this.code = code
     this.status = status
     this.accepted = accepted
+    this.remainingToday = remainingToday
   }
 }

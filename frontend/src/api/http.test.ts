@@ -152,6 +152,49 @@ describe('질문: 접수 후 결과 조회', () => {
     expect(fetchFn).toHaveBeenCalledTimes(1)
   })
 
+  it('처리 중이라 접수 전에 거절되면(503 QUESTION_BUSY) 조회 없이 접수 정보 없는 오류를 던진다', async () => {
+    const { api, fetchFn } = setup(() =>
+      jsonResponse({ code: 'QUESTION_BUSY', message: '서버가 보낸 거절 안내입니다.' }, 503),
+    )
+    const statuses: QuestionStatus[] = []
+    await expect(
+      api.askQuestion({ question: '질문' }, 'c', (s) => statuses.push(s)),
+    ).rejects.toMatchObject({
+      code: 'QUESTION_BUSY',
+      status: 503,
+      message: '서버가 보낸 거절 안내입니다.',
+      accepted: null,
+      remainingToday: null,
+    })
+    expect(fetchFn).toHaveBeenCalledTimes(1) // 자동으로 다시 보내지 않는다.
+    expect(statuses).toEqual([])
+  })
+
+  it('QUESTION_BUSY의 message가 비어 있으면 횟수에 포함되지 않는다는 기본 문구를 쓴다', async () => {
+    const { api } = setup(() => jsonResponse({ code: 'QUESTION_BUSY', message: '' }, 503))
+    await expect(api.askQuestion({ question: '질문' }, 'c')).rejects.toMatchObject({
+      code: 'QUESTION_BUSY',
+      message:
+        '지금 다른 질문을 처리하고 있습니다. 잠시 뒤 다시 질문해 주세요. 이번 시도는 질문 횟수에 포함되지 않습니다.',
+    })
+  })
+
+  it('오류 본문에 remaining_today가 있으면 오류에 담고, 숫자가 아니면 무시한다', async () => {
+    const withCount = setup(() =>
+      jsonResponse({ code: 'QUESTION_BUSY', message: '거절', remaining_today: 12 }, 503),
+    )
+    await expect(withCount.api.askQuestion({ question: '질문' }, 'c')).rejects.toMatchObject({
+      remainingToday: 12,
+    })
+
+    const withText = setup(() =>
+      jsonResponse({ code: 'QUESTION_BUSY', message: '거절', remaining_today: '12' }, 503),
+    )
+    await expect(withText.api.askQuestion({ question: '질문' }, 'c')).rejects.toMatchObject({
+      remainingToday: null,
+    })
+  })
+
   it('조회 중 404는 다시 시도하지 않고 던진다', async () => {
     const { api, fetchFn } = setup([
       accepted(),

@@ -3,7 +3,7 @@ import answerWithoutSummary from './mocks/answer-without-summary.json'
 import answer from './mocks/answer.json'
 import clarification from './mocks/clarification.json'
 import notice from './mocks/notice.json'
-import { ApiError, failureMessage } from './errors'
+import { ApiError, failureMessage, QUESTION_BUSY_MESSAGE } from './errors'
 import type { AcceptedInfo } from './errors'
 import { FEEDBACK_COMMENT_MAX } from './types'
 import type {
@@ -31,6 +31,7 @@ export const MOCK_SCENARIOS = [
   { id: 'clarification', label: '되묻기' },
   { id: 'error-invite-limit', label: '오류: 코드별 한도 초과' },
   { id: 'error-global-limit', label: '오류: 전체 한도 초과' },
+  { id: 'error-question-busy', label: '오류: 다른 질문 처리 중(접수 전 거절)' },
   { id: 'error-agent', label: '오류: 접수 뒤 처리 실패(에이전트 연결 실패)' },
   { id: 'error-timeout', label: '오류: 처리 지연(자동 조회 중단)' },
 ] as const
@@ -140,7 +141,7 @@ export function createMockApi(options: MockApiOptions = {}): ErApi {
 
     /**
      * 실제 서버처럼 접수(accepted) → 처리 중(processing) → 완료(completed)/실패(failed) 순서를 거친다.
-     * 접수 단계의 오류(초대 코드·한도·형식)는 바로 던지고, 접수한 뒤의 실패는 횟수를 소비한 채 던진다.
+     * 접수 단계의 오류(초대 코드·한도·형식·처리 중 거절)는 바로 던지고, 접수한 뒤의 실패는 횟수를 소비한 채 던진다.
      */
     async askQuestion(request, inviteCode, onStatus) {
       const step = Math.round(delayMs / 3)
@@ -158,6 +159,8 @@ export function createMockApi(options: MockApiOptions = {}): ErApi {
           throw new ApiError('INVITE_LIMIT_EXCEEDED', '오늘 질문 횟수를 모두 사용했습니다.', 429)
         case 'error-global-limit':
           throw new ApiError('GLOBAL_LIMIT_EXCEEDED', '오늘 전체 질문 횟수를 모두 사용했습니다.', 429)
+        case 'error-question-busy':
+          throw new ApiError('QUESTION_BUSY', QUESTION_BUSY_MESSAGE, 503)
       }
 
       // 접수하면 횟수를 소비한다. 안내·되묻기도, 접수 이후의 실패도 마찬가지다(웹 API 명세).

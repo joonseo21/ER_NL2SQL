@@ -170,7 +170,9 @@ describe('질문하기', () => {
     expect(screen.getByLabelText('티어')).toBeDisabled()
 
     act(() => notify('accepted'))
-    expect(screen.getByRole('status')).toHaveTextContent('질문이 접수되었습니다')
+    expect(screen.getByRole('status')).toHaveTextContent('질문이 접수되었습니다. 곧 처리를 시작합니다')
+    // 처리 중이면 접수 전에 거절하므로(대기열 없음) 순서를 기다린다는 안내를 하지 않는다.
+    expect(screen.getByRole('status')).not.toHaveTextContent('순서')
 
     act(() => notify('processing'))
     expect(screen.getByRole('status')).toHaveTextContent('조회하고 답변을 만드는 중')
@@ -224,6 +226,48 @@ describe('오류', () => {
     expect(alert).toHaveTextContent('오늘 질문 횟수를 모두 사용했습니다.')
     expect(alert).toHaveTextContent('한국 시간 자정에 초기화됩니다')
     expect(screen.getByRole('heading', { name: '조건' })).toBeInTheDocument()
+  })
+
+  it('처리 중이라 접수가 거절되면 안내를 보여 주고 질문·조건·남은 횟수를 그대로 두어 다시 보낼 수 있다', async () => {
+    const { user, api, setScenario } = setup('error-question-busy')
+    await reachQuestionScreen(user)
+    await user.selectOptions(screen.getByLabelText('티어'), '다이아몬드')
+    await ask(user, '아드리아나 승률은?')
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(
+      '지금 다른 질문을 처리하고 있습니다. 잠시 뒤 다시 질문해 주세요. 이번 시도는 질문 횟수에 포함되지 않습니다.',
+    )
+    // 접수되지 않았으므로 횟수 포함 안내가 없고 남은 횟수도 그대로다.
+    expect(alert).not.toHaveTextContent('오늘 질문 횟수에 포함되었습니다')
+    expect(screen.getByText('오늘 남은 질문 50회')).toBeInTheDocument()
+    // 결과 다시 확인 버튼도 없다. 확인할 접수 번호가 없기 때문이다.
+    expect(within(alert).queryByRole('button')).not.toBeInTheDocument()
+
+    // 질문과 조건이 남아 있어 그대로 다시 보낼 수 있고, 자동으로 다시 보내지는 않았다.
+    expect(screen.getByRole('textbox', { name: /궁금한 점/ })).toHaveValue('아드리아나 승률은?')
+    expect(screen.getByLabelText('티어')).toHaveValue('다이아몬드')
+    expect(api.askQuestion).toHaveBeenCalledTimes(1)
+
+    setScenario('answer')
+    await user.click(screen.getByRole('button', { name: '질문하기' }))
+    await screen.findByLabelText('답변')
+    expect(api.askQuestion).toHaveBeenCalledTimes(2)
+    expect(api.askQuestion.mock.calls[1][0]).toMatchObject({
+      question: '아드리아나 승률은?',
+      conditions: { tier: '다이아몬드' },
+    })
+    expect(screen.getByText('오늘 남은 질문 49회')).toBeInTheDocument()
+  })
+
+  it('처리 중 거절 응답에 서버가 남은 횟수를 주면 그 값으로 표시한다', async () => {
+    const { user, api } = setup()
+    await reachQuestionScreen(user)
+    api.askQuestion.mockRejectedValueOnce(new ApiError('QUESTION_BUSY', '처리 중입니다.', 503, null, 47))
+
+    await ask(user)
+    expect(await screen.findByRole('alert')).toHaveTextContent('처리 중입니다.')
+    expect(screen.getByText('오늘 남은 질문 47회')).toBeInTheDocument()
   })
 
   it('질문 중 초대 코드가 거절되면 첫 화면으로 돌아가 안내한다', async () => {

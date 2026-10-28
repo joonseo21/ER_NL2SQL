@@ -1,11 +1,11 @@
 # frontend 파트 (질문 화면)
 
-공통 규칙은 [CLAUDE.md](../CLAUDE.md)다. 이 파일은 이 파트의 범위만 정한다. 10단계에서 프로젝트를 만들었고 API 서버가 없는 동안 가짜 응답으로 개발한다.
+공통 규칙은 [CLAUDE.md](../CLAUDE.md)다. 이 파일은 이 파트의 범위만 정한다. spec 개발 순서의 10단계(질문 화면과 후기·수집 현황)에서 프로젝트를 만들었다. 개발 서버(`npm run dev`)와 테스트의 기본은 가짜 응답이고, 프로덕션 빌드(`npm run build`)의 기본은 실제 `/api` 호출이다. 환경 변수 `VITE_API_MODE`를 `mock` 또는 `http`로 명시하면 그 값이 우선한다.
 
 ## 담당
 
 - `frontend/`: React + Vite + TypeScript 앱. 조건 선택, 질문 입력, 결과 표·SQL·요약·데이터 근거, 후기, 이용자용 수집 현황
-- `compose.yaml`의 frontend 서비스
+- 빌드 결과 `frontend/dist`(Git 제외): Spring 프로그램이 `/`에서 제공하고 API는 `/api`다(spec D-11). 별도 frontend 서비스와 Dockerfile은 없고, 공용 `compose.yaml`의 Spring 서비스가 dist를 읽기 전용으로 연결한다. 소스를 바꾸면 `npm run build`로 dist를 다시 만든다.
 
 ## 읽을 문서
 
@@ -30,5 +30,9 @@
 | `npm run lint` | ESLint |
 | `npm run typecheck` | TypeScript 타입 검사 |
 | `npm test` | Vitest 단위·화면 테스트 (한 번 실행) |
-| `npm run build` | 타입 검사 후 프로덕션 빌드 |
-| `npm run dev` | 개발 서버 |
+| `npm run build` | 타입 검사 후 프로덕션 빌드. 결과는 `frontend/dist` |
+| `npm run dev` | 개발 서버 (기본은 가짜 응답, `/api` 프록시는 없음) |
+| `npm run test:watch` | 테스트 감시 모드 |
+| `npm run preview` | 빌드 결과 미리보기 |
+
+빌드 전에 `.env.local` 등에 `VITE_API_MODE=mock`이 남아 있지 않은지 확인한다. 남아 있으면 프로덕션 빌드도 가짜 응답이 된다. 소스를 바꾸지 않고 빌드만 확인할 때는 `npm run build -- --outDir <임시 폴더> --emptyOutDir`로 출력해 현재 dist를 덮어쓰지 않는다(릴리스 준비가 dist 파일의 해시를 기록해 두었다).

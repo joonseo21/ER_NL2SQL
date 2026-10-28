@@ -62,14 +62,23 @@ export function QuestionScreen({ api, inviteCode, initialRemaining, onInviteInva
     setReloadCount((n) => n + 1)
   }
 
-  /** 질문이나 결과 확인이 실패했을 때의 공통 처리. 접수된 질문이면 이미 소비된 횟수를 반영한다. */
+  /**
+   * 질문이나 결과 확인이 실패했을 때의 공통 처리. 접수된 질문이면 이미 소비된 횟수를 반영한다.
+   * 입력한 질문과 고른 조건은 지우지 않으므로 같은 내용을 다시 보낼 수 있다. 자동으로 다시 보내지는 않는다.
+   */
   function handleFailure(e: unknown) {
     const error = asApiError(e)
     if (error.code === 'INVITE_INVALID') {
       onInviteInvalid()
       return
     }
-    if (error.accepted) setRemaining(error.accepted.remainingToday)
+    if (error.accepted) {
+      setRemaining(error.accepted.remainingToday)
+    } else if (error.code === 'QUESTION_BUSY' && error.remainingToday !== null) {
+      // 처리 중이라 접수 전에 거절된 시도는 횟수를 쓰지 않는다. 서버가 남은 횟수를 알려 줄 때만 그 값으로 맞춘다.
+      // 한도 초과 뒤의 표시는 아직 정하지 않은 일이라 여기서 바꾸지 않는다.
+      setRemaining(error.remainingToday)
+    }
     setResult({ status: 'error', error })
   }
 

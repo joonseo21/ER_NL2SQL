@@ -1,4 +1,4 @@
-import { ApiError, failureMessage, toApiErrorCode } from './errors'
+import { ApiError, failureMessage, httpErrorMessage, toApiErrorCode } from './errors'
 import type { AcceptedInfo } from './errors'
 import type {
   CollectionSummaryResponse,
@@ -119,7 +119,7 @@ export function createHttpApi(options: HttpApiOptions = {}): ErApi {
   /** 질문을 이미 접수한 뒤의 오류에는 접수 정보를 붙여, 화면이 횟수 소비와 재확인을 안내할 수 있게 한다. */
   function withAccepted(error: unknown, info: AcceptedInfo): unknown {
     return error instanceof ApiError && error.accepted === null
-      ? new ApiError(error.code, error.message, error.status, info)
+      ? new ApiError(error.code, error.message, error.status, info, error.remainingToday)
       : error
   }
 
@@ -213,24 +213,33 @@ export function createHttpApi(options: HttpApiOptions = {}): ErApi {
   }
 }
 
-/** 오류 본문은 { code, message }다. 형식이 다르면 UNKNOWN으로 두고 상태 코드만 남긴다. */
+/**
+ * 오류 본문은 { code, message }다. 형식이 다르면 UNKNOWN으로 두고 상태 코드만 남긴다.
+ * message가 비어 있으면 코드별 문구(없으면 상태 코드가 든 기본 문구)를 쓴다.
+ * 본문에 remaining_today가 숫자로 있으면 함께 옮긴다. 현재 계약의 오류 본문에는 없다.
+ */
 async function toApiError(response: Response): Promise<ApiError> {
   try {
     const body: unknown = await response.json()
     if (typeof body === 'object' && body !== null) {
-      const { code, message } = body as { code?: unknown; message?: unknown }
+      const { code, message, remaining_today } = body as {
+        code?: unknown
+        message?: unknown
+        remaining_today?: unknown
+      }
+      const apiCode = toApiErrorCode(code)
       return new ApiError(
-        toApiErrorCode(code),
-        typeof message === 'string' && message !== '' ? message : fallbackMessage(response.status),
+        apiCode,
+        typeof message === 'string' && message.trim() !== ''
+          ? message
+          : httpErrorMessage(apiCode, response.status),
         response.status,
+        null,
+        typeof remaining_today === 'number' && Number.isFinite(remaining_today) ? remaining_today : null,
       )
     }
   } catch {
     // 본문이 JSON이 아니면 아래의 기본 메시지를 쓴다.
   }
-  return new ApiError('UNKNOWN', fallbackMessage(response.status), response.status)
-}
-
-function fallbackMessage(status: number): string {
-  return `요청을 처리하지 못했습니다. (HTTP ${status})`
+  return new ApiError('UNKNOWN', httpErrorMessage('UNKNOWN', response.status), response.status)
 }
