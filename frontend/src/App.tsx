@@ -5,6 +5,7 @@ import { CollectionStatus } from './components/CollectionStatus'
 import { InviteGate } from './components/InviteGate'
 import { MockBar } from './components/MockBar'
 import { SERVICE_GUIDE_ID, ServiceGuide } from './components/ServiceGuide'
+import { clearLastResult } from './lib/lastResult'
 import { clearPendingQuestion } from './lib/pendingQuestion'
 import { clearInviteCode, loadInviteCode, saveInviteCode } from './lib/session'
 import { QuestionScreen } from './QuestionScreen'
@@ -58,8 +59,9 @@ export default function App({ api = defaultApi }: Props) {
 
   function handleLogout() {
     clearInviteCode()
-    // 다른 초대 코드로 들어오면 이전 코드의 진행 중인 질문을 이어 보지 않는다.
+    // 다른 초대 코드로 들어오면 이전 코드의 진행 중인 질문과 마지막 결과를 보여 주지 않는다.
     clearPendingQuestion()
+    clearLastResult()
     setRejected(false)
     setSession(null)
   }

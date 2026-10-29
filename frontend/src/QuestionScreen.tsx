@@ -7,11 +7,13 @@ import { ErrorNotice } from './components/ErrorNotice'
 import { FeedbackForm } from './components/FeedbackForm'
 import { PendingStatus } from './components/PendingStatus'
 import { QuestionForm } from './components/QuestionForm'
+import { RequestIdBox } from './components/RequestIdBox'
 import { RequestLookup } from './components/RequestLookup'
 import { ResultView } from './components/ResultView'
 import { DEFAULT_SELECTION, toRequestConditions } from './lib/conditions'
 import type { ConditionSelection } from './lib/conditions'
 import { QUESTION_INPUT_ID } from './lib/dom'
+import { clearLastResult, loadLastResult, saveLastResult } from './lib/lastResult'
 import { clearPendingQuestion, loadPendingQuestion, savePendingQuestion } from './lib/pendingQuestion'
 
 interface Props {
@@ -38,7 +40,14 @@ type ResultState =
       /** 새로고침 뒤 이어서 조회하는 중이면 접수 시각. 경과 시간을 여기서부터 센다. */
       resumedFrom?: number
     }
-  | { status: 'done'; response: QuestionResponse }
+  | {
+      status: 'done'
+      response: QuestionResponse
+      /** 결과의 접수 번호. 모르면 null */
+      requestId: string | null
+      /** 새로고침 전에 받아 같은 탭에 보관해 둔 결과를 다시 보여 주는 중이면 true */
+      restored?: boolean
+    }
   | { status: 'error'; error: ApiError }
 
 export function QuestionScreen({ api, inviteCode, initialRemaining, onInviteInvalid }: Props) {
@@ -46,20 +55,31 @@ export function QuestionScreen({ api, inviteCode, initialRemaining, onInviteInva
   const [reloadCount, setReloadCount] = useState(0)
   const [selection, setSelection] = useState<ConditionSelection>(DEFAULT_SELECTION)
   // 같은 탭에서 새로고침했으면 진행 중이던 질문을 이어서 조회한다(접수 번호와 접수 시각을 보관해 둠).
+  // 진행 중인 질문이 없으면 마지막으로 받은 결과를 다시 보여 준다.
   const [resumeTarget] = useState(() => loadPendingQuestion(inviteCode))
-  const [question, setQuestion] = useState(resumeTarget?.question ?? '')
-  const [result, setResult] = useState<ResultState>(() =>
-    resumeTarget === null
-      ? { status: 'idle' }
-      : {
-          status: 'pending',
-          progress: null,
-          requestId: resumeTarget.requestId,
-          resumedFrom: resumeTarget.acceptedAt,
-        },
-  )
+  const [restoredResult] = useState(() => (resumeTarget === null ? loadLastResult(inviteCode) : null))
+  const [question, setQuestion] = useState(resumeTarget?.question ?? restoredResult?.response.question ?? '')
+  const [result, setResult] = useState<ResultState>(() => {
+    if (resumeTarget !== null) {
+      return {
+        status: 'pending',
+        progress: null,
+        requestId: resumeTarget.requestId,
+        resumedFrom: resumeTarget.acceptedAt,
+      }
+    }
+    if (restoredResult !== null) {
+      return {
+        status: 'done',
+        response: restoredResult.response,
+        requestId: restoredResult.requestId,
+        restored: true,
+      }
+    }
+    return { status: 'idle' }
+  })
   const [remaining, setRemaining] = useState<number | null>(
-    initialRemaining ?? resumeTarget?.remainingToday ?? null,
+    initialRemaining ?? resumeTarget?.remainingToday ?? restoredResult?.response.remaining_today ?? null,
   )
   // 화면이 사라지면(초대 코드 변경 등) 진행 중인 조회 반복을 멈춘다.
   const lifetime = useRef<AbortController | null>(null)
@@ -87,12 +107,16 @@ export function QuestionScreen({ api, inviteCode, initialRemaining, onInviteInva
     setReloadCount((n) => n + 1)
   }
 
-  /** 결과를 받았다. 보관해 둔 진행 중인 질문을 지운다. */
-  const handleDone = useCallback((response: QuestionResponse, requestId: string | null) => {
-    if (requestId !== null) clearPendingQuestion(requestId)
-    if (response.remaining_today !== null) setRemaining(response.remaining_today)
-    setResult({ status: 'done', response })
-  }, [])
+  /** 결과를 받았다. 보관해 둔 진행 중인 질문을 지우고, 새로고침해도 다시 볼 수 있게 결과를 보관한다. */
+  const handleDone = useCallback(
+    (response: QuestionResponse, requestId: string | null) => {
+      if (requestId !== null) clearPendingQuestion(requestId)
+      saveLastResult(inviteCode, { requestId, response })
+      if (response.remaining_today !== null) setRemaining(response.remaining_today)
+      setResult({ status: 'done', response, requestId })
+    },
+    [inviteCode],
+  )
 
   /**
    * 질문이나 결과 확인이 실패했을 때의 공통 처리.
@@ -162,6 +186,8 @@ export function QuestionScreen({ api, inviteCode, initialRemaining, onInviteInva
           // 접수되면 번호를 보여 주고, 새로고침해도 이어 볼 수 있게 같은 탭에 보관한다.
           requestId = accepted.requestId
           savePendingQuestion(inviteCode, { ...accepted, question: text })
+          // 새 질문이 접수되면 이전 결과는 새로고침 뒤 다시 보여 주지 않는다.
+          clearLastResult()
           setRemaining(accepted.remainingToday)
           setResult((current) =>
             current.status === 'pending' ? { ...current, requestId: accepted.requestId } : current,
@@ -178,6 +204,7 @@ export function QuestionScreen({ api, inviteCode, initialRemaining, onInviteInva
   /** 접수 번호로 결과를 한 번 확인한다. 질문을 다시 보내지 않고 횟수에도 영향이 없다. */
   async function handleCheck(requestId: string, remainingToday: number | null) {
     const signal = lifetime.current?.signal
+    clearLastResult()
     setResult({ status: 'pending', progress: 'processing', requestId })
     try {
       const response = await api.checkQuestion(requestId, remainingToday, inviteCode)
@@ -243,6 +270,20 @@ export function QuestionScreen({ api, inviteCode, initialRemaining, onInviteInva
       {result.status === 'done' && (
         <>
           <ResultView response={result.response} options={options} onUseQuestion={handleUseQuestion} />
+          {(result.restored || result.requestId !== null) && (
+            <div className="result-id muted small">
+              {result.restored && <p>새로고침 전에 받은 결과입니다.</p>}
+              {result.requestId !== null && (
+                <>
+                  <RequestIdBox requestId={result.requestId} />
+                  <p>
+                    탭을 닫은 뒤에도 초대 코드를 다시 입력하고 아래 '접수 번호로 결과 확인'에 이 번호를 넣으면 이 결과를
+                    다시 볼 수 있습니다.
+                  </p>
+                </>
+              )}
+            </div>
+          )}
           <FeedbackForm
             key={result.response.log_id}
             api={api}

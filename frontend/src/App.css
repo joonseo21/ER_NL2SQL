@@ -605,3 +605,8 @@ th.num {
 .guide-section p {
   margin: 4px 0 0;
 }
+
+/* 결과 아래의 접수 번호와 복원 안내 */
+.result-id p {
+  margin: 4px 0 0;
+}

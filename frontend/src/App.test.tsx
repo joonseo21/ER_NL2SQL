@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import App from './App'
@@ -6,6 +6,7 @@ import { ApiError } from './api'
 import { createMockApi } from './api/mock'
 import type { MockScenarioId } from './api/mock'
 import type { ErApi, QuestionResponse, QuestionStatus } from './api/types'
+import { loadLastResult } from './lib/lastResult'
 import { loadPendingQuestion, savePendingQuestion } from './lib/pendingQuestion'
 import { saveInviteCode } from './lib/session'
 
@@ -860,6 +861,106 @@ describe('접수 번호 표시와 복구(spec D-23)', () => {
       expect(alert).toHaveTextContent('이 초대 코드로 접수한 질문 중에서 이 번호를 찾지 못했습니다')
       expect(alert).not.toHaveTextContent('포함되었습니다')
       expect(within(alert).queryByRole('button', { name: '복사' })).not.toBeInTheDocument()
+    }
+  })
+})
+
+describe('답변 화면의 접수 번호와 새로고침 뒤 결과 유지', () => {
+  it('답변 아래에 접수 번호와 복사 버튼, 다시 보는 방법을 보여 준다', async () => {
+    const { user } = setup('answer')
+    await reachQuestionScreen(user)
+    await ask(user)
+
+    await screen.findByLabelText('답변')
+    const box = document.querySelector('.result-id') as HTMLElement
+    expect(box.textContent).toMatch(UUID_PATTERN)
+    expect(within(box).getByRole('button', { name: '복사' })).toBeInTheDocument()
+    expect(box).toHaveTextContent("'접수 번호로 결과 확인'에 이 번호를 넣으면")
+    expect(box).not.toHaveTextContent('새로고침 전에 받은 결과입니다.')
+  })
+
+  it('접수 번호로 확인한 결과에도 그 번호를 보여 준다', async () => {
+    const requestId = await acceptElsewhere('answer')
+    const { user } = setup()
+    await reachQuestionScreen(user)
+    await lookUp(user, requestId)
+
+    await screen.findByLabelText('답변')
+    expect(within(document.querySelector('.result-id') as HTMLElement).getByText(requestId)).toBeInTheDocument()
+  })
+
+  it('같은 탭에서 새로고침해도 마지막 결과를 다시 보여 주고 질문이나 조회를 다시 보내지 않는다', async () => {
+    const first = setup('notice')
+    await reachQuestionScreen(first.user)
+    await ask(first.user, '보관할 질문')
+    await screen.findByLabelText('안내')
+    const requestId = (document.querySelector('.result-id code') as HTMLElement).textContent
+
+    cleanup() // 새로고침: 화면은 사라지고 같은 탭의 sessionStorage는 남는다.
+    const second = setup('answer')
+
+    expect(await screen.findByLabelText('안내')).toBeInTheDocument()
+    expect(screen.getByText('새로고침 전에 받은 결과입니다.')).toBeInTheDocument()
+    expect(within(document.querySelector('.result-id') as HTMLElement).getByText(requestId!)).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: /궁금한 점/ })).toHaveValue('보관할 질문')
+    expect(screen.getByText('오늘 남은 질문 49회')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: /어땠나요/ })).toBeInTheDocument()
+    expect(countText('이 응답도 오늘 질문 횟수에 포함됩니다.')).toBe(1)
+    expect(second.api.askQuestion).not.toHaveBeenCalled()
+    expect(second.api.checkQuestion).not.toHaveBeenCalled()
+    expect(second.api.resumeQuestion).not.toHaveBeenCalled()
+  })
+
+  it('새 질문이 접수되면 이전 결과는 새로고침 뒤 다시 보여 주지 않는다', async () => {
+    const first = setup('answer')
+    await reachQuestionScreen(first.user)
+    await ask(first.user)
+    await screen.findByLabelText('답변')
+
+    first.setScenario('error-agent')
+    await first.user.click(screen.getByRole('button', { name: '질문하기' }))
+    await screen.findByRole('alert')
+
+    cleanup()
+    setup()
+    await screen.findByRole('heading', { name: '조건' })
+    expect(screen.queryByLabelText('답변')).not.toBeInTheDocument()
+    expect(screen.queryByText('새로고침 전에 받은 결과입니다.')).not.toBeInTheDocument()
+  })
+
+  it('초대 코드를 바꾸면 보관한 결과를 지우고, 다른 초대 코드로는 보여 주지 않는다', async () => {
+    const first = setup('answer')
+    await reachQuestionScreen(first.user)
+    await ask(first.user)
+    await screen.findByLabelText('답변')
+    expect(loadLastResult('friend')).not.toBeNull()
+
+    await first.user.click(screen.getByRole('button', { name: '초대 코드 바꾸기' }))
+    expect(loadLastResult('friend')).toBeNull()
+  })
+
+  it('저장소를 쓸 수 없어도 답변과 번호는 보이고, 새로고침 뒤에는 빈 질문 화면이다', async () => {
+    const blocked = () => {
+      throw new Error('blocked')
+    }
+    const spies = [
+      vi.spyOn(Storage.prototype, 'setItem').mockImplementation(blocked),
+      vi.spyOn(Storage.prototype, 'getItem').mockImplementation(blocked),
+      vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(blocked),
+    ]
+    try {
+      const first = setup('answer')
+      await reachQuestionScreen(first.user)
+      await ask(first.user)
+      await screen.findByLabelText('답변')
+      expect((document.querySelector('.result-id') as HTMLElement).textContent).toMatch(UUID_PATTERN)
+
+      cleanup()
+      setup()
+      // 초대 코드도 저장하지 못했으므로 첫 화면부터 다시 시작한다.
+      expect(await screen.findByRole('heading', { name: '초대 코드 입력' })).toBeInTheDocument()
+    } finally {
+      spies.forEach((spy) => spy.mockRestore())
     }
   })
 })
