@@ -4,7 +4,7 @@
 
 ## 담당
 
-- `frontend/`: React + Vite + TypeScript 앱. 조건 선택, 질문 입력, 결과 표·SQL·요약·데이터 근거, 후기, 이용자용 수집 현황
+- `frontend/`: React + Vite + TypeScript 앱. 조건 선택, 질문 입력, 결과 표·SQL·요약·데이터 근거, 후기, 이용자용 수집 현황, 접수 번호 표시·복구, 서비스 안내. 서비스 안내 문구는 `src/content/serviceGuide.ts` 한 파일에 있으며 사용자가 확인한 문구라 임의로 고치지 않는다.
 - 빌드 결과 `frontend/dist`(Git 제외): Spring 프로그램이 `/`에서 제공하고 API는 `/api`다(spec D-11). 별도 frontend 서비스와 Dockerfile은 없고, 공용 `compose.yaml`의 Spring 서비스가 dist를 읽기 전용으로 연결한다. 소스를 바꾸면 `npm run build`로 dist를 다시 만든다.
 
 ## 읽을 문서

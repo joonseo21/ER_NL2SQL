@@ -1,9 +1,10 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { createApi, isMockMode } from './api'
 import type { ErApi } from './api'
 import { CollectionStatus } from './components/CollectionStatus'
 import { InviteGate } from './components/InviteGate'
 import { MockBar } from './components/MockBar'
+import { SERVICE_GUIDE_ID, ServiceGuide } from './components/ServiceGuide'
 import { clearPendingQuestion } from './lib/pendingQuestion'
 import { clearInviteCode, loadInviteCode, saveInviteCode } from './lib/session'
 import { QuestionScreen } from './QuestionScreen'
@@ -33,6 +34,15 @@ export default function App({ api = defaultApi }: Props) {
   const [view, setView] = useState<View>('question')
   // 수집 현황은 처음 열 때 한 번 불러오고, 이후에는 화면만 가렸다 보여 준다.
   const [statusOpened, setStatusOpened] = useState(false)
+  // 서비스 안내는 화면 위에 펼쳐지는 패널이라 열고 닫아도 아래 화면의 입력과 진행 상태가 그대로 남는다.
+  const [guideOpen, setGuideOpen] = useState(false)
+  const guideButton = useRef<HTMLButtonElement>(null)
+
+  const closeGuide = useCallback(() => {
+    setGuideOpen(false)
+    // 닫으면 안내를 연 버튼으로 초점을 되돌린다.
+    guideButton.current?.focus()
+  }, [])
 
   const handleVerified = useCallback((code: string, remaining: number) => {
     saveInviteCode(code)
@@ -66,12 +76,26 @@ export default function App({ api = defaultApi }: Props) {
           <h1>ER Analytics</h1>
           <p className="muted">이터널 리턴 경기 전적 DB에 한국어로 질문하세요.</p>
         </div>
-        {session && (
-          <button type="button" className="link" onClick={handleLogout}>
-            초대 코드 바꾸기
+        <div className="header-actions">
+          <button
+            ref={guideButton}
+            type="button"
+            className="link"
+            aria-expanded={guideOpen}
+            aria-controls={SERVICE_GUIDE_ID}
+            onClick={() => (guideOpen ? closeGuide() : setGuideOpen(true))}
+          >
+            서비스 안내
           </button>
-        )}
+          {session && (
+            <button type="button" className="link" onClick={handleLogout}>
+              초대 코드 바꾸기
+            </button>
+          )}
+        </div>
       </header>
+
+      {guideOpen && <ServiceGuide onClose={closeGuide} />}
 
       {isMockMode ? (
         <p className="banner banner-mock" role="note">

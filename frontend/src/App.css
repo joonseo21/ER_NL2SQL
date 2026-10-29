@@ -547,3 +547,61 @@ th.num {
   word-break: break-all;
   user-select: all;
 }
+
+/* 머리글 오른쪽 버튼들. 좁은 화면에서는 줄을 바꾼다. */
+.header {
+  flex-wrap: wrap;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+/* 서비스 안내 패널 */
+.guide {
+  margin-bottom: 16px;
+  overflow-wrap: anywhere;
+}
+
+.guide-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.guide-head h2 {
+  margin-bottom: 4px;
+}
+
+.guide-section {
+  border-top: 1px solid var(--border);
+  padding: 8px 0;
+}
+
+.guide-section summary {
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.guide-section summary h3 {
+  display: inline;
+  margin: 0;
+  font-size: 1rem;
+}
+
+.guide-section ul {
+  margin: 4px 0 0;
+  padding-left: 1.2em;
+}
+
+.guide-section li + li {
+  margin-top: 4px;
+}
+
+.guide-section p {
+  margin: 4px 0 0;
+}
