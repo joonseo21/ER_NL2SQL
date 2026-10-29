@@ -6,22 +6,32 @@ import { ApiError } from './api'
 import { createMockApi } from './api/mock'
 import type { MockScenarioId } from './api/mock'
 import type { ErApi, QuestionResponse, QuestionStatus } from './api/types'
+import { loadPendingQuestion, savePendingQuestion } from './lib/pendingQuestion'
+import { saveInviteCode } from './lib/session'
 
-/** 가짜 서버를 감싸 호출을 기록한다. 시나리오는 테스트에서 바꿀 수 있다. */
-function setup(initial: MockScenarioId = 'answer') {
+/**
+ * 가짜 서버를 감싸 호출을 기록한다. 시나리오는 테스트에서 바꿀 수 있다.
+ * prepare는 화면을 그리기 전에 호출을 바꿔 둘 때 쓴다(새로고침 직후의 첫 조회 등).
+ */
+function setup(initial: MockScenarioId = 'answer', prepare?: (api: ReturnType<typeof wrapApi>) => void) {
   let scenario = initial
-  const base = createMockApi({ delayMs: 0, scenario: () => scenario })
-  const api = {
+  const api = wrapApi(createMockApi({ delayMs: 0, scenario: () => scenario }))
+  prepare?.(api)
+  const user = userEvent.setup()
+  render(<App api={api} />)
+  return { api, user, setScenario: (next: MockScenarioId) => (scenario = next) }
+}
+
+function wrapApi(base: ErApi) {
+  return {
     verifyInvite: vi.fn<ErApi['verifyInvite']>(base.verifyInvite),
     getConditions: vi.fn<ErApi['getConditions']>(base.getConditions),
     askQuestion: vi.fn<ErApi['askQuestion']>(base.askQuestion),
+    resumeQuestion: vi.fn<ErApi['resumeQuestion']>(base.resumeQuestion),
     checkQuestion: vi.fn<ErApi['checkQuestion']>(base.checkQuestion),
     submitFeedback: vi.fn<ErApi['submitFeedback']>(base.submitFeedback),
     getCollectionSummary: vi.fn<ErApi['getCollectionSummary']>(base.getCollectionSummary),
   }
-  const user = userEvent.setup()
-  render(<App api={api} />)
-  return { api, user, setScenario: (next: MockScenarioId) => (scenario = next) }
 }
 
 async function enterInviteCode(user: ReturnType<typeof userEvent.setup>, code = 'friend') {
@@ -263,7 +273,7 @@ describe('오류', () => {
   it('처리 중 거절 응답에 서버가 남은 횟수를 주면 그 값으로 표시한다', async () => {
     const { user, api } = setup()
     await reachQuestionScreen(user)
-    api.askQuestion.mockRejectedValueOnce(new ApiError('QUESTION_BUSY', '처리 중입니다.', 503, null, 47))
+    api.askQuestion.mockRejectedValueOnce(new ApiError('QUESTION_BUSY', '처리 중입니다.', 503, null, { remainingToday: 47 }))
 
     await ask(user)
     expect(await screen.findByRole('alert')).toHaveTextContent('처리 중입니다.')
@@ -318,7 +328,7 @@ describe('접수 뒤의 오류', () => {
 
     expect(await screen.findByLabelText('답변')).toBeInTheDocument()
     expect(api.askQuestion).toHaveBeenCalledTimes(1) // 질문은 다시 보내지 않았다.
-    expect(api.checkQuestion).toHaveBeenCalledWith('mock-request-1', 49, 'friend')
+    expect(api.checkQuestion).toHaveBeenCalledWith(expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/), 49, 'friend')
   })
 })
 
@@ -564,5 +574,292 @@ describe('수집 현황', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('HTTP 404')
     await user.click(screen.getByRole('button', { name: '다시 시도' }))
     expect(await screen.findByText('72,140')).toBeInTheDocument()
+  })
+})
+
+const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/
+const KNOWN_ID = '3f2b8c1e-5a4d-4c2b-9e1f-0a1b2c3d4e5f'
+
+/** 문장이 화면 전체에 몇 번 나오는지 센다. */
+function countText(text: string): number {
+  return (document.body.textContent ?? '').split(text).length - 1
+}
+
+/** 같은 localStorage를 쓰는 다른 가짜 서버로 질문을 접수해 둔다(탭을 닫기 전에 보낸 질문). */
+async function acceptElsewhere(scenario: MockScenarioId, inviteCode = 'friend'): Promise<string> {
+  const server = createMockApi({ delayMs: 0, scenario: () => scenario })
+  let requestId = ''
+  await server
+    .askQuestion({ question: '전에 보낸 질문' }, inviteCode, undefined, (a) => (requestId = a.requestId))
+    .catch(() => undefined)
+  return requestId
+}
+
+async function lookUp(user: ReturnType<typeof userEvent.setup>, requestId: string) {
+  await user.type(screen.getByRole('textbox', { name: '접수 번호' }), requestId)
+  await user.click(screen.getByRole('button', { name: '결과 확인' }))
+}
+
+describe('남은 횟수 갱신(spec D-23)', () => {
+  it('코드별 한도 초과로 거절되면 남은 횟수를 0으로 바꾸고 횟수에 포함되지 않는다고 한 번 알린다', async () => {
+    const { user } = setup('error-invite-limit')
+    await reachQuestionScreen(user)
+    await ask(user)
+
+    const alert = await screen.findByRole('alert')
+    expect(screen.getByText('오늘 남은 질문 0회')).toBeInTheDocument()
+    expect(countText('이번 시도는 질문 횟수에 포함되지 않습니다.')).toBe(1)
+    expect(alert).not.toHaveTextContent('포함되었습니다')
+    expect(alert).not.toHaveTextContent('접수 번호')
+  })
+
+  it('한도 초과 본문에 남은 횟수가 없어도 0으로 표시한다', async () => {
+    const { user, api } = setup()
+    await reachQuestionScreen(user)
+    api.askQuestion.mockRejectedValueOnce(new ApiError('GLOBAL_LIMIT_EXCEEDED', '오늘 전체 질문 횟수를 모두 사용했습니다.', 429))
+    await ask(user)
+
+    await screen.findByRole('alert')
+    expect(screen.getByText('오늘 남은 질문 0회')).toBeInTheDocument()
+  })
+
+  it('처리 중 거절은 문구에 이미 있는 "포함되지 않습니다"를 한 번만 보여 준다', async () => {
+    const { user } = setup('error-question-busy')
+    await reachQuestionScreen(user)
+    await ask(user)
+
+    await screen.findByRole('alert')
+    expect(countText('질문 횟수에 포함되지 않습니다')).toBe(1)
+    expect(countText('포함되었습니다')).toBe(0)
+  })
+})
+
+describe('횟수 포함 설명(spec D-23)', () => {
+  it.each([
+    ['notice', '안내'],
+    ['clarification', '되묻기'],
+  ] as const)('%s 응답에는 횟수에 포함된다는 설명이 한 번 붙는다', async (scenario, label) => {
+    const { user } = setup(scenario)
+    await reachQuestionScreen(user)
+    await ask(user)
+
+    await screen.findByLabelText(label)
+    expect(countText('이 응답도 오늘 질문 횟수에 포함됩니다.')).toBe(1)
+  })
+
+  it('답변에는 설명을 붙이지 않는다', async () => {
+    const { user } = setup('answer')
+    await reachQuestionScreen(user)
+    await ask(user)
+
+    await screen.findByLabelText('답변')
+    expect(countText('횟수에 포함')).toBe(0)
+  })
+
+  it('접수 뒤 실패에는 기존 문구 하나만 붙는다', async () => {
+    const { user } = setup('error-agent')
+    await reachQuestionScreen(user)
+    await ask(user)
+
+    await screen.findByRole('alert')
+    expect(countText('이 질문은 접수되어 오늘 질문 횟수에 포함되었습니다.')).toBe(1)
+    expect(countText('이 응답도 오늘 질문 횟수에 포함됩니다.')).toBe(0)
+  })
+
+  it('안내 문구에 이미 횟수 설명이 있으면 화면이 다시 붙이지 않는다', async () => {
+    const { user, api } = setup()
+    await reachQuestionScreen(user)
+    const sample = await createMockApi({ delayMs: 0, scenario: () => 'notice' }).askQuestion({ question: 'x' }, 'friend')
+    api.askQuestion.mockResolvedValueOnce({
+      ...sample,
+      message: '질문을 이해하지 못했습니다. 이 질문도 오늘 질문 횟수에 포함됩니다.',
+    } as QuestionResponse)
+    await ask(user)
+
+    await screen.findByLabelText('안내')
+    expect(countText('횟수에 포함')).toBe(1)
+  })
+})
+
+describe('접수 번호 표시와 복구(spec D-23)', () => {
+  it('접수되면 번호를 보여 주고 복사할 수 있으며, 같은 탭에 보관했다가 결과가 나오면 지운다', async () => {
+    const { user, api } = setup()
+    await reachQuestionScreen(user)
+    const sample = await createMockApi({ delayMs: 0, scenario: () => 'answer' }).askQuestion({ question: 'x' }, 'friend')
+    let release: (response: QuestionResponse) => void = () => {}
+    api.askQuestion.mockImplementationOnce(
+      (_request, _code, onStatus, onAccepted) =>
+        new Promise<QuestionResponse>((resolve) => {
+          onStatus?.('accepted')
+          onAccepted?.({ requestId: KNOWN_ID, remainingToday: 41, acceptedAt: Date.now() })
+          release = resolve
+        }),
+    )
+    await ask(user, '보관할 질문')
+
+    const status = await screen.findByRole('status', { name: '' })
+    expect(within(status).getByText(KNOWN_ID)).toBeInTheDocument()
+    expect(screen.getByText('오늘 남은 질문 41회')).toBeInTheDocument()
+    expect(loadPendingQuestion('friend')).toMatchObject({ requestId: KNOWN_ID, question: '보관할 질문' })
+
+    await user.click(within(status).getByRole('button', { name: '복사' }))
+    expect(await screen.findByText('접수 번호를 복사했습니다.')).toBeInTheDocument()
+    expect(await navigator.clipboard.readText()).toBe(KNOWN_ID)
+
+    act(() => release({ ...sample, remaining_today: 41 }))
+    await screen.findByLabelText('답변')
+    expect(loadPendingQuestion('friend')).toBeNull()
+  })
+
+  it('처리 실패 화면에도 번호를 보여 주고, 결과가 정해졌으므로 보관한 값을 지운다', async () => {
+    const { user } = setup('error-agent')
+    await reachQuestionScreen(user)
+    await ask(user)
+
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toMatch(UUID_PATTERN)
+    expect(within(alert).getByRole('button', { name: '복사' })).toBeInTheDocument()
+    expect(loadPendingQuestion('friend')).toBeNull()
+  })
+
+  it('시간 초과 화면에도 번호를 보여 주고, 다시 확인해 결과가 나올 때까지 보관한다', async () => {
+    const { user } = setup('error-timeout')
+    await reachQuestionScreen(user)
+    await ask(user)
+
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toMatch(UUID_PATTERN)
+    expect(loadPendingQuestion('friend')).not.toBeNull()
+
+    await user.click(within(alert).getByRole('button', { name: '결과 다시 확인' }))
+    await screen.findByLabelText('답변')
+    expect(loadPendingQuestion('friend')).toBeNull()
+  })
+
+  it('같은 탭에서 새로고침하면 질문을 다시 보내지 않고 보관한 번호로 조회를 이어 간다', async () => {
+    saveInviteCode('friend')
+    const acceptedAt = Date.now() - 30_000
+    savePendingQuestion('friend', { requestId: KNOWN_ID, remainingToday: 37, acceptedAt, question: '새로고침 전 질문' })
+    const sample = await createMockApi({ delayMs: 0, scenario: () => 'notice' }).askQuestion({ question: 'x' }, 'friend')
+    let release: (response: QuestionResponse) => void = () => {}
+    const { api } = setup('answer', (prepared) => {
+      prepared.resumeQuestion.mockImplementation(
+        () => new Promise<QuestionResponse>((resolve) => (release = resolve)),
+      )
+    })
+
+    const status = await screen.findByRole('status', { name: '' })
+    expect(status).toHaveTextContent('접수한 질문의 결과를 이어서 확인하는 중')
+    expect(status).toHaveTextContent(/\d+초 경과/)
+    expect(within(status).getByText(KNOWN_ID)).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: /궁금한 점/ })).toHaveValue('새로고침 전 질문')
+    expect(screen.getByText('오늘 남은 질문 37회')).toBeInTheDocument()
+    expect(api.resumeQuestion).toHaveBeenCalledWith(
+      expect.objectContaining({ requestId: KNOWN_ID, remainingToday: 37, acceptedAt }),
+      'friend',
+      expect.anything(),
+    )
+
+    act(() => release({ ...sample, remaining_today: 37 }))
+    await screen.findByLabelText('안내')
+    expect(api.askQuestion).not.toHaveBeenCalled()
+    expect(loadPendingQuestion('friend')).toBeNull()
+  })
+
+  it('새로고침했을 때 접수 시각부터 420초가 이미 지났으면 조회하지 않고 "결과 다시 확인" 버튼을 보인다', async () => {
+    saveInviteCode('friend')
+    savePendingQuestion('friend', {
+      requestId: KNOWN_ID,
+      remainingToday: 37,
+      acceptedAt: Date.now() - 421_000,
+      question: '오래된 질문',
+    })
+    const sample = await createMockApi({ delayMs: 0, scenario: () => 'answer' }).askQuestion({ question: 'x' }, 'friend')
+    const { user, api } = setup('answer', (prepared) => {
+      prepared.checkQuestion.mockResolvedValueOnce({ ...sample, remaining_today: 37 })
+    })
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('처리가 오래 걸리고 있습니다')
+    expect(within(alert).getByText(KNOWN_ID)).toBeInTheDocument()
+    await user.click(within(alert).getByRole('button', { name: '결과 다시 확인' }))
+
+    await screen.findByLabelText('답변')
+    expect(api.checkQuestion).toHaveBeenCalledWith(KNOWN_ID, 37, 'friend')
+    expect(api.askQuestion).not.toHaveBeenCalled()
+  })
+
+  it('다른 초대 코드로 들어오면 보관한 질문을 이어 보지 않는다', async () => {
+    saveInviteCode('other')
+    savePendingQuestion('friend', { requestId: KNOWN_ID, remainingToday: 37, acceptedAt: Date.now(), question: 'q' })
+    const { api } = setup()
+
+    await screen.findByRole('heading', { name: '조건' })
+    expect(api.resumeQuestion).not.toHaveBeenCalled()
+    expect(screen.queryByText(KNOWN_ID)).not.toBeInTheDocument()
+  })
+
+  it('저장소를 쓸 수 없어도 질문·번호 표시·결과 다시 확인이 동작한다', async () => {
+    const blocked = () => {
+      throw new Error('blocked')
+    }
+    const spies = [
+      vi.spyOn(Storage.prototype, 'setItem').mockImplementation(blocked),
+      vi.spyOn(Storage.prototype, 'getItem').mockImplementation(blocked),
+      vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(blocked),
+    ]
+    try {
+      const { user } = setup('error-timeout')
+      await reachQuestionScreen(user)
+      await ask(user)
+
+      const alert = await screen.findByRole('alert')
+      expect(alert.textContent).toMatch(UUID_PATTERN)
+      await user.click(within(alert).getByRole('button', { name: '결과 다시 확인' }))
+      expect(await screen.findByLabelText('답변')).toBeInTheDocument()
+    } finally {
+      spies.forEach((spy) => spy.mockRestore())
+    }
+  })
+
+  it('탭을 다시 연 뒤 접수 번호로 결과를 확인하면 질문을 다시 보내지 않고 후기까지 보여 준다', async () => {
+    const requestId = await acceptElsewhere('notice')
+    const { user, api } = setup()
+    await reachQuestionScreen(user)
+    expect(screen.getByText(/질문 횟수에 영향이 없습니다/)).toBeInTheDocument()
+
+    await lookUp(user, requestId.toUpperCase())
+
+    expect(await screen.findByLabelText('안내')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: /어땠나요/ })).toBeInTheDocument()
+    expect(countText('이 응답도 오늘 질문 횟수에 포함됩니다.')).toBe(1)
+    expect(api.checkQuestion).toHaveBeenCalledWith(requestId, null, 'friend')
+    expect(api.askQuestion).not.toHaveBeenCalled()
+    expect(screen.getByText('오늘 남은 질문 50회')).toBeInTheDocument()
+  })
+
+  it('형식이 맞지 않는 번호는 조회하지 않고 안내한다', async () => {
+    const { user, api } = setup()
+    await reachQuestionScreen(user)
+    await lookUp(user, 'mock-request-1')
+
+    expect(await screen.findByText(/접수 번호 형식이 맞지 않습니다/)).toBeInTheDocument()
+    expect(api.checkQuestion).not.toHaveBeenCalled()
+  })
+
+  it('없는 번호와 다른 초대 코드의 번호는 같은 안내를 보여 주고 횟수 안내나 번호는 붙이지 않는다', async () => {
+    const otherId = await acceptElsewhere('answer', 'other')
+    const { user } = setup()
+    await reachQuestionScreen(user)
+
+    for (const requestId of ['11111111-1111-4111-8111-111111111111', otherId]) {
+      const input = screen.getByRole('textbox', { name: '접수 번호' })
+      await user.clear(input)
+      await lookUp(user, requestId)
+      const alert = await screen.findByRole('alert')
+      expect(alert).toHaveTextContent('이 초대 코드로 접수한 질문 중에서 이 번호를 찾지 못했습니다')
+      expect(alert).not.toHaveTextContent('포함되었습니다')
+      expect(within(alert).queryByRole('button', { name: '복사' })).not.toBeInTheDocument()
+    }
   })
 })

@@ -1,12 +1,14 @@
 import { ApiError, failureMessage, httpErrorMessage, toApiErrorCode } from './errors'
 import type { AcceptedInfo } from './errors'
 import type {
+  AcceptedQuestion,
   CollectionSummaryResponse,
   ConditionsResponse,
   ErApi,
   FeedbackRequest,
   FeedbackResponse,
   InviteVerifyResponse,
+  PollOptions,
   QuestionAcceptedResponse,
   QuestionRequest,
   QuestionResponse,
@@ -105,13 +107,15 @@ export function createHttpApi(options: HttpApiOptions = {}): ErApi {
   function interpret(state: QuestionStatusResponse, info: AcceptedInfo): QuestionResponse | null {
     if (state.status === 'completed') {
       if (state.result === null) {
-        throw new ApiError('UNKNOWN', '처리는 끝났지만 결과를 받지 못했습니다.', null, info)
+        throw new ApiError('UNKNOWN', '처리는 끝났지만 결과를 받지 못했습니다.', null, info, {
+          requestFinished: true,
+        })
       }
       return { ...state.result, remaining_today: info.remainingToday } as QuestionResponse
     }
     if (state.status === 'failed') {
       const code = toApiErrorCode(state.error_code)
-      throw new ApiError(code, failureMessage(code, state.message), null, info)
+      throw new ApiError(code, failureMessage(code, state.message), null, info, { requestFinished: true })
     }
     return null // accepted·processing, 또는 모르는 상태는 계속 기다린다.
   }
@@ -119,32 +123,36 @@ export function createHttpApi(options: HttpApiOptions = {}): ErApi {
   /** 질문을 이미 접수한 뒤의 오류에는 접수 정보를 붙여, 화면이 횟수 소비와 재확인을 안내할 수 있게 한다. */
   function withAccepted(error: unknown, info: AcceptedInfo): unknown {
     return error instanceof ApiError && error.accepted === null
-      ? new ApiError(error.code, error.message, error.status, info, error.remainingToday)
+      ? new ApiError(error.code, error.message, error.status, info, {
+          remainingToday: error.remainingToday,
+          requestFinished: error.requestFinished,
+        })
       : error
   }
 
-  async function askQuestion(
-    body: QuestionRequest,
+  /**
+   * 접수한 질문의 결과가 나올 때까지 접수 번호로 조회한다. 조회는 겹치지 않고 직전 조회가 끝난 뒤
+   * pollIntervalMs를 기다린다. 접수 시각부터 questionTimeoutMs가 지나면 PROCESSING_TIMEOUT을 던진다.
+   */
+  async function pollUntilDone(
+    accepted: AcceptedQuestion,
     inviteCode: string,
-    onStatus?: (status: QuestionStatus) => void,
+    initialStatus: QuestionStatus | null,
+    firstWaitMs: number,
+    options: PollOptions,
   ): Promise<QuestionResponse> {
-    // 1) 접수. 여기서 초대 코드·한도·요청 형식 오류가 나면 바로 던진다.
-    const accepted = await request<QuestionAcceptedResponse>({
-      method: 'POST',
-      path: '/questions',
-      body,
-      inviteCode,
-    })
-    const info: AcceptedInfo = { requestId: accepted.request_id, remainingToday: accepted.remaining_today }
-    const acceptedAt = now()
-    onStatus?.(accepted.status)
-
-    // 2) 결과가 나올 때까지 접수 번호로 조회한다.
-    let lastStatus: QuestionStatus = accepted.status
+    const info: AcceptedInfo = { requestId: accepted.requestId, remainingToday: accepted.remainingToday }
+    let lastStatus = initialStatus
     let failures = 0
+    let waitMs = firstWaitMs
 
     for (;;) {
-      await sleep(pollIntervalMs)
+      await sleep(waitMs)
+      waitMs = pollIntervalMs
+      if (options.signal?.aborted) {
+        // 화면이 조회를 멈췄다. 호출한 쪽은 이 오류를 보여 주지 않는다.
+        throw new ApiError('UNKNOWN', '결과 조회를 멈췄습니다.', null, info)
+      }
 
       let state: QuestionStatusResponse
       try {
@@ -160,21 +168,62 @@ export function createHttpApi(options: HttpApiOptions = {}): ErApi {
 
       if (state.status !== lastStatus) {
         lastStatus = state.status
-        onStatus?.(state.status)
+        options.onStatus?.(state.status)
       }
 
       const response = interpret(state, info)
       if (response !== null) return response
 
-      if (now() - acceptedAt >= questionTimeoutMs) {
+      if (now() - accepted.acceptedAt >= questionTimeoutMs) {
         throw new ApiError('PROCESSING_TIMEOUT', PROCESSING_TIMEOUT_MESSAGE, null, info)
       }
     }
   }
 
+  async function askQuestion(
+    body: QuestionRequest,
+    inviteCode: string,
+    onStatus?: (status: QuestionStatus) => void,
+    onAccepted?: (accepted: AcceptedQuestion) => void,
+    signal?: AbortSignal,
+  ): Promise<QuestionResponse> {
+    // 1) 접수. 여기서 초대 코드·한도·처리 중·요청 형식 오류가 나면 바로 던진다.
+    const response = await request<QuestionAcceptedResponse>({
+      method: 'POST',
+      path: '/questions',
+      body,
+      inviteCode,
+    })
+    const accepted: AcceptedQuestion = {
+      requestId: response.request_id,
+      remainingToday: response.remaining_today,
+      acceptedAt: now(),
+    }
+    onStatus?.(response.status)
+    onAccepted?.(accepted)
+
+    // 2) 결과가 나올 때까지 접수 번호로 조회한다. 첫 조회는 접수 응답 2초 뒤다.
+    return pollUntilDone(accepted, inviteCode, response.status, pollIntervalMs, { onStatus, signal })
+  }
+
+  async function resumeQuestion(
+    accepted: AcceptedQuestion,
+    inviteCode: string,
+    options: PollOptions = {},
+  ): Promise<QuestionResponse> {
+    const info: AcceptedInfo = { requestId: accepted.requestId, remainingToday: accepted.remainingToday }
+    // 대기 시간은 새로고침한 시각이 아니라 접수 시각부터 센다.
+    if (now() - accepted.acceptedAt >= questionTimeoutMs) {
+      throw new ApiError('PROCESSING_TIMEOUT', PROCESSING_TIMEOUT_MESSAGE, null, info)
+    }
+    // 접수 2초 뒤부터 조회한다는 규칙을 지키고, 이미 지났으면 바로 조회한다.
+    const firstWaitMs = Math.max(0, accepted.acceptedAt + pollIntervalMs - now())
+    return pollUntilDone(accepted, inviteCode, null, firstWaitMs, options)
+  }
+
   async function checkQuestion(
     requestId: string,
-    remainingToday: number,
+    remainingToday: number | null,
     inviteCode: string,
   ): Promise<QuestionResponse> {
     const info: AcceptedInfo = { requestId, remainingToday }
@@ -182,6 +231,9 @@ export function createHttpApi(options: HttpApiOptions = {}): ErApi {
     try {
       state = await fetchStatus(requestId, inviteCode)
     } catch (error) {
+      // 번호를 찾지 못한 404(없는 번호이거나 다른 초대 코드의 번호)는 이 코드의 접수라는 보장이 없어
+      // 접수 정보를 붙이지 않는다. 화면은 횟수 포함 안내나 접수 번호를 보여 주지 않는다.
+      if (error instanceof ApiError && error.code === 'QUESTION_NOT_FOUND') throw error
       throw withAccepted(error, info)
     }
     const response = interpret(state, info)
@@ -197,6 +249,8 @@ export function createHttpApi(options: HttpApiOptions = {}): ErApi {
       request<ConditionsResponse>({ method: 'GET', path: '/conditions', inviteCode }),
 
     askQuestion,
+
+    resumeQuestion,
 
     checkQuestion,
 
@@ -216,7 +270,7 @@ export function createHttpApi(options: HttpApiOptions = {}): ErApi {
 /**
  * 오류 본문은 { code, message }다. 형식이 다르면 UNKNOWN으로 두고 상태 코드만 남긴다.
  * message가 비어 있으면 코드별 문구(없으면 상태 코드가 든 기본 문구)를 쓴다.
- * 본문에 remaining_today가 숫자로 있으면 함께 옮긴다. 현재 계약의 오류 본문에는 없다.
+ * 본문에 remaining_today가 0 이상의 정수로 있으면 함께 옮긴다(계약: 429 한도 초과와 503 QUESTION_BUSY).
  */
 async function toApiError(response: Response): Promise<ApiError> {
   try {
@@ -235,7 +289,12 @@ async function toApiError(response: Response): Promise<ApiError> {
           : httpErrorMessage(apiCode, response.status),
         response.status,
         null,
-        typeof remaining_today === 'number' && Number.isFinite(remaining_today) ? remaining_today : null,
+        {
+          remainingToday:
+            typeof remaining_today === 'number' && Number.isInteger(remaining_today) && remaining_today >= 0
+              ? remaining_today
+              : null,
+        },
       )
     }
   } catch {

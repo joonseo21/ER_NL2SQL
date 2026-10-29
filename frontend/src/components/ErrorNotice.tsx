@@ -1,4 +1,7 @@
+import { REJECTED_BEFORE_ACCEPT } from '../api/errors'
 import type { ApiError, ApiErrorCode } from '../api'
+import { COUNTED_FAILURE_NOTE, NOT_COUNTED_NOTE, mentionsUsage } from '../lib/usageNotes'
+import { RequestIdBox } from './RequestIdBox'
 
 /**
  * 서버 message는 그대로 보여 주고, 코드별로 이용자가 할 수 있는 일을 덧붙인다.
@@ -10,6 +13,8 @@ const HINTS: Partial<Record<ApiErrorCode, string>> = {
   AGENT_UNAVAILABLE: '다른 질문을 처리 중이거나 일시적인 장애일 수 있습니다. 잠시 뒤 다시 시도해 주세요.',
   STORAGE_BUSY: '요청이 몰려 있습니다. 잠시 뒤 다시 시도해 주세요.',
   VALIDATION_FAILED: '질문과 조건을 확인해 주세요.',
+  QUESTION_NOT_FOUND:
+    '이 초대 코드로 접수한 질문 중에서 이 번호를 찾지 못했습니다. 번호와 초대 코드를 확인해 주세요.',
   TIMEOUT: '요청이 서버에 도착했는지 알 수 없습니다. 같은 요청을 바로 반복해서 보내지 마세요.',
   PROCESSING_TIMEOUT:
     '질문은 서버에서 계속 처리되고 있을 수 있습니다. 같은 질문을 다시 보내지 말고 결과를 다시 확인해 주세요.',
@@ -22,17 +27,25 @@ interface Props {
   retryLabel?: string
 }
 
+/** 횟수 설명. 접수된 질문은 포함, 접수 전 거절은 미포함이며 message에 이미 있으면 붙이지 않는다. */
+function usageNote(error: ApiError): string | null {
+  if (mentionsUsage(error.message)) return null
+  if (error.accepted) return COUNTED_FAILURE_NOTE
+  if (REJECTED_BEFORE_ACCEPT.has(error.code)) return NOT_COUNTED_NOTE
+  return null
+}
+
 export function ErrorNotice({ error, onRetry, retryLabel = '다시 시도' }: Props) {
   const hint = HINTS[error.code]
+  const note = usageNote(error)
   return (
     <section className="card error" role="alert">
       <p>
         <strong>{error.message}</strong>
       </p>
       {hint && <p className="muted small">{hint}</p>}
-      {error.accepted && (
-        <p className="muted small">이 질문은 접수되어 오늘 질문 횟수에 포함되었습니다.</p>
-      )}
+      {note && <p className="muted small">{note}</p>}
+      {error.accepted && <RequestIdBox requestId={error.accepted.requestId} />}
       {onRetry && (
         <button type="button" onClick={onRetry}>
           {retryLabel}

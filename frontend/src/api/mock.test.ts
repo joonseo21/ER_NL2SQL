@@ -1,7 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { normalizeRequestId } from '../lib/requestId'
 import { ApiError } from './errors'
 import { createMockApi, MOCK_SCENARIOS } from './mock'
 import type { MockScenarioId } from './mock'
+import type { AcceptedQuestion } from './types'
 
 const request = { question: '다이아몬드에서 아드리아나 승률은?' }
 
@@ -119,8 +121,9 @@ describe('가짜 서버의 동작', () => {
 
     await expect(api.askQuestion(request, 'CODE', (s) => statuses.push(s))).rejects.toMatchObject({
       code: 'AGENT_CONNECTION_FAILED',
-      message: '질문 처리 서버에 연결하지 못했습니다. 잠시 뒤 다시 이용해 주세요.',
-      accepted: { requestId: 'mock-request-1', remainingToday: 4 },
+      message: '질문 처리 서버에 연결하지 못했습니다. 잠시 뒤 다시 질문해 주세요.',
+      accepted: { requestId: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/), remainingToday: 4 },
+      requestFinished: true,
     })
     expect(statuses).toEqual(['accepted', 'processing'])
 
@@ -131,13 +134,14 @@ describe('가짜 서버의 동작', () => {
   it('처리 지연 시나리오는 접수 정보를 담은 PROCESSING_TIMEOUT이고, 다시 확인하면 답변을 받는다', async () => {
     const api = createMockApi({ delayMs: 0, scenario: () => 'error-timeout', initialRemaining: 5 })
 
-    const error = await api.askQuestion(request, 'CODE').catch((e: unknown) => e)
+    const error = (await api.askQuestion(request, 'CODE').catch((e: unknown) => e)) as ApiError
     expect(error).toMatchObject({
       code: 'PROCESSING_TIMEOUT',
-      accepted: { requestId: 'mock-request-1', remainingToday: 4 },
+      accepted: { requestId: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/), remainingToday: 4 },
+      requestFinished: false,
     })
 
-    const response = await api.checkQuestion('mock-request-1', 4, 'CODE')
+    const response = await api.checkQuestion(error.accepted!.requestId, 4, 'CODE')
     expect(response).toMatchObject({ kind: 'answer', remaining_today: 4 })
   })
 
@@ -237,5 +241,85 @@ describe('가짜 서버의 동작', () => {
   it('개발용 시나리오 목록이 비어 있지 않고 id가 겹치지 않는다', () => {
     const ids = MOCK_SCENARIOS.map((s) => s.id)
     expect(new Set(ids).size).toBe(ids.length)
+  })
+})
+
+describe('가짜 서버의 남은 횟수·접수 번호(spec D-23)', () => {
+  it('한도 초과는 남은 횟수 0을, 처리 중 거절은 현재 남은 횟수를 오류에 담는다', async () => {
+    let scenario: MockScenarioId = 'error-invite-limit'
+    const api = createMockApi({ delayMs: 0, scenario: () => scenario, initialRemaining: 5 })
+    await expect(api.askQuestion(request, 'CODE')).rejects.toMatchObject({ remainingToday: 0 })
+    scenario = 'error-question-busy'
+    await expect(api.askQuestion(request, 'CODE')).rejects.toMatchObject({ remainingToday: 5 })
+  })
+
+  it('접수 번호는 계약 형식(소문자 UUID 버전 4)이고 접수할 때 알린다', async () => {
+    const api = createMockApi({ delayMs: 0, scenario: () => 'answer', initialRemaining: 5 })
+    const seen: AcceptedQuestion[] = []
+    await api.askQuestion(request, 'CODE', undefined, (a) => seen.push(a))
+    expect(seen).toHaveLength(1)
+    expect(seen[0].remainingToday).toBe(4)
+    expect(normalizeRequestId(seen[0].requestId)).toBe(seen[0].requestId)
+  })
+
+  it('탭을 닫았다 열어도(새 가짜 서버) 같은 초대 코드면 번호로 결과를 다시 받고 횟수는 그대로다', async () => {
+    const first = createMockApi({ delayMs: 0, scenario: () => 'notice', initialRemaining: 5 })
+    let requestId = ''
+    await first.askQuestion(request, 'CODE', undefined, (a) => (requestId = a.requestId))
+
+    const reopened = createMockApi({ delayMs: 0, scenario: () => 'answer', initialRemaining: 4 })
+    const response = await reopened.checkQuestion(requestId, null, 'CODE')
+    expect(response).toMatchObject({ kind: 'notice', question: request.question, remaining_today: null })
+    expect((await reopened.verifyInvite('CODE')).remaining_today).toBe(4)
+  })
+
+  it('다른 초대 코드의 번호와 없는 번호는 같은 QUESTION_NOT_FOUND다', async () => {
+    const api = createMockApi({ delayMs: 0, scenario: () => 'answer' })
+    let requestId = ''
+    await api.askQuestion(request, 'CODE', undefined, (a) => (requestId = a.requestId))
+
+    await expect(api.checkQuestion(requestId, null, 'OTHER')).rejects.toMatchObject({
+      code: 'QUESTION_NOT_FOUND',
+      status: 404,
+    })
+    await expect(api.checkQuestion('3f2b8c1e-5a4d-4c2b-9e1f-0a1b2c3d4e5f', null, 'CODE')).rejects.toMatchObject({
+      code: 'QUESTION_NOT_FOUND',
+      status: 404,
+    })
+  })
+
+  it('처리 실패한 접수를 번호로 확인하면 결과가 정해진 실패다', async () => {
+    const api = createMockApi({ delayMs: 0, scenario: () => 'error-agent' })
+    let requestId = ''
+    await api.askQuestion(request, 'CODE', undefined, (a) => (requestId = a.requestId)).catch(() => undefined)
+    await expect(api.checkQuestion(requestId, null, 'CODE')).rejects.toMatchObject({
+      code: 'AGENT_CONNECTION_FAILED',
+      requestFinished: true,
+      accepted: { requestId },
+    })
+  })
+
+  it('이어 보기는 접수 시각부터 420초가 지났으면 바로 PROCESSING_TIMEOUT이다', async () => {
+    const api = createMockApi({ delayMs: 0 })
+    await expect(
+      api.resumeQuestion(
+        { requestId: '3f2b8c1e-5a4d-4c2b-9e1f-0a1b2c3d4e5f', remainingToday: 3, acceptedAt: Date.now() - 421_000 },
+        'CODE',
+      ),
+    ).rejects.toMatchObject({ code: 'PROCESSING_TIMEOUT' })
+  })
+
+  it('저장소를 쓸 수 없어도 같은 탭 안에서는 접수 기록을 기억한다', async () => {
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('blocked')
+    })
+    try {
+      const api = createMockApi({ delayMs: 0, scenario: () => 'answer' })
+      let requestId = ''
+      await api.askQuestion(request, 'CODE', undefined, (a) => (requestId = a.requestId))
+      await expect(api.checkQuestion(requestId, null, 'CODE')).resolves.toMatchObject({ kind: 'answer' })
+    } finally {
+      setItem.mockRestore()
+    }
   })
 })

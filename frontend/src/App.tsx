@@ -4,6 +4,7 @@ import type { ErApi } from './api'
 import { CollectionStatus } from './components/CollectionStatus'
 import { InviteGate } from './components/InviteGate'
 import { MockBar } from './components/MockBar'
+import { clearPendingQuestion } from './lib/pendingQuestion'
 import { clearInviteCode, loadInviteCode, saveInviteCode } from './lib/session'
 import { QuestionScreen } from './QuestionScreen'
 import './App.css'
@@ -47,6 +48,8 @@ export default function App({ api = defaultApi }: Props) {
 
   function handleLogout() {
     clearInviteCode()
+    // 다른 초대 코드로 들어오면 이전 코드의 진행 중인 질문을 이어 보지 않는다.
+    clearPendingQuestion()
     setRejected(false)
     setSession(null)
   }

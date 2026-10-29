@@ -3,6 +3,7 @@ import answerWithoutSummary from './mocks/answer-without-summary.json'
 import answer from './mocks/answer.json'
 import clarification from './mocks/clarification.json'
 import notice from './mocks/notice.json'
+import { ownerKey } from '../lib/pendingQuestion'
 import { ApiError, failureMessage, QUESTION_BUSY_MESSAGE } from './errors'
 import type { AcceptedInfo } from './errors'
 import { FEEDBACK_COMMENT_MAX } from './types'
@@ -11,7 +12,9 @@ import type {
   CollectionSummaryResponse,
   ConditionsResponse,
   ErApi,
+  PollOptions,
   QuestionResponse,
+  QuestionStatus,
 } from './types'
 
 /**
@@ -27,6 +30,7 @@ export const MOCK_SCENARIOS = [
   { id: 'answer', label: '답변' },
   { id: 'answer-without-summary', label: '답변(요약 없음)' },
   { id: 'answer-empty-result', label: '답변(결과 0행)' },
+  { id: 'slow-answer', label: '답변(처리 20초, 새로고침·재열기 시험용)' },
   { id: 'notice', label: '안내' },
   { id: 'clarification', label: '되묻기' },
   { id: 'error-invite-limit', label: '오류: 코드별 한도 초과' },
@@ -96,12 +100,64 @@ const COLLECTION_SUMMARY: CollectionSummaryResponse = {
 }
 
 const DAILY_LIMIT = 50
+/** 화면 대기 시간과 같은 값(웹 API 계약 420초). 가짜 서버도 이 시간이 지나면 자동 조회를 멈춘다. */
+const QUESTION_TIMEOUT_MS = 420_000
+/** 새로고침·재열기 시험용 시나리오의 처리 시간 */
+const SLOW_PROCESSING_MS = 20_000
+const PROCESSING_TIMEOUT_MESSAGE = '처리가 오래 걸리고 있습니다. 나중에 결과를 다시 확인해 주세요.'
+
+/**
+ * 가짜 서버가 접수한 질문. 실제 서버처럼 탭을 닫아도 남도록 localStorage에 보관한다(개발용 가짜 응답 모드 전용).
+ * 저장소를 쓸 수 없으면 메모리에만 둔다. 초대 코드 원문은 두지 않고 해시만 둔다.
+ */
+interface MockRecord {
+  requestId: string
+  owner: string
+  /** 접수할 때 고른 시나리오. 결과의 종류를 정한다. */
+  outcome: MockScenarioId
+  acceptedAt: number
+  /** 이 시각부터 처리가 끝난 것으로 본다. */
+  readyAt: number
+  question: string
+}
+
+const STORE_KEY = 'er-analytics.mock-server-requests'
+const STORE_LIMIT = 50
+let memoryRecords: MockRecord[] = []
+let persisted = true
+
+function loadRecords(): MockRecord[] {
+  if (!persisted) return memoryRecords
+  try {
+    const raw = window.localStorage.getItem(STORE_KEY)
+    if (raw === null) return memoryRecords
+    const value: unknown = JSON.parse(raw)
+    return Array.isArray(value) ? (value as MockRecord[]) : memoryRecords
+  } catch {
+    return memoryRecords
+  }
+}
+
+function saveRecords(records: MockRecord[]): void {
+  memoryRecords = records.slice(-STORE_LIMIT)
+  try {
+    window.localStorage.setItem(STORE_KEY, JSON.stringify(memoryRecords))
+    persisted = true
+  } catch {
+    // 저장하지 못하면 이 탭의 메모리에만 남는다.
+    persisted = false
+  }
+}
+
+/** 시나리오별로 완료 응답에 쓸 샘플 */
+function sampleFor(outcome: MockScenarioId): keyof typeof SAMPLES {
+  return Object.hasOwn(SAMPLES, outcome) ? outcome : 'answer'
+}
 
 export function createMockApi(options: MockApiOptions = {}): ErApi {
   const delayMs = options.delayMs ?? 800
   const scenario = options.scenario ?? (() => mockControl.scenario)
   let remaining = options.initialRemaining ?? DAILY_LIMIT
-  let requestCount = 0
   /** 이 가짜 서버가 돌려준 log_id. 후기는 아는 질문에만 받는다. */
   const knownLogIds = new Set<string>()
 
@@ -119,11 +175,64 @@ export function createMockApi(options: MockApiOptions = {}): ErApi {
   function buildResponse(
     id: keyof typeof SAMPLES,
     question: string,
-    remainingToday: number,
+    remainingToday: number | null,
   ): QuestionResponse {
     const log_id = globalThis.crypto.randomUUID()
     knownLogIds.add(log_id)
     return { ...structuredClone(SAMPLES[id]), question, log_id, remaining_today: remainingToday }
+  }
+
+  /** 같은 초대 코드로 접수한 질문만 찾는다. 없는 번호와 다른 코드의 번호는 같은 404다. */
+  function findRecord(requestId: string, inviteCode: string): MockRecord {
+    const record = loadRecords().find((r) => r.requestId === requestId && r.owner === ownerKey(inviteCode))
+    if (!record) throw new ApiError('QUESTION_NOT_FOUND', '질문을 찾을 수 없습니다.', 404)
+    return record
+  }
+
+  /** 이 초대 코드로 접수해 아직 처리 중인 질문이 있는지(처리 중 거절 재현용) */
+  function hasActive(inviteCode: string): boolean {
+    const now = Date.now()
+    return loadRecords().some((r) => r.owner === ownerKey(inviteCode) && r.readyAt > now)
+  }
+
+  /** 기록의 현재 상태를 조회 응답처럼 해석한다. 완료면 응답, 실패면 오류, 처리 중이면 null */
+  function interpret(record: MockRecord, info: AcceptedInfo): QuestionResponse | null {
+    if (Date.now() < record.readyAt) return null
+    if (record.outcome === 'error-agent') {
+      throw new ApiError(
+        'AGENT_CONNECTION_FAILED',
+        failureMessage('AGENT_CONNECTION_FAILED', null),
+        null,
+        info,
+        { requestFinished: true },
+      )
+    }
+    return buildResponse(sampleFor(record.outcome), record.question, info.remainingToday)
+  }
+
+  /** 결과가 나올 때까지 기록을 조회한다. 실제 서버 조회처럼 상태가 바뀔 때만 알린다. */
+  async function poll(
+    record: MockRecord,
+    info: AcceptedInfo,
+    lastStatus: QuestionStatus | null,
+    pollOptions: PollOptions,
+  ): Promise<QuestionResponse> {
+    const step = record.readyAt - record.acceptedAt > delayMs ? 1000 : Math.round(delayMs / 3)
+    let status = lastStatus
+    for (;;) {
+      if (pollOptions.signal?.aborted) throw new ApiError('UNKNOWN', '결과 조회를 멈췄습니다.', null, info)
+      const response = interpret(record, info)
+      const next: QuestionStatus = response === null ? 'processing' : 'completed'
+      if (next !== status) {
+        status = next
+        pollOptions.onStatus?.(next)
+      }
+      if (response !== null) return response
+      if (Date.now() - record.acceptedAt >= QUESTION_TIMEOUT_MS) {
+        throw new ApiError('PROCESSING_TIMEOUT', PROCESSING_TIMEOUT_MESSAGE, null, info)
+      }
+      if (step > 0) await new Promise((resolve) => setTimeout(resolve, step))
+    }
   }
 
   return {
@@ -143,7 +252,7 @@ export function createMockApi(options: MockApiOptions = {}): ErApi {
      * 실제 서버처럼 접수(accepted) → 처리 중(processing) → 완료(completed)/실패(failed) 순서를 거친다.
      * 접수 단계의 오류(초대 코드·한도·형식·처리 중 거절)는 바로 던지고, 접수한 뒤의 실패는 횟수를 소비한 채 던진다.
      */
-    async askQuestion(request, inviteCode, onStatus) {
+    async askQuestion(request, inviteCode, onStatus, onAccepted, signal) {
       const step = Math.round(delayMs / 3)
       const pause = () => (step > 0 ? new Promise((resolve) => setTimeout(resolve, step)) : undefined)
 
@@ -156,48 +265,67 @@ export function createMockApi(options: MockApiOptions = {}): ErApi {
       const id = scenario()
       switch (id) {
         case 'error-invite-limit':
-          throw new ApiError('INVITE_LIMIT_EXCEEDED', '오늘 질문 횟수를 모두 사용했습니다.', 429)
+          throw new ApiError('INVITE_LIMIT_EXCEEDED', '오늘 질문 횟수를 모두 사용했습니다.', 429, null, {
+            remainingToday: 0,
+          })
         case 'error-global-limit':
-          throw new ApiError('GLOBAL_LIMIT_EXCEEDED', '오늘 전체 질문 횟수를 모두 사용했습니다.', 429)
+          throw new ApiError('GLOBAL_LIMIT_EXCEEDED', '오늘 전체 질문 횟수를 모두 사용했습니다.', 429, null, {
+            remainingToday: 0,
+          })
         case 'error-question-busy':
-          throw new ApiError('QUESTION_BUSY', QUESTION_BUSY_MESSAGE, 503)
+          throw new ApiError('QUESTION_BUSY', QUESTION_BUSY_MESSAGE, 503, null, { remainingToday: remaining })
+      }
+      // 같은 초대 코드로 처리 중인 질문이 있으면(다른 탭에서 보낸 느린 질문 등) 실제 서버처럼 접수 전에 거절한다.
+      if (hasActive(inviteCode)) {
+        throw new ApiError('QUESTION_BUSY', QUESTION_BUSY_MESSAGE, 503, null, { remainingToday: remaining })
       }
 
       // 접수하면 횟수를 소비한다. 안내·되묻기도, 접수 이후의 실패도 마찬가지다(웹 API 명세).
       remaining = Math.max(0, remaining - 1)
-      requestCount += 1
-      const info: AcceptedInfo = { requestId: `mock-request-${requestCount}`, remainingToday: remaining }
+      const acceptedAt = Date.now()
+      const record: MockRecord = {
+        requestId: globalThis.crypto.randomUUID(),
+        owner: ownerKey(inviteCode),
+        outcome: id,
+        acceptedAt,
+        readyAt: acceptedAt + (id === 'slow-answer' ? SLOW_PROCESSING_MS : 0),
+        question: request.question,
+      }
+      saveRecords([...loadRecords(), record])
+      const info: AcceptedInfo = { requestId: record.requestId, remainingToday: remaining }
       onStatus?.('accepted')
+      onAccepted?.({ requestId: record.requestId, remainingToday: remaining, acceptedAt })
       await pause()
       onStatus?.('processing')
       await pause()
 
-      if (id === 'error-agent') {
-        throw new ApiError(
-          'AGENT_CONNECTION_FAILED',
-          failureMessage('AGENT_CONNECTION_FAILED', null),
-          null,
-          info,
-        )
-      }
       if (id === 'error-timeout') {
-        throw new ApiError(
-          'PROCESSING_TIMEOUT',
-          '처리가 오래 걸리고 있습니다. 나중에 결과를 다시 확인해 주세요.',
-          null,
-          info,
-        )
+        // 자동 조회가 멈춘 상황을 흉내 낸다. 기록은 처리가 끝난 것으로 두어 다시 확인하면 답변을 받는다.
+        throw new ApiError('PROCESSING_TIMEOUT', PROCESSING_TIMEOUT_MESSAGE, null, info)
       }
-
-      onStatus?.('completed')
-      return buildResponse(id, request.question, remaining)
+      return poll(record, info, 'processing', { onStatus, signal })
     },
 
-    /** 자동 조회를 멈춘 질문을 다시 확인한다. 가짜 서버에서는 이때 처리가 끝난 것으로 보고 답변을 돌려준다. */
-    async checkQuestion(_requestId, remainingToday, inviteCode) {
+    async resumeQuestion(accepted, inviteCode, pollOptions = {}) {
       await wait()
       assertInviteCode(inviteCode)
-      return buildResponse('answer', '처리가 오래 걸리던 질문', remainingToday)
+      const info: AcceptedInfo = { requestId: accepted.requestId, remainingToday: accepted.remainingToday }
+      if (Date.now() - accepted.acceptedAt >= QUESTION_TIMEOUT_MS) {
+        throw new ApiError('PROCESSING_TIMEOUT', PROCESSING_TIMEOUT_MESSAGE, null, info)
+      }
+      const record = findRecord(accepted.requestId, inviteCode)
+      return poll(record, info, null, pollOptions)
+    },
+
+    /** 접수 번호로 한 번 조회한다. 가짜 서버가 접수한 번호만 알고, 다른 초대 코드의 번호는 찾지 못한다. */
+    async checkQuestion(requestId, remainingToday, inviteCode) {
+      await wait()
+      assertInviteCode(inviteCode)
+      const info: AcceptedInfo = { requestId, remainingToday }
+      const record = findRecord(requestId, inviteCode)
+      const response = interpret(record, info)
+      if (response !== null) return response
+      throw new ApiError('PROCESSING_TIMEOUT', PROCESSING_TIMEOUT_MESSAGE, null, info)
     },
 
     async submitFeedback(logId, feedback, inviteCode) {

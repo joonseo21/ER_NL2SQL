@@ -285,7 +285,7 @@ describe('질문: 접수 후 결과 조회', () => {
     const { api } = setup([accepted(), state('failed', { error_code: 'AGENT_BUSY' })])
     await expect(api.askQuestion({ question: '질문' }, 'c')).rejects.toMatchObject({
       code: 'AGENT_BUSY',
-      message: '다른 질문을 처리 중입니다. 잠시 뒤 다시 질문해 주세요.',
+      message: '질문 처리 서버가 아직 다른 질문을 처리 중입니다. 1~2분 뒤에 다시 질문해 주세요.',
       accepted: { requestId: 'req-1', remainingToday: 49 },
     })
   })
@@ -459,5 +459,136 @@ describe('그 밖의 요청', () => {
       throw new DOMException('timed out', 'TimeoutError')
     })
     await expect(api.verifyInvite('c')).rejects.toMatchObject({ code: 'TIMEOUT' })
+  })
+})
+
+describe('남은 횟수와 접수 번호(spec D-23)', () => {
+  it('한도 초과(429)의 오류 본문 remaining_today를 담고, 없으면 null로 둔다', async () => {
+    const withCount = setup(() =>
+      jsonResponse({ code: 'INVITE_LIMIT_EXCEEDED', message: '모두 사용', remaining_today: 0 }, 429),
+    )
+    await expect(withCount.api.askQuestion({ question: '질문' }, 'c')).rejects.toMatchObject({
+      code: 'INVITE_LIMIT_EXCEEDED',
+      remainingToday: 0,
+      accepted: null,
+    })
+
+    const withoutCount = setup(() => jsonResponse({ code: 'GLOBAL_LIMIT_EXCEEDED', message: '전체 소진' }, 429))
+    await expect(withoutCount.api.askQuestion({ question: '질문' }, 'c')).rejects.toMatchObject({
+      code: 'GLOBAL_LIMIT_EXCEEDED',
+      remainingToday: null,
+    })
+  })
+
+  it('remaining_today가 음수나 소수이면 쓰지 않는다', async () => {
+    const { api } = setup(() => jsonResponse({ code: 'QUESTION_BUSY', message: '거절', remaining_today: 1.5 }, 503))
+    await expect(api.askQuestion({ question: '질문' }, 'c')).rejects.toMatchObject({ remainingToday: null })
+    const negative = setup(() => jsonResponse({ code: 'QUESTION_BUSY', message: '거절', remaining_today: -1 }, 503))
+    await expect(negative.api.askQuestion({ question: '질문' }, 'c')).rejects.toMatchObject({ remainingToday: null })
+  })
+
+  it('접수 응답을 받으면 접수 번호·남은 횟수·접수 시각을 한 번 알린다', async () => {
+    const onAccepted = vi.fn()
+    const { api } = setup([accepted(), state('completed', { result: NOTICE })], { now: () => 1_000_000 })
+    await api.askQuestion({ question: '질문' }, 'c', undefined, onAccepted)
+    expect(onAccepted).toHaveBeenCalledTimes(1)
+    expect(onAccepted).toHaveBeenCalledWith({ requestId: 'req-1', remainingToday: 49, acceptedAt: 1_000_000 })
+  })
+
+  it('처리 실패로 끝나면 결과가 정해졌다고 표시하고, 조회 일시 실패는 표시하지 않는다', async () => {
+    const failed = setup([accepted(), state('failed', { error_code: 'PROCESS_INTERRUPTED', message: '' })])
+    await expect(failed.api.askQuestion({ question: '질문' }, 'c')).rejects.toMatchObject({
+      code: 'PROCESS_INTERRUPTED',
+      message: '서버가 다시 시작되어 질문 처리가 중단됐습니다. 잠시 뒤 새로 질문해 주세요.',
+      requestFinished: true,
+    })
+
+    const network = setup([
+      accepted(),
+      () => {
+        throw new TypeError('Failed to fetch')
+      },
+    ])
+    await expect(network.api.askQuestion({ question: '질문' }, 'c')).rejects.toMatchObject({
+      code: 'NETWORK_ERROR',
+      requestFinished: false,
+      accepted: { requestId: 'req-1' },
+    })
+  })
+
+  it('이어 보기는 질문을 다시 보내지 않고 같은 번호를 조회하며, 접수 2초 뒤까지 남은 시간만 기다린다', async () => {
+    const { api, fetchFn, sleep } = setup([state('processing'), state('completed', { result: NOTICE })], {
+      now: () => 10_500,
+    })
+    const response = await api.resumeQuestion({ requestId: 'req-1', remainingToday: 30, acceptedAt: 10_000 }, 'c')
+
+    expect(response).toMatchObject({ kind: 'notice', remaining_today: 30 })
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+    for (const i of [0, 1]) {
+      expect(callAt(fetchFn, i).init.method).toBe('GET')
+      expect(callAt(fetchFn, i).url).toBe('/api/questions/req-1')
+    }
+    expect(sleep).toHaveBeenNthCalledWith(1, 1_500) // 접수 2초 뒤 - 지금(접수 0.5초 뒤)
+    expect(sleep).toHaveBeenNthCalledWith(2, 2_000)
+  })
+
+  it('이어 보기에서 접수 2초가 이미 지났으면 바로 조회한다', async () => {
+    const { api, sleep } = setup(state('completed', { result: NOTICE }), { now: () => 60_000 })
+    await api.resumeQuestion({ requestId: 'req-1', remainingToday: 30, acceptedAt: 10_000 }, 'c')
+    expect(sleep).toHaveBeenNthCalledWith(1, 0)
+  })
+
+  it('이어 보기는 접수 시각부터 420초가 지났으면 조회하지 않고 바로 PROCESSING_TIMEOUT을 던진다', async () => {
+    const { api, fetchFn } = setup(state('completed', { result: NOTICE }), { now: () => 10_000 + 420_000 })
+    await expect(
+      api.resumeQuestion({ requestId: 'req-1', remainingToday: 30, acceptedAt: 10_000 }, 'c'),
+    ).rejects.toMatchObject({ code: 'PROCESSING_TIMEOUT', accepted: { requestId: 'req-1', remainingToday: 30 } })
+    expect(fetchFn).not.toHaveBeenCalled()
+  })
+
+  it('이어 보기 중에도 접수 시각부터 420초가 지나면 자동 조회를 멈춘다', async () => {
+    let clock = 10_000 + 400_000
+    const { api } = setup(state('processing'), {
+      now: () => clock,
+      sleep: async (ms) => {
+        clock += ms
+      },
+    })
+    await expect(
+      api.resumeQuestion({ requestId: 'req-1', remainingToday: 30, acceptedAt: 10_000 }, 'c'),
+    ).rejects.toMatchObject({ code: 'PROCESSING_TIMEOUT' })
+    expect(clock - 10_000).toBeGreaterThanOrEqual(420_000)
+    expect(clock - 10_000).toBeLessThanOrEqual(420_000 + 2_000)
+  })
+
+  it('조회를 멈추라는 신호가 오면 더 조회하지 않는다', async () => {
+    const controller = new AbortController()
+    const { api, fetchFn } = setup(state('processing'), {
+      sleep: async () => {
+        if (fetchFn.mock.calls.length >= 2) controller.abort()
+      },
+    })
+    await expect(
+      api.resumeQuestion({ requestId: 'req-1', remainingToday: 30, acceptedAt: Date.now() }, 'c', {
+        signal: controller.signal,
+      }),
+    ).rejects.toBeInstanceOf(Error)
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+  })
+
+  it('번호로 확인할 때 없는 번호(404)에는 접수 정보를 붙이지 않는다', async () => {
+    const { api } = setup(() => jsonResponse({ code: 'QUESTION_NOT_FOUND', message: '질문을 찾을 수 없습니다.' }, 404))
+    await expect(api.checkQuestion('3f2b8c1e-5a4d-4c2b-9e1f-0a1b2c3d4e5f', null, 'c')).rejects.toMatchObject({
+      code: 'QUESTION_NOT_FOUND',
+      accepted: null,
+    })
+  })
+
+  it('번호로 확인한 결과는 남은 횟수를 모르므로 null로 돌려주고 GET 한 번만 한다', async () => {
+    const { api, fetchFn } = setup(state('completed', { result: NOTICE }))
+    const response = await api.checkQuestion('req-1', null, 'c')
+    expect(response.remaining_today).toBeNull()
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+    expect(callAt(fetchFn, 0).init.method).toBe('GET')
   })
 })

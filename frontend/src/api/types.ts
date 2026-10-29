@@ -125,9 +125,26 @@ export type AgentResponse = AnswerResponse | NoticeResponse | ClarificationRespo
 /**
  * 화면이 받는 질문 결과: 에이전트 응답(상태 조회의 result) + 오늘 남은 횟수.
  * 서버는 접수 응답(POST)에 remaining_today를, 상태 조회(GET)에 result를 따로 주므로
- * ErApi.askQuestion이 둘을 합쳐 이 형태로 돌려준다.
+ * ErApi.askQuestion이 둘을 합쳐 이 형태로 돌려준다. 접수 번호를 직접 입력해 조회한 결과처럼
+ * 접수 시점의 값을 모르면 remaining_today는 null이다.
  */
-export type QuestionResponse = AgentResponse & { remaining_today: number }
+export type QuestionResponse = AgentResponse & { remaining_today: number | null }
+
+/** 접수된 질문. 화면에 접수 번호를 보여 주고, 새로고침한 뒤 조회를 이어 가는 데 쓴다. */
+export interface AcceptedQuestion {
+  /** 접수 번호(request_id) */
+  requestId: string
+  /** 접수 응답의 오늘 남은 횟수 */
+  remainingToday: number
+  /** 접수 응답을 받은 시각(밀리초, Date.now 기준). 화면 대기 420초는 여기서부터 센다. */
+  acceptedAt: number
+}
+
+/** 조회 반복을 멈추게 할 때 쓴다. 화면이 사라지거나 다른 질문 조회로 바뀌면 멈춘다. */
+export interface PollOptions {
+  onStatus?: (status: QuestionStatus) => void
+  signal?: AbortSignal
+}
 
 // ---------- 질문 접수와 상태 조회 ----------
 
@@ -246,19 +263,26 @@ export interface ErApi {
   getConditions(inviteCode: string): Promise<ConditionsResponse>
   /**
    * 질문을 접수하고 결과가 나올 때까지 기다려 돌려준다. 접수·조회 반복은 구현이 맡으므로 호출하는 쪽은
-   * 한 번의 호출로 본다. onStatus는 접수·처리 중처럼 진행 상태가 바뀔 때마다 불린다.
-   * 처리 실패(failed)와 대기 시간 초과는 ApiError로 던진다.
+   * 한 번의 호출로 본다. onStatus는 접수·처리 중처럼 진행 상태가 바뀔 때마다, onAccepted는 접수 응답을
+   * 받은 직후 한 번 불린다. 처리 실패(failed)와 대기 시간 초과는 ApiError로 던진다.
    */
   askQuestion(
     request: QuestionRequest,
     inviteCode: string,
     onStatus?: (status: QuestionStatus) => void,
+    onAccepted?: (accepted: AcceptedQuestion) => void,
+    signal?: AbortSignal,
   ): Promise<QuestionResponse>
   /**
-   * 대기 시간이 지나 자동 조회를 멈춘 질문의 결과를 한 번 다시 확인한다. 질문을 다시 보내지 않는다.
-   * 아직 처리 중이면 PROCESSING_TIMEOUT을 다시 던진다.
+   * 이미 접수한 질문의 조회를 이어 간다(같은 탭의 새로고침 뒤). 질문을 다시 보내지 않는다.
+   * 접수 시각부터 대기 시간이 이미 지났으면 조회하지 않고 바로 PROCESSING_TIMEOUT을 던진다.
    */
-  checkQuestion(requestId: string, remainingToday: number, inviteCode: string): Promise<QuestionResponse>
+  resumeQuestion(accepted: AcceptedQuestion, inviteCode: string, options?: PollOptions): Promise<QuestionResponse>
+  /**
+   * 접수 번호로 결과를 한 번 확인한다. 질문을 다시 보내지 않고 횟수에도 영향이 없다.
+   * 아직 처리 중이면 PROCESSING_TIMEOUT을 던진다. remainingToday를 모르면 null을 넘긴다.
+   */
+  checkQuestion(requestId: string, remainingToday: number | null, inviteCode: string): Promise<QuestionResponse>
   /** 답변(result.log_id)에 후기를 보낸다. 같은 질문에 다시 보내면 이전 후기를 덮어쓴다. */
   submitFeedback(logId: string, feedback: FeedbackRequest, inviteCode: string): Promise<FeedbackResponse>
   getCollectionSummary(inviteCode: string): Promise<CollectionSummaryResponse>
