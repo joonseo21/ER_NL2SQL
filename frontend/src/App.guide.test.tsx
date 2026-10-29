@@ -67,7 +67,7 @@ describe('서비스 안내(spec D-25, M1-044)', () => {
 
   it('안내문에 쌓인 경기 수 같은 변하는 숫자를 쓰지 않고 수집 현황을 가리킨다', () => {
     const text = SERVICE_GUIDE.flatMap((s) => s.lines).join('\n')
-    expect(text).toContain("'수집 현황'에서 볼 수 있습니다")
+    expect(text).toContain("'수집 현황' 탭에서 볼 수 있습니다")
     expect(text).not.toMatch(/\d[\d,]*\s*(판|경기)이 (쌓|모였)/)
     expect(text).not.toMatch(/\d{1,3}(,\d{3})+/) // 72,140 같은 집계 수치
   })
