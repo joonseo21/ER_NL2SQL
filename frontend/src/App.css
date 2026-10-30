@@ -610,3 +610,48 @@ th.num {
 .result-id p {
   margin: 4px 0 0;
 }
+
+/* 질문 문장과 지우기 버튼은 360px 폭에서도 줄을 바꾼다. */
+.recent-questions {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.recent-controls {
+  margin: 12px 0;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.recent-controls button {
+  max-width: 100%;
+  white-space: normal;
+}
+
+.recent-toggle {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.recent-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.recent-list li {
+  min-width: 0;
+}
+
+.recent-question {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}

@@ -7,6 +7,7 @@ import { ErrorNotice } from './components/ErrorNotice'
 import { FeedbackForm } from './components/FeedbackForm'
 import { PendingStatus } from './components/PendingStatus'
 import { QuestionForm } from './components/QuestionForm'
+import { RecentQuestions } from './components/RecentQuestions'
 import { RequestIdBox } from './components/RequestIdBox'
 import { RequestLookup } from './components/RequestLookup'
 import { ResultView } from './components/ResultView'
@@ -15,6 +16,7 @@ import type { ConditionSelection } from './lib/conditions'
 import { QUESTION_INPUT_ID } from './lib/dom'
 import { clearLastResult, loadLastResult, saveLastResult } from './lib/lastResult'
 import { clearPendingQuestion, loadPendingQuestion, savePendingQuestion } from './lib/pendingQuestion'
+import { useRecentQuestions } from './lib/useRecentQuestions'
 
 interface Props {
   api: ErApi
@@ -51,6 +53,8 @@ type ResultState =
   | { status: 'error'; error: ApiError }
 
 export function QuestionScreen({ api, inviteCode, initialRemaining, onInviteInvalid }: Props) {
+  const recent = useRecentQuestions(inviteCode)
+  const forgetRecent = recent.forget
   const [optionsState, setOptionsState] = useState<OptionsState>({ status: 'loading' })
   const [reloadCount, setReloadCount] = useState(0)
   const [selection, setSelection] = useState<ConditionSelection>(DEFAULT_SELECTION)
@@ -135,6 +139,7 @@ export function QuestionScreen({ api, inviteCode, initialRemaining, onInviteInva
       if (error.requestFinished || error.code === 'QUESTION_NOT_FOUND') {
         const finishedId = error.accepted?.requestId ?? requestId
         if (finishedId !== null) clearPendingQuestion(finishedId)
+        if (finishedId !== null && error.code === 'QUESTION_NOT_FOUND') forgetRecent(finishedId)
       }
       if (error.accepted) {
         if (error.accepted.remainingToday !== null) setRemaining(error.accepted.remainingToday)
@@ -144,7 +149,7 @@ export function QuestionScreen({ api, inviteCode, initialRemaining, onInviteInva
       }
       setResult({ status: 'error', error })
     },
-    [onInviteInvalid],
+    [onInviteInvalid, forgetRecent],
   )
 
   const updateProgress = useCallback((progress: QuestionStatus) => {
@@ -186,6 +191,7 @@ export function QuestionScreen({ api, inviteCode, initialRemaining, onInviteInva
           // 접수되면 번호를 보여 주고, 새로고침해도 이어 볼 수 있게 같은 탭에 보관한다.
           requestId = accepted.requestId
           savePendingQuestion(inviteCode, { ...accepted, question: text })
+          recent.remember({ requestId: accepted.requestId, question: text, acceptedAt: accepted.acceptedAt })
           // 새 질문이 접수되면 이전 결과는 새로고침 뒤 다시 보여 주지 않는다.
           clearLastResult()
           setRemaining(accepted.remainingToday)
@@ -294,6 +300,15 @@ export function QuestionScreen({ api, inviteCode, initialRemaining, onInviteInva
         </>
       )}
 
+      <RecentQuestions
+        entries={recent.entries}
+        enabled={recent.enabled}
+        available={recent.available}
+        disabled={pending}
+        onLookup={(requestId) => void handleCheck(requestId, null)}
+        onClear={recent.clear}
+        onEnabledChange={recent.setEnabled}
+      />
       <RequestLookup disabled={pending} onLookup={(requestId) => void handleCheck(requestId, null)} />
     </div>
   )

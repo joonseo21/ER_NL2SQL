@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createApi, isMockMode } from './api'
 import type { ErApi } from './api'
 import { CollectionStatus } from './components/CollectionStatus'
@@ -7,6 +7,7 @@ import { MockBar } from './components/MockBar'
 import { SERVICE_GUIDE_ID, ServiceGuide } from './components/ServiceGuide'
 import { clearLastResult } from './lib/lastResult'
 import { clearPendingQuestion } from './lib/pendingQuestion'
+import { loadRecentQuestions } from './lib/recentQuestions'
 import { clearInviteCode, loadInviteCode, saveInviteCode } from './lib/session'
 import { QuestionScreen } from './QuestionScreen'
 import './App.css'
@@ -27,6 +28,8 @@ interface Props {
 }
 
 export default function App({ api = defaultApi }: Props) {
+  // 초대 코드를 입력하기 전에도 앱을 열면 모든 코드의 만료 기록을 정리한다.
+  useEffect(() => { loadRecentQuestions() }, [])
   const [session, setSession] = useState<Session | null>(() => {
     const code = loadInviteCode()
     return code === null ? null : { code, remaining: null }

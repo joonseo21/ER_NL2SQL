@@ -827,7 +827,7 @@ describe('접수 번호 표시와 복구(spec D-23)', () => {
     const requestId = await acceptElsewhere('notice')
     const { user, api } = setup()
     await reachQuestionScreen(user)
-    expect(screen.getByText(/질문 횟수에 영향이 없습니다/)).toBeInTheDocument()
+    expect(within(screen.getByRole('region', { name: '접수 번호로 결과 확인' })).getByText(/질문 횟수에 영향이 없습니다/)).toBeInTheDocument()
 
     await lookUp(user, requestId.toUpperCase())
 
