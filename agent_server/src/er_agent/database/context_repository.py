@@ -88,6 +88,7 @@ _SCOPE_QUERY = """
            MAX(g.fetched_at) AS data_as_of
     FROM games g LEFT JOIN participants p ON p.game_id = g.game_id
     WHERE g.season_id = %s AND g.matching_mode = 3 AND g.matching_team_mode = 3
+      AND g.version_major = %s AND g.version_minor = %s
     GROUP BY g.version_major, g.version_minor, p.tier, p.tier_division
     ORDER BY g.version_major, g.version_minor, p.tier NULLS FIRST, p.tier_division NULLS FIRST
     LIMIT %s OFFSET %s
@@ -99,24 +100,39 @@ def _load_scopes(
     season_id: int,
 ) -> tuple[ScopeBucket, ...]:
     scopes: list[ScopeBucket] = []
-    offset = 0
-    while True:
-        rows = connection.execute(_SCOPE_QUERY, (season_id, MAX_ROWS, offset)).fetchall()
-        scopes.extend(
-            ScopeBucket(
-                PatchVersion(row["version_major"], row["version_minor"]),
-                row["tier"],
-                row["tier_division"],
-                row["appearances"],
-                row["first_match"],
-                row["last_match"],
-                row["data_as_of"],
+    # The default hash/merge plan scans the entire participants index even after
+    # filtering one patch. Use the game_id covering index for these small patch slices.
+    connection.execute("SET LOCAL enable_hashjoin = off")
+    connection.execute("SET LOCAL enable_mergejoin = off")
+    versions = connection.execute(
+        "SELECT DISTINCT version_major, version_minor FROM games "
+        "WHERE season_id = %s AND matching_mode = 3 AND matching_team_mode = 3 "
+        "ORDER BY version_major, version_minor",
+        (season_id,),
+    ).fetchall()
+    for version in versions:
+        offset = 0
+        while True:
+            rows = connection.execute(
+                _SCOPE_QUERY,
+                (season_id, version["version_major"], version["version_minor"], MAX_ROWS, offset),
+            ).fetchall()
+            scopes.extend(
+                ScopeBucket(
+                    PatchVersion(row["version_major"], row["version_minor"]),
+                    row["tier"],
+                    row["tier_division"],
+                    row["appearances"],
+                    row["first_match"],
+                    row["last_match"],
+                    row["data_as_of"],
+                )
+                for row in rows
             )
-            for row in rows
-        )
-        if len(rows) < MAX_ROWS:
-            return tuple(scopes)
-        offset += MAX_ROWS
+            if len(rows) < MAX_ROWS:
+                break
+            offset += MAX_ROWS
+    return tuple(scopes)
 
 
 def load_context_snapshot(database_url: str, season_id: int) -> ContextSnapshot:

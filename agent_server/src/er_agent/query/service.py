@@ -14,6 +14,7 @@ from ..models.sql import SqlAttempt
 from .context_resolver import prepare_context
 from .evidence import result_evidence
 from .execution import execute_attempt
+from .notice_messages import model_failure_message, query_failure_message
 from .ports import ContextRepository, QueryExecutor, QueryGenerator, QueryRecorder, QuerySettings
 from .repair_policy import MAX_SQL_ATTEMPTS, should_repair
 from .summary import render_summary
@@ -55,7 +56,7 @@ class QueryService:
             payload = response.to_dict()
         except LlmCallError as exception:
             error = str(exception)
-            response = self._notice(request, f"{error}. 잠시 뒤 다시 요청해 주세요.")
+            response = self._notice(request, model_failure_message(exception))
             payload = response.to_dict()
         except GenerationFormatError:
             error = "generation_format"
@@ -89,9 +90,7 @@ class QueryService:
                     response = self._answer(request, context, generation, sql, result)
                     return self._summarize(response, generator)
                 if not should_repair(attempt, result):
-                    return self._notice(
-                        request, "SQL을 실행하지 못했습니다. 질문을 다시 제출해 주세요."
-                    )
+                    return self._notice(request, query_failure_message(result.error))
                 sql = generator.repair(request, context, sql, result.error or "")
         raise RuntimeError("Unreachable SQL repair state")
 

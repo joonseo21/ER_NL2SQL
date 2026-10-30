@@ -1,121 +1,86 @@
-# evaluations: NL2SQL 실제 호출 관찰·실험 도구
+# evaluations: NL2SQL 관찰·채점 도구
 
-에이전트(`er_agent`)를 **실제 Gemini와 읽기 전용 DB**로 돌려 지연·토큰·SQL·응답을 기록하는 도구다. `run.py`는 정답을 채점하지 않는다. `accuracy`는 항상 null이고 "완료"는 정답을 뜻하지 않는다. 채점은 `score.py`가 따로 한다(아래 "채점" 절).
+갱신일: 2026-10-28, 코드 대조. 선택한 Gemini 또는 OpenAI와 읽기 전용 DB로 질문을 실행해 응답·지연·토큰·SQL을 기록한다. `run.py`의 accuracy는null이며 기록 완료는 정답 판정이 아니다. 정답 표 채점은 `score.py`가 맡는다. 이번 문서 정리에서는 실제 모델/DB에 접속하지 않았다.
 
-- 현재 상태·남은 결정: [docs/parts/agent.md](../../docs/parts/agent.md)
-- 결과의 해석과 근거 수치: [docs/archive/nl2sql_experiments_2026-10-12.md](../../docs/archive/nl2sql_experiments_2026-10-12.md)
-- 이 파일: 무엇이 있고, 어떻게 실행하고, 결과가 어디에 있는지
+- 현재 구현·정식 평가와 시범의 구분: [agent](../../docs/parts/agent.md).
+- 현재 DB·비공개 환경 로더·스냅샷 전환·운영/자원 설정: [operations](../../docs/operations.md#로컬-db와-평가-대상).
+- 실제 측정 결과는 [시범 보고서](../../docs/archive/nl2sql_pilot_eval_2026-10-17.md), 초기 실험은 [초기 보고서](../../docs/archive/nl2sql_experiments_2026-10-12.md).
+- [과거 실행 색인·테스트베드 원문](../../docs/archive/agent_evaluation_history_2026-10-28.md)은 날짜별 이력이다. 옛 V6/5초/비밀번호 없음/자원 설정을 현재 지침으로 쓰지 않는다.
 
-## 폴더 구조
+<a id="폴더-구조"></a>
 
-| 경로 | 역할 |
+## 도구와 외부 호출 범위
+
+| 도구 | 동작 | 외부 연결 |
+|---|---|---|
+| `run.py` | 사전 점검 후1~10문항×1~5반복 순차 관찰. 실패 시 중단 또는 계속 | 실제 DB+선택 모델. `--preflight-only`는 DB만 |
+| `score.py expect` | 정답 SQL 결과 표/SQL 해시 저장. timeout만 최대3시도 | 실제 DB, 모델 없음 |
+| `score.py grade` | 기존 관찰과 저장된 정답 표 채점 | 로컬 파일만 |
+| `score.py run` | 질문 파일을10문항 묶음으로 나눠 관찰 후 통합 채점 | 실제 DB+선택 모델 |
+| `summarize.py` | 폴더 요약, `--list`로 현재 실행 색인 | 로컬 파일만 |
+| `explain.py` | 기록된 SQL에 EXPLAIN(ANALYZE 없음). 모델 SQL을 실행해 결과를 얻는 기능은 아님 | 실제 DB. 자체 expected-database 옵션은 없음 |
+| `report.py` | JSONL의 호출/토큰/실행 시간 집계 | 로컬 파일만 |
+| `experiments/gemini_probe.py`, `thinking_probe.py` | Gemini 전송/사고 옵션 진단 | 실제 모델 호출, DB 자료 없음 |
+
+`cases/recommendations.json`은 초기3문항, `cases/experiment_8.json`은 반복 관찰용8문항이다. 현재 시범 gold/질문 파일은 저장소 밖 경로로 받는다. `results/`는 Git 제외다. 정식 평가 질문의 확정·사용자 검수·기능별 제외 비교 완료와 시범 도구 구현을 구분한다.
+
+<a id="사전-조건"></a>
+
+## 준비와 공급자 설정
+
+PowerShell에서 agent_server를 작업 폴더로 사용한다. 의존성은 `uv sync`로 준비한다. 실험 전에 operations의 비공개 환경 로더로 정확한 대상 DB·기대 DB명·snapshot-id를 준비한다. 고정15446과 새 전체 복원15448은 서로 다른 데이터이므로 옛 정답 표를 그대로 재사용하지 않는다. 과거 컨테이너 이름·루트 개수·가동 상태를 현재 상태로 간주하지 않는다.
+
+`LLM_PROVIDER`는 gemini(기본)/openai다. 선택 공급자의 `*_API_KEY`, `*_MODEL`이 필요하다. 두 모델 timeout은 기본30초·1~600초. Gemini thinking은 미지정/빈 값이면low, 환경값default이면 모델 기본이며 low/high도 가능하다. OpenAI reasoning은 미지정/빈 값/default이면 옵션을 생략하고 low 등은 명시할 때만 전달한다. 키/비밀번호/실제 접속 문자열을 출력·로그·명령 예시에 넣지 않는다.
+
+실제 관찰은 질문·스키마/지표·공식 이름·범위 표본·SQL·요약용 결과를 **선택 공급자**에게 전송한다. 질문/데이터의 전송 승인을 받은 범위에서만 실행하며, 기본 테스트는 모의 호출이다. `uv --offline`은 패키지 다운로드 옵션이며 실제 모델의 네트워크 호출을 막는 옵션이 아니다.
+
+<a id="실행"></a>
+
+## 관찰 실행
+
+아래 명령은 사용법이며 이번 정리에서 실행하지 않았다. `AGENT_EVAL_DATABASE_URL`, `AGENT_EVAL_DATABASE_NAME`, `AGENT_EVAL_SNAPSHOT_ID`를 비공개 로더로 준비한 뒤 사용한다. `--preflight-only`도 실제 DB 접속이며 현재 코드에서는 선택 공급자의 키/모델 설정 검사도 통과해야 한다.
+
+```powershell
+# DB 사전 점검만, 모델 호출 없음
+uv run python -m evaluations.run --target snapshot --expected-database $env:AGENT_EVAL_DATABASE_NAME --snapshot-id $env:AGENT_EVAL_SNAPSHOT_ID --preflight-only
+
+# 아래 두 명령은 실제 모델 호출을 수행한다. 승인된 실험에서만 선택해 사용한다.
+uv run python -m evaluations.run --target snapshot --expected-database $env:AGENT_EVAL_DATABASE_NAME --snapshot-id $env:AGENT_EVAL_SNAPSHOT_ID --provider gemini --cases evaluations/cases/experiment_8.json --repeat 3 --thinking-level low --timeout-seconds 30 --label "승인된 관찰" --allow-live-llm
+uv run python -m evaluations.run --target snapshot --expected-database $env:AGENT_EVAL_DATABASE_NAME --snapshot-id $env:AGENT_EVAL_SNAPSHOT_ID --provider openai --cases evaluations/cases/experiment_8.json --repeat 3 --reasoning-effort low --timeout-seconds 30 --label "승인된 관찰" --allow-live-llm
+```
+
+| 옵션 | 코드의 의미 |
 |---|---|
-| `run.py` | 관찰 실행 본체. 문항 파일을 읽어 사전 점검 후 문항을 순서대로 실제 호출하고 결과를 `results/`에 기록 |
-| `summarize.py` | 결과 폴더를 문항별로 요약하거나(`폴더 경로`), 전체 실행 색인을 출력(`--list`) |
-| `explain.py` | 결과 폴더에 기록된 생성 SQL을 `EXPLAIN`(ANALYZE 없음, 실행하지 않음)으로 확인 |
-| `report.py` | `N.jsonl` 이벤트 로그에서 호출 수·시간·토큰을 집계(run.py가 사용) |
-| `score.py` | 정답 SQL의 결과 표를 저장(`expect`)하고, 결과 폴더를 정답과 대조해 채점(`grade`)하거나, 10문항보다 많은 질문 파일을 나눠 실행한 뒤 한꺼번에 채점(`run`) |
-| `cases/experiment_8.json` | 실험용 8문항(추천 3, 단순 통계 4, 예측 1). 기본 사용 대상 |
-| `cases/recommendations.json` | 사용자가 처음 제시한 추천 질문 3개 |
-| `experiments/gemini_probe.py` | 간단한 프롬프트의 응답 시간 확인. DB 데이터를 보내지 않음 |
-| `experiments/thinking_probe.py` | 모델이 어떤 thinking 설정을 받는지 확인. DB 데이터를 보내지 않음 |
-| `results/` | 실행 결과(**Git 제외**). 폴더마다 `NOTE.txt`에 목적·명령·결과 요약이 있다 |
+| `--target snapshot/production` | snapshot은 별도 AGENT_EVAL_DATABASE_URL·snapshot-id 필수. 기본 운영 URL과 같으면 거부하며 운영으로 대체하지 않음. production은 별도 승인한 작업에서만 사용 |
+| `--expected-database` | run의 실제 접속 DB명을 대조하고 다르면 호출 전 중단 |
+| `--snapshot-id` | snapshot에서는 필수인 사용자 선언값. DB가 실제 고정돼 있다는 증명은 아님 |
+| `--cases`, `--repeat` | 파일은1~10개 id/question만, 중복ID·추가 필드 거부. 반복1~5회, 바깥 루프가 반복 |
+| `--provider`, `--model` | 해당 실행의 공급자/모델을 덮어씀. 서비스 배포의 기본 공급자를 바꾸지 않음 |
+| `--timeout-seconds` | 선택 공급자의 시도당 timeout을 덮어씀 |
+| `--thinking-level low/high` | Gemini 전용. 미지정이면 Settings/환경값을 따름 |
+| `--reasoning-effort default/none/minimal/low/medium/high/xhigh/max` | OpenAI 전용. default는 reasoning 생략. 모델별 실제 지원 여부는 코드의 허용 문자열 검사와 별개 |
+| `--allow-live-llm` | 실제 모델 실행 명시. 옛 `--allow-live-gemini`는 Gemini에만 호환되며 OpenAI에는 부족 |
+| `--preflight-only` | 고정 DB/컨텍스트 점검 후 종료. 위 실제 호출 플래그 없이 가능 |
+| `--continue-on-failure`, `--label` | 오류/호출 소진 뒤 계속 여부(기본 중단), manifest/색인의 목적 문구 |
 
-## 사전 조건
+설정/문항 검증→manifest 기록→DB명/agent_ro/이름·범위 점검→반복 관찰→JSONL 지표 합산 순서다. preflight 실패에서는 모델을 호출하지 않는다. SQL20초/가드/수정 정책은 제품 코드와 공유한다. 종료0과 recorded는 관찰 기록 완료, 종료2는 설정·사전 점검·일부 관찰 미완료다. stdout 상태는 recorded/incomplete/preflight_ok/preflight_failed/configuration_failed이며 정확도 통과 여부가 아니다.
 
-- `agent_server`에서 `uv sync`가 끝나 있어야 한다. 명령은 모두 `agent_server` 폴더에서 PowerShell로 실행한다.
-- 저장소 루트 `.env`에 `GEMINI_API_KEY`와 `GEMINI_MODEL`이 있어야 한다. 값은 출력·기록되지 않는다.
-- 대상 DB는 둘 중 하나다.
-  - **테스트베드(권장)**: 로컬 Docker `er-nl2sql-testbed`(`127.0.0.1:15446`). 아래 "테스트베드" 절.
-  - **운영**: SSH 터널(`localhost:15432`)이 열려 있어야 하고 `.env`의 `AGENT_DATABASE_URL`을 쓴다. 운영 서버(t2.small, vCPU 1)에 부하를 주므로 꼭 필요할 때만 쓴다.
-- 외부 전송: 실행하면 질문, 스키마·지표 설명, 공식 이름 목록, 패치·티어별 표본, 생성·수정된 SQL, 요약용 결과 행이 Google Gemini로 나간다. 닉네임과 raw는 보내지 않는다. 사용자가 승인한 범위 안에서만 실행한다.
+<a id="채점-scorepy"></a>
 
-## 실행
+## 채점
 
-**1. 테스트베드 준비 확인**
+gold/질문/정답 표는 저장소 밖 파일을 경로로 전달한다. 기존 시범 파일이 있는 위치는 `C:/er-analytics/pilot-questions`이나, 해당 파일의 검수·스냅샷 준비 상태를 코드만으로 현재 보장할 수 없다. 다음은 경로 자리 표시자를 사용하는 예시다.
 
 ```powershell
-docker start er-nl2sql-testbed
+# 실제 DB에서 정답 표 저장, 모델 호출 없음
+uv run python -m evaluations.score expect --gold '<gold.json 경로>' --out '<expected.json 경로>' --expected-database $env:AGENT_EVAL_DATABASE_NAME --snapshot-id $env:AGENT_EVAL_SNAPSHOT_ID
+# 로컬 관찰/정답 표만 채점
+uv run python -m evaluations.score grade --gold '<gold.json 경로>' --expected '<expected.json 경로>' '<결과폴더1>' '<결과폴더2>'
+# 실제 DB/모델 실행 후 채점. 승인된 실험에서만 사용
+uv run python -m evaluations.score run --gold '<gold.json 경로>' --expected '<expected.json 경로>' --questions '<questions.json 경로>' --target snapshot --expected-database $env:AGENT_EVAL_DATABASE_NAME --snapshot-id $env:AGENT_EVAL_SNAPSHOT_ID --provider gemini --thinking-level low --repeat 3 --allow-live-llm
 ```
 
-```powershell
-docker exec er-nl2sql-testbed pg_isready -U postgres
-```
-
-**2. 사전 점검만 (Gemini 호출 없음, `--allow-live-gemini` 불필요)**
-
-```powershell
-$env:AGENT_EVAL_DATABASE_URL = 'postgresql://agent_ro@127.0.0.1:15446/er_analytics'
-uv run python -m evaluations.run --target snapshot --expected-database er_analytics --snapshot-id testbed-20261012T055131Z --preflight-only --label "사전 점검"
-Remove-Item Env:AGENT_EVAL_DATABASE_URL
-```
-
-**3. 관찰 실행 (Gemini 호출 발생)** — 0단계와 같은 설정, 8문항 × 3회
-
-```powershell
-$env:AGENT_EVAL_DATABASE_URL = 'postgresql://agent_ro@127.0.0.1:15446/er_analytics'
-uv run python -m evaluations.run --target snapshot --expected-database er_analytics --snapshot-id testbed-20261012T055131Z --cases evaluations/cases/experiment_8.json --repeat 3 --thinking-level low --timeout-seconds 60 --continue-on-failure --label "설명 한 줄" --allow-live-gemini
-Remove-Item Env:AGENT_EVAL_DATABASE_URL
-```
-
-| 옵션 | 의미 |
-|---|---|
-| `--target snapshot` / `production` | 대상. snapshot은 `AGENT_EVAL_DATABASE_URL`이 필요하고 운영 URL로 대체되지 않는다 |
-| `--expected-database` | 연결된 DB 이름이 이 값과 다르면 호출 전에 중단 |
-| `--snapshot-id` | snapshot 대상일 때 필수. 사용자 선언 값이며 고정 여부를 증명하지 않는다 |
-| `--cases` | 문항 JSON(1~10개, `id`와 `question`만) |
-| `--repeat N` | 1~5회. 반복이 바깥 루프라 설정이 시간에 고르게 퍼진다 |
-| `--thinking-level low\|high` | Gemini thinking 수준. 생략하면 모델 기본(기본이 느림) |
-| `--timeout-seconds N` | 요청 타임아웃. 생략하면 `GEMINI_TIMEOUT_SECONDS` 또는 30초 |
-| `--continue-on-failure` | API 실패·예기치 않은 오류 뒤에도 다음 문항을 계속. 생략하면 첫 실패에서 중단 |
-| `--label` | `manifest.json`과 색인에 남는 목적 한 줄 |
-| `--preflight-only` | DB 점검만 하고 종료 |
-
-같은 기능을 환경변수로도 줄 수 있다: `GEMINI_TIMEOUT_SECONDS`(1~600), `GEMINI_THINKING_LEVEL`(low, high). 명령줄 값이 우선한다.
-
-종료 코드 0은 모든 문항 기록 완료, 2는 설정 오류·사전 점검 실패·일부 미완료다. 어느 쪽이든 폴더는 남는다. stdout의 `status`는 `recorded`, `incomplete`, `preflight_failed`, `configuration_failed`, `preflight_ok` 중 하나다.
-
-**4. 결과 보기**
-
-```powershell
-uv run python -m evaluations.summarize --list
-```
-
-```powershell
-uv run python -m evaluations.summarize evaluations\results\<폴더>
-```
-
-요약 표의 열: 종류(answer/notice/clarification), SQL 수정 횟수, 요약 누락(answer인데 summary가 없는 횟수), 결과 클래스(컬럼명·순서·서식·추가 컬럼을 무시한 결과 표의 종류 수), SQL 변형 수, 벽시계 중앙값, LLM 호출 최대 시간, 입력·생각 토큰 중앙값. 결과 클래스는 한쪽에만 있는 코드 컬럼이 있으면 같은 값도 다르게 센다.
-
-**5. 생성 SQL의 실행 계획 확인 (실행하지 않음)**
-
-```powershell
-$env:AGENT_EVAL_DATABASE_URL = 'postgresql://agent_ro@127.0.0.1:15446/er_analytics'
-uv run python -m evaluations.explain evaluations\results\<폴더> --target snapshot --snapshot-id testbed-20261012T055131Z --case 0
-Remove-Item Env:AGENT_EVAL_DATABASE_URL
-```
-
-## 채점 (`score.py`)
-
-정답 파일은 저장소 밖에 둔다. 2026-10-14 사용자와 만든 시범 질문 20개는 `C:\er-analytics\pilot-questions`의 `questions.json`(id·question)과 `gold.json`(같은 id의 정답 SQL·분류·채점 기준)이다. 테스트베드는 V8 준비 이후 TCP 접속에 비밀번호를 요구하므로 `AGENT_EVAL_DATABASE_URL`에 비공개 설정의 agent_ro 접속 문자열을 넣는다(값은 출력·기록하지 않는다).
-
-**1. 정답 표 저장 (Gemini 호출 없음)**: 정답 SQL을 에이전트와 같은 agent_ro·읽기 전용·문장당 20초 제한으로 한 번씩 실행해 결과 표를 저장한다. 시간 초과만 최대 3회 다시 시도한다. 정답 SQL이 바뀌면 다시 저장해야 하며, 채점은 SQL 해시가 다른 정답 표를 `stale_answer_key`로 채점하지 않는다.
-
-```powershell
-uv run python -m evaluations.score expect --gold C:\er-analytics\pilot-questions\gold.json --out C:\er-analytics\pilot-questions\expected-testbed-20261012T055131Z.json --expected-database er_analytics --snapshot-id testbed-20261012T055131Z
-```
-
-**2. 기존 결과 폴더 채점**: 폴더를 여러 개 넘기면 하나의 측정으로 합쳐 채점한다.
-
-```powershell
-uv run python -m evaluations.score grade --gold C:\er-analytics\pilot-questions\gold.json --expected C:\er-analytics\pilot-questions\expected-testbed-20261012T055131Z.json evaluations\results\<폴더1> evaluations\results\<폴더2>
-```
-
-**3. 나눠 실행하고 한꺼번에 채점 (Gemini 호출 발생)**: 질문 파일을 run.py가 받는 10문항 단위로 나눠 차례로 실행한 뒤 모든 결과를 함께 채점한다. 옵션은 run.py와 같다.
-
-```powershell
-uv run python -m evaluations.score run --gold C:\er-analytics\pilot-questions\gold.json --expected C:\er-analytics\pilot-questions\expected-testbed-20261012T055131Z.json --questions C:\er-analytics\pilot-questions\questions.json --target snapshot --expected-database er_analytics --snapshot-id testbed-20261012T055131Z --repeat 3 --thinking-level low --timeout-seconds 60 --continue-on-failure --label "시범 20문항" --allow-live-gemini
-```
+expect는 agent_ro·읽기 전용·문장당20초로 정답 SQL을 실행하고 timeout만 최대3시도한다. 정답 SQL 해시가 바뀌면 정답 표를 다시 저장해야 하며 stale_answer_key는 정확도 분모에서 제외한다. 정답 표 채점이 요약/안내 문장의 의미까지 자동으로 증명하지는 않는다.
 
 판정 규칙:
 
@@ -130,113 +95,37 @@ uv run python -m evaluations.score run --gold C:\er-analytics\pilot-questions\go
 
 결과 표 비교는 gold.json의 `scoring`을 따른다. `key_columns`(정답 표의 컬럼 이름)의 값만 보며 컬럼 이름·순서·추가 컬럼은 무시한다. 숫자는 0.011 이내이거나 정답 값을 에이전트의 자릿수로 반올림해 같으면 일치로 본다. `mode`는 `all_rows`(행 수와 모든 행 일치), `required`(지정 행 포함), `subset`(에이전트의 모든 행이 정답 표에 있음)이며 `head`·`tail`·`rows`로 반드시 있어야 할 행을 지정한다. `ordered`이면 결과의 첫 `head`행이 정답 표의 첫 `head`행과 같은 순서여야 하며(head_order), `all_rows`에서는 모든 행의 순서가 같아야 한다. 여러 모양의 답을 인정해야 하면 `scoring`을 조합한다(2026-10-17, D-19). `alternatives: [채점…]`은 하나라도 통과하면 정답(모두 실패하면 실패가 가장 적은 쪽의 사유), `all_of: [채점…]`은 모두 통과해야 정답이다. `mode: "grouped"`는 가로 표를 인정하는 채점이다. `group_by`(정답 표의 컬럼)로 정답 표를 묶고(`group_by`를 생략하면 모든 행이 한 묶음이라 전후 비교를 한 행에 나란히 답한 경우를 인정, `row_filter`로 일부 값의 행만, `group_limit`으로 앞의 묶음만), 에이전트의 한 행에 그 묶음의 `value_columns` 값이 컬럼 이름·순서와 무관하게 모두 있으면 통과한다. `identity_columns`(코드나 이름 등)를 주면 그 묶음의 이름표 중 하나도 같은 행에 있어야 한다. 동물이 행인 표와 티어가 행인 표를 각각 대안으로 둘 수 있다. 실패 사유는 `group_missing`이다. 답변의 기준 안내 문구(`required_disclosure`)와 안내·되묻기 문장의 의미는 자동으로 판정하지 않고 `review`에 표시한다. 결과는 `results/score-<UUID>/score.json`과 화면의 표로 남는다.
 
-시간 항목: 관찰마다 전체 시간(`wall_ms`), Gemini 시도별 시간과 합계·최대, SQL 단계별 시간과 합계·최대, SQL 시간 초과 횟수(SQLSTATE 57014), SQL 수정 여부, 논리·물리 호출 수를 남기고 문항·유형·전체별로 중앙값·p90·최대를 낸다. SQL 단계 시간은 범위 적용·가드·접속을 포함해 순수 DB 시간이 아니다. 시간 초과 횟수는 이 항목이 추가된 2026-10-17 이후 run.py 결과에만 있고 이전 결과는 모름(null)으로 둔다.
+시간 항목: 관찰마다 전체 시간(`wall_ms`), 선택 모델의 시도별 시간과 합계·최대, SQL 단계별 시간과 합계·최대, SQL 시간 초과 횟수(SQLSTATE 57014), SQL 수정 여부, 논리·물리 호출 수를 남기고 문항·유형·전체별로 중앙값·p90·최대를 낸다. SQL 단계 시간은 범위 적용·가드·접속을 포함해 순수 DB 시간이 아니다. 시간 초과 횟수는 이 항목이 추가된 2026-10-17 이후 run.py 결과에만 있고 이전 결과는 모름(null)으로 둔다.
 
-## 코드가 하는 일 (`run.py`의 흐름)
 
-1. `--allow-live-gemini`(또는 `--preflight-only`)를 확인한다. 없으면 설정을 읽기 전에 중단한다.
-2. `cases`를 읽어 검증한다(문항 1~10개, id 중복·추가 필드 거부).
-3. `selected_settings`가 대상 DB와 Gemini 설정을 고른다. snapshot은 운영 URL로 대체되지 않는다. 옵션이 설정을 덮어쓰고 `Settings`가 값을 다시 검증한다.
-4. `results/<UUID>/manifest.json`을 쓴다(대상, 설정, 코드 해시, 문항, 반복, 라벨).
-5. `preflight`가 연결된 DB 이름을 확인하고 agent_ro로 이름 카탈로그와 범위 집계를 읽는다. 실패하면 Gemini를 부르지 않고 `preflight_failed`로 끝난다.
-6. 반복 × 문항 순서로 `observe_case`가 `er_agent.bootstrap.run_query`를 부른다. 이 안에서 에이전트가 이름·범위 검증 → Gemini SQL 생성 → SQL 가드 → 실행 → 오류 시 1회 수정 → 결과 요약을 수행한다.
-7. 호출마다 `N.jsonl`(N은 실행 순서)을 `report.read_metrics`가 읽어 호출 수·시간·토큰을 `observations.json`에 합친다.
+<a id="결과-폴더-읽는-법"></a>
 
-## 결과 폴더 읽는 법
+## 결과 폴더와 진단
 
-| 파일 | 내용 |
+| 파일/도구 | 의미 |
 |---|---|
-| `NOTE.txt` | 첫 줄은 목적. 이어서 실행 명령, 결과, 해석이 있는 문서 위치 |
-| `manifest.json` | 시작 시각(UTC), 대상, 스냅샷 ID, git 리비전, 에이전트 소스 해시, 모델, `gemini`(타임아웃·thinking), 반복, 라벨, 문항, `database_context`(사전 점검 값). 사전 점검 실패 시 `preflight_error_category` |
-| `observations.json` | 실행 한 건당 항목: `id`, `repetition`, `response`(전체 응답 JSON), `error_category`, `wall_ms`, `logical_calls`, `physical_calls`, `llm_attempt_ms`, `sql_stage_ms`, `sql_repaired`, `tokens`, `exhausted_llm_call`, `accuracy`(null) |
-| `N.jsonl` | 한 질문의 이벤트 로그: `query_start`, `llm_attempt`(호출별 시간·토큰·오류 코드), `generation_result`(의도·생성 SQL), `resolved_context`, `sql_attempt`(가드 후 SQL·바인딩·결과·오류), `summary_result`, `query_end` |
-| `report.json`, `diagnostics.json` | 평가 도구 이전의 일회성 보고(index-bench, 사전 점검 실패 진단) |
-
-`sql_stage_ms`는 범위 확인·가드·접속·실행을 합친 값이라 순수 DB 시간이 아니다. `tokens`의 항목이 없으면 0이 아니라 null이다.
-
-## 실행 색인 (2026-10-12)
-
-최신 색인은 `summarize --list`로 만든다. 아래는 이 시점의 내용이다.
-
-| id | 시작(KST) | 대상 | gemini | 반복×문항 | 상태 | 목적 |
-|---|---|---|---|---|---|---|
-| index-be… | - | 복원 DB | - | - | report.json만 | 범위 집계 인덱스 전후 비교. 전 5,016ms 취소 → 후 666/629/619ms |
-| f6df0a62 | 10-12 12:51 | 운영 | 기본 | 1×3 | 사전 점검 실패 | V5 직후 첫 시도. 범위 집계 5초 초과(57014), Gemini 0회 |
-| 191d5f44 | 10-12 12:57 | 운영 | 기본 | 1×3 | 사전 점검 실패 | 같은 명령 재시도, 동일 실패 |
-| e8e9e6ed | 10-12 14:08 | 운영 | 30s/기본 | 1×3 | incomplete 1/3 | 기본 설정에서 첫 호출이 504×3 |
-| 0aad7c5d | 10-12 14:11 | 운영 | 180s/기본 | 1×3 | complete | 타임아웃 180초. 호출당 18~82초, 생성 SQL 5초 초과 |
-| 8c4308da | 10-12 14:17 | 운영 | 180s/low | 1×3 | complete | + thinking low. 호출당 2.8~4.9초, matchup 답변 |
-| 3ae928b1 | 10-12 17:26 | 테스트베드 | 60s/low | 3×8 | complete | 0단계 재현성. 24회 완료, API 실패 0건 |
-| 43b89949, 4cdb882c | 10-18 | 테스트베드(V10·루트 995) | 30s/low | 3×10씩 | complete | 시범 20문항 4차 Gemini(코드 c3bc9e2, 채점 score-f745e3b4). 정답 52/60, 호출 111회 실패 0. 같은 이름 코드 하나로 정하기·루트 문항 전환 반영. 해석은 docs/archive/nl2sql_pilot_eval_2026-10-17.md |
-| 252d00b9, b196c65e | 10-17 | 테스트베드(V9) | 30s/low | 3×10씩 | complete | 시범 20문항 3차 Gemini(코드 b006e3b, 채점 score-5eb44a39). 정답 40/60, 호출 109회(HTTP 402 1회). 해석은 docs/archive/nl2sql_pilot_eval_2026-10-17.md |
-| 5625a25b, 0969dad2 | 10-17 | 테스트베드(V9) | openai gpt-6.1-sol 30s/low | 3×10씩 | complete | 시범 20문항 3차 GPT(채점 score-1c497e6a). 정답 47/60. 5625a25b는 질문 1~10번, 0969dad2는 11~20번을 429 중단 뒤 다시 실행 |
-| 4c727d1d | 10-17 | 테스트베드(V9) | openai gpt-6.1-sol 30s/low | 3×10 중 8건 | 중단 | 3차 GPT 두 번째 묶음. OpenAI 429가 연속 3회 나 중단. 채점에서 제외 |
-| 37e9dc7e | 10-17 | 테스트베드(V9) | 30s/low | 3×7 | complete | 안내·되묻기 기대 7문항 확인 측정(코드 ea58daf, 채점 score-529db390). 정답 15/21, '부패' 3/3·오타 3/3. 743e71e3(HTTP 402 중단)의 재시도 |
-| 743e71e3 | 10-17 | 테스트베드(V9) | 30s/low | 3×7 중 13건 | 중단 | 안내·되묻기 기대 7문항 확인 측정. Gemini HTTP 402가 연속 나 성공 호출 없이 중단. 채점 제외 |
-| score-c9ff6ef0, score-b81466d3 | 10-17 | 재채점(LLM 호출 없음) | - | 60관찰씩 | graded | 3차 최종 기준(5.0 패치 전후 한 행 답 인정)으로 Gemini 3차(252d00b9·b196c65e)와 GPT 3차(5625a25b·0969dad2)를 다시 채점. Gemini 43/60, GPT 50/60. 같은 기준의 2차 재채점은 score-c023511c(41/60)·score-546260ad(43/60) |
-| score-10f834b4, score-62631d39 | 10-17 | 재채점(LLM 호출 없음) | - | 60관찰씩 | graded | D-19 채점 기준과 새 정답 표(testbed-20261017-v9-d19)로 Gemini 2차(95edb93d·09a2391d)와 GPT(3d440e3f·7caa0dc0)를 다시 채점. Gemini 41/60, GPT 43/60. 해석은 docs/archive/nl2sql_pilot_eval_2026-10-17.md |
-| 3d440e3f, 7caa0dc0 | 10-17 | 테스트베드(V9) | openai gpt-6.1-sol 30s/low | 3×10씩 | complete | 2차와 같은 조건의 모델 비교(채점 score-efe68538). 정답 41/60, 전체 시간 중앙값 16.4초 |
-| 95edb93d, 09a2391d | 10-17 | 테스트베드(V9) | 30s/low | 3×10씩 | complete | 시범 20문항 2차(채점 score-030b8b2f). 정답 38/60, 전체 시간 중앙값 11.9초, 소진 0. 해석은 docs/archive/nl2sql_pilot_eval_2026-10-17.md |
-| 439916f9, e67c38df | 10-17 | 테스트베드 | 30s/기본 | 3×10씩 | incomplete | 시범 20문항 기준 측정(score.py run, 채점 score-91afb3d1). 정답 20/60, 15관찰이 생성 호출 504×3으로 소진. 해석은 docs/parts/agent.md 10-17 기록 |
-
-0aad7c5d와 8c4308da는 당시 `--timeout-seconds`·`--thinking-level` 옵션이 없어 임시 스크립트로 같은 값을 덮어썼다. 지금은 위 옵션으로 같은 실행을 재현할 수 있고, 그 스크립트는 삭제했다.
-
-## 테스트베드 (로컬 Docker)
-
-운영 DB를 EC2에서 `pg_dump -Fc`로 뜬 스냅샷의 복원본이다. DB 구조·데이터에 큰 변경이 없는 한 NL2SQL 성능 테스트베드이자 평가용 고정 스냅샷 후보로 쓴다.
-
-| 항목 | 값 |
-|---|---|
-| 컨테이너 | `er-nl2sql-testbed`, postgres:17-alpine(PostgreSQL 17.11), `127.0.0.1:15446`. 2026-10-13 통합 준비 이후 er_analytics의 TCP 접속은 비밀번호(scram-sha-256) 필요, 컨테이너 안의 local 소켓은 trust |
-| 스냅샷 | 2026-10-12 05:51:31 UTC, 덤프 `er_analytics_testbed_20261012T055131Z.dump`(1,005.5MB), 스냅샷 ID `testbed-20261012T055131Z` |
-| 내용 | V6까지 적용, games 59,151 / participants 1,351,240 / users 107,017, 이름 8개 테이블 2,224행 |
-| 계정 | `collector`, `agent_ro`(비밀번호 없음, agent_ro는 읽기 전용·5초) |
-| 볼륨·덤프 위치 | 볼륨 `er_nl2sql_testbed_data`, 덤프 폴더 `C:\er-analytics\testbed-private`(저장소 밖, 닉네임 포함) |
-| 속도 | 같은 쿼리가 운영(t2.small)의 약 1/2~1/3 시간. 로컬 수치에 2~3배를 곱해 읽는다 |
-
-**자원 제한(운영 근사 / 해제)**: 평소에는 1 CPU·2GB로 걸어 둔다.
+| `manifest.json` | 대상·선언 snapshot-id·UTC 시각·git revision·소스/프롬프트 해시·공급자·모델·llm timeout/reasoning·문항·반복·라벨·사전 점검. Gemini에만 예전 gemini 필드도 유지 |
+| `observations.json` | 전체 응답·오류 분류·벽시계/모델/SQL 시간·토큰·SQL 수정/timeout·accuracy:null·review_status |
+| `N.jsonl` | query_start, llm_attempt, generation_result, resolved_context, sql_attempt, summary_result, query_end. 논리 호출과 물리 시도 분리 |
+| `results/score-<UUID>/score.json` | 관찰별 판정·사유·review 항목과 전체/유형/문항별 집계 |
+| `NOTE.txt` | 일부 과거 실행에서 사람이 남긴 설명. run.py가 모든 폴더에 자동 생성하는 파일은 아님 |
 
 ```powershell
-docker update --cpus=1 --memory=2g --memory-swap=2g er-nl2sql-testbed
+uv run python -m evaluations.summarize --list
+uv run python -m evaluations.summarize '<결과폴더>'
+# 실제 DB 연결. ANALYZE 없이 계획만 읽음; 먼저 올바른 DB 환경을 별도 확인할 것
+uv run python -m evaluations.explain '<결과폴더>' --target snapshot --snapshot-id $env:AGENT_EVAL_SNAPSHOT_ID --case 0
 ```
 
-```powershell
-docker update --cpus=20 --memory=16g --memory-swap=16g er-nl2sql-testbed
-```
+요약의 결과 클래스는 컬럼 이름/순서/서식·추가 컬럼 차이를 완화해 비교하지만 SQL 의미의 동등성을 증명하지 않는다. 모델 시간은 논리/물리 호출을 구분하고, sql_stage_ms는 범위 변환·가드·접속을 포함하여 순수 DB 실행 시간이 아니다. 없는 토큰/옛 로그의 timeout 횟수는0으로 채우지 않는다. 스냅샷·코드·정답/채점 기준이 다르면 결과를 같은 실험으로 합치지 않는다.
 
-두 번째 줄의 20과 16g는 이 PC의 Docker 자원이다. `--cpus=0 --memory=0`은 제한을 풀지 못하고, `--memory`를 올릴 때 `--memory-swap`을 같이 올리지 않으면 거부된다. 확인은 `docker inspect er-nl2sql-testbed --format "{{.HostConfig.NanoCpus}} {{.HostConfig.Memory}}"`.
+<a id="알아-둘-한계"></a>
 
-**처음부터 재구성**
+## 검증과 남은 범위
 
-EC2에서 덤프(collector는 멈추지 않아도 된다, 약 8분, 1 vCPU 서버에 부하):
+2026-10-28 agent_server에서 Ruff check·format --check101파일, 오프라인pytest619건 통과(PostgreSQL73건 제외). 실제 DB/모델·운영·위 평가 명령은 이번에 실행하지 않았다. 측정 도구의 모의 테스트 통과와 실제 모델 정확도/유료 등급 검증은 다르다. 실제 측정 기록은 위 보고서 링크, 현재 미결정/정식 평가 완료 조건은 agent 파트 문서에 둔다.
 
-```bash
-umask 077
-mkdir -p ~/backups
-dump_file=~/backups/er_analytics_testbed_$(date -u +%Y%m%dT%H%M%SZ).dump
-time docker compose exec -T postgres pg_dump -U postgres -d er_analytics -Fc > "$dump_file"
-sha256sum "$dump_file"
-```
+<a id="실행-색인-2026-10-12"></a>
+<a id="테스트베드-로컬-docker"></a>
 
-PC로 복사(`scp`)해 `C:\er-analytics\testbed-private`에 두고 해시를 비교한 뒤:
-
-```powershell
-docker run -d --name er-nl2sql-testbed -p 127.0.0.1:15446:5432 -e POSTGRES_USER=postgres -e POSTGRES_HOST_AUTH_METHOD=trust -v er_nl2sql_testbed_data:/var/lib/postgresql/data -v C:\er-analytics\testbed-private:/dump:ro postgres:17-alpine -c max_wal_size=4GB -c maintenance_work_mem=1GB
-docker exec er-nl2sql-testbed psql -U postgres -c "CREATE ROLE collector LOGIN" -c "CREATE ROLE agent_ro LOGIN" -c "CREATE DATABASE er_analytics"
-docker exec er-nl2sql-testbed psql -U postgres -d er_analytics -c "GRANT CONNECT ON DATABASE er_analytics TO collector, agent_ro" -c "GRANT USAGE ON SCHEMA public TO collector, agent_ro" -c "ALTER ROLE agent_ro SET default_transaction_read_only = on" -c "ALTER ROLE agent_ro SET statement_timeout = '5s'"
-docker exec er-nl2sql-testbed pg_restore -U postgres -d er_analytics -j 4 --exit-on-error /dump/<덤프 파일명>
-docker exec er-nl2sql-testbed vacuumdb -U postgres -d er_analytics --analyze --jobs 4
-```
-
-복원은 약 9분, `vacuumdb`는 약 30초가 걸렸다. `pg_restore`는 통계와 visibility map을 복원하지 않으므로 `vacuumdb`가 꼭 필요하다. 새 스냅샷이면 위 `--snapshot-id`와 문서의 스냅샷 값을 함께 갱신한다.
-
-**제거**: `docker rm -f er-nl2sql-testbed`, `docker volume rm er_nl2sql_testbed_data`.
-
-## 알아 둘 한계
-
-- 같은 설정으로 반복해도 LLM이 만드는 SQL·질문 해석이 달라진다. 설정 비교는 반복(3회 이상)으로 한다.
-- 정확도는 `score.py`로 정답 SQL이 있는 문항만 판단한다. 정답 SQL은 사용자 검수 전 초안이 많으므로 채점 결과도 그 기준의 수치다.
-- 입력 토큰이 호출당 약 49~65k이고 질문당 2~3회 호출한다. 반복·문항 수에 비례해 비용이 든다.
-- 로컬 속도는 운영보다 빠르다. SQL 제한(2026-10-17부터 20초) 판단은 로컬에서 비교용으로, 최종 확인은 운영 읽기 전용 소량으로 한다.
-- 이 서버(t2.small)에서는 `EXPLAIN (ANALYZE)`의 시간이 부풀려진다. 시간은 psql `\timing`으로 잰다.
-- `results/`와 덤프는 Git에 넣지 않는다.
+과거 실행 색인·테스트베드 구성은 [이동한 원문](../../docs/archive/agent_evaluation_history_2026-10-28.md)을 참조한다.

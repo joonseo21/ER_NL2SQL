@@ -270,9 +270,14 @@ def test_exhausted_api_requests_return_notice_and_leave_every_attempt(
     path = tmp_path / "log.jsonl"
     with patch("er_agent.generation.retry.time.sleep"):
         answer = run_query(QueryRequest("질문"), SETTINGS, path)
-    assert answer.kind == ResponseKind.NOTICE and "429" in answer.message
+    assert answer.kind == ResponseKind.NOTICE
+    assert answer.message == (
+        "답변을 만드는 모델이 지금 응답하지 못했습니다. 잠시 뒤 다시 질문해 주세요."
+    )
+    assert "429" not in answer.message and "LLM" not in answer.message
     execution.assert_not_called()
     assert len(events(path, "llm_attempt")) == 3
+    assert events(path)[-1]["error"] == "LLM rate_limited (HTTP 429)"
     assert "SECRET" not in path.read_text(encoding="utf-8")
 
 
