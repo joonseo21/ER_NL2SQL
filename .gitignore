@@ -8,6 +8,7 @@ application-api-key.properties
 .gradle-bootstrap/
 .uv-cache/
 **/build/
+backend/pipeline/bin/
 **/.venv/
 **/.pytest_cache/
 **/__pycache__/
