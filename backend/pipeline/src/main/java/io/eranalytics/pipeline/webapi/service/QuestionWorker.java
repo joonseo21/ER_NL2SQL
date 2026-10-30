@@ -17,6 +17,7 @@ public class QuestionWorker {
     private static final Logger log = LoggerFactory.getLogger(QuestionWorker.class);
     private final AgentClient agent;
     private final QuestionProcessingStore store;
+    private final QuestionAdmissionGate gate;
 
     @Async("webApiQuestionExecutor")
     public void process(String id) {
@@ -32,6 +33,8 @@ public class QuestionWorker {
                     id,
                     QuestionFailure.QUESTION_PROCESSING_FAILED.name(),
                     QuestionFailure.QUESTION_PROCESSING_FAILED.getMessage());
+        } finally {
+            gate.release(id);
         }
     }
 

@@ -23,30 +23,45 @@ public class QuestionService {
     private final UsageService usage;
     private final ApplicationEventPublisher events;
     private final WebApiClock webApiClock;
+    private final QuestionAdmissionGate gate;
+    private final InviteService invites;
 
     public ObjectNode ask(String code, WebApiRequests.Question request) {
         JsonNode conditions = RequestConditions.validate(request.conditions());
-        return usage.withQuestion(
-                code,
-                remaining -> {
-                    String id = UUID.randomUUID().toString();
-                    entities.persist(
-                            new QuestionRequestEntity(
-                                    id,
-                                    code,
-                                    request.question(),
-                                    conditions,
-                                    webApiClock.instant()));
-                    events.publishEvent(new QuestionAccepted(id));
-                    ObjectNode response =
-                            com.fasterxml.jackson.databind.node.JsonNodeFactory.instance
-                                    .objectNode();
-                    response.put("request_id", id);
-                    response.put("status", "accepted");
-                    response.put("message", "질문을 접수했습니다. 처리 결과는 잠시 뒤 확인해 주세요.");
-                    response.put("remaining_today", remaining);
-                    return response;
-                });
+        String id = UUID.randomUUID().toString();
+        // Busy takes precedence over quota: a rejected concurrent attempt never touches counters.
+        try {
+            gate.acquire(id);
+        } catch (WebApiException busy) {
+            if (!"QUESTION_BUSY".equals(busy.getCode())) throw busy;
+            throw new WebApiException(
+                    busy.getStatus(), busy.getCode(), busy.getMessage(), invites.remaining(code));
+        }
+        try {
+            return usage.withQuestion(
+                    code,
+                    remaining -> {
+                        entities.persist(
+                                new QuestionRequestEntity(
+                                        id,
+                                        code,
+                                        request.question(),
+                                        conditions,
+                                        webApiClock.instant()));
+                        events.publishEvent(new QuestionAccepted(id));
+                        ObjectNode response =
+                                com.fasterxml.jackson.databind.node.JsonNodeFactory.instance
+                                        .objectNode();
+                        response.put("request_id", id);
+                        response.put("status", "accepted");
+                        response.put("message", "질문을 접수했습니다. 처리 결과는 잠시 뒤 확인해 주세요.");
+                        response.put("remaining_today", remaining);
+                        return response;
+                    });
+        } catch (RuntimeException failure) {
+            gate.release(id);
+            throw failure;
+        }
     }
 
     @Transactional(value = "webApiTransactionManager", readOnly = true)

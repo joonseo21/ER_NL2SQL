@@ -63,7 +63,7 @@
 - 수집 묶음(`collection`, `erapi`, `persistence`, `migration`), `db/migrations/`, `agent_server/`, `frontend/`의 코드와 다른 파트의 문서는 읽지 않는다. 에이전트의 응답 형식과 DB 구조는 계약으로 안다.
 - 테이블이 필요하면 직접 마이그레이션을 만들지 않고 database 계약의 "변경 요청"에 테이블과 컬럼을 적고 사용자에게 알린다. 마이그레이션은 pipeline 파트가 작성한다.
 - 에이전트 응답에 필요한 필드가 없으면 agent-http 계약의 "변경 요청"에 적는다.
-- 에이전트가 아직 HTTP로 뜨지 않았으면 [docs/contracts/samples](../../docs/contracts/samples/README.md)의 응답 예시를 돌려주는 가짜 에이전트로 개발한다.
+- 기본 `WEB_API_AGENT_MODE=http`는 실제 내부 에이전트를 호출한다. 로컬 화면·API 개발에 가짜 응답이 필요할 때만 `WEB_API_AGENT_MODE=mock`을 명시하고 [응답 예시](../../docs/contracts/samples/README.md)를 사용한다. 2026-10-13 로컬 실제 에이전트·화면 왕복은 확인됐고 운영은 미배포다.
 - 담당 밖 코드를 봐야 원인을 알 수 있으면 사용자에게 어떤 파일이 왜 필요한지 말하고 승인받은 파일만 본다.
 
 계약을 바꿀 때:
@@ -73,7 +73,9 @@
 
 알아둘 현재 상태:
 
-- `application.yml`의 `spring.main.web-application-type`이 `none`이라 지금은 웹 요청을 받지 않는다. 웹 API를 켤 때 함께 바꿔야 하며, 수집만 켠 실행이 깨지지 않게 한다.
+- `application.yml`의 기본 `spring.main.web-application-type`은 `none`이다. `ER_WEB_API_ENABLED=true`이면 `WebApiEnvironmentPostProcessor`가 servlet 기본값을 적용해 웹 요청을 받으며, 명시한 실행 설정이 우선한다. 웹 기능을 끈 수집 실행은 비웹 모드를 유지한다.
+- 2026-10-28 로컬 구현: 한 Spring 인스턴스에서 질문 한 건만 접수·처리한다. 처리 중 POST는 503 `QUESTION_BUSY`로 접수 전에 거절하고 횟수에 포함하지 않는다. 재시작 때 남은 접수는 실패로 표시하며 자동 재전송하지 않는다. 운영에는 아직 적용하지 않았다.
+- 접수 전 429·`QUESTION_BUSY` 503은 정수 `remaining_today`를 반환한다. 접수 번호는 UUIDv4 36자이고 같은 초대 코드만 GET 조회할 수 있다. 에이전트 읽기 대기 기본은 2026-10-28 로컬에서 360000ms로 맞췄다.
 - `er.api.*` 설정은 ER Open API(게임 데이터 API) 접속 정보다. 웹 API의 설정은 `er.web-api.*`에 둔다.
 
 ## 검증

@@ -70,6 +70,19 @@ public class QuestionProcessingStore {
         request.fail(code, message, clock.instant());
     }
 
+    /** An in-process worker cannot survive restart; keep the receipt but stop stale polling. */
+    @Transactional(value = "webApiTransactionManager", propagation = Propagation.REQUIRES_NEW)
+    public int failUnfinishedAfterRestart() {
+        return entities.createQuery(
+                        "UPDATE QuestionRequestEntity q SET q.status = 'failed', "
+                                + "q.errorCode = :code, q.message = :message, q.updatedAt = :now "
+                                + "WHERE q.status IN ('accepted', 'processing')")
+                .setParameter("code", QuestionFailure.PROCESS_INTERRUPTED.name())
+                .setParameter("message", QuestionFailure.PROCESS_INTERRUPTED.getMessage())
+                .setParameter("now", clock.instant())
+                .executeUpdate();
+    }
+
     private QuestionRequestEntity locked(String id) {
         return entities.find(QuestionRequestEntity.class, id, LockModeType.PESSIMISTIC_WRITE);
     }

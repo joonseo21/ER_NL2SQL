@@ -1,6 +1,7 @@
 package io.eranalytics.pipeline.webapi.controller;
 
 import io.eranalytics.pipeline.webapi.service.WebApiException;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.ResponseEntity;
@@ -13,9 +14,14 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @ConditionalOnProperty(name = "er.web-api.enabled", havingValue = "true")
 public class WebApiErrorHandler {
     @ExceptionHandler(WebApiException.class)
-    public ResponseEntity<Map<String, String>> application(WebApiException error) {
-        return ResponseEntity.status(error.getStatus())
-                .body(Map.of("code", error.getCode(), "message", error.getMessage()));
+    public ResponseEntity<Map<String, Object>> application(WebApiException error) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("code", error.getCode());
+        body.put("message", error.getMessage());
+        if (error.getRemainingToday() != null) {
+            body.put("remaining_today", error.getRemainingToday());
+        }
+        return ResponseEntity.status(error.getStatus()).body(body);
     }
 
     @ExceptionHandler({

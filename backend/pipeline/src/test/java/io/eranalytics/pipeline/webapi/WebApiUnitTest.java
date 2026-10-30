@@ -9,11 +9,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.eranalytics.pipeline.webapi.client.MockAgentClient;
 import io.eranalytics.pipeline.webapi.config.InviteCodeFilter;
+import io.eranalytics.pipeline.webapi.config.WebApiConfiguration;
 import io.eranalytics.pipeline.webapi.controller.WebApiController;
 import io.eranalytics.pipeline.webapi.controller.WebApiErrorHandler;
 import io.eranalytics.pipeline.webapi.service.ConditionsService;
 import io.eranalytics.pipeline.webapi.service.FeedbackService;
 import io.eranalytics.pipeline.webapi.service.InviteService;
+import io.eranalytics.pipeline.webapi.service.QuestionAdmissionGate;
+import io.eranalytics.pipeline.webapi.service.QuestionProcessingStore;
 import io.eranalytics.pipeline.webapi.service.QuestionService;
 import io.eranalytics.pipeline.webapi.service.RequestConditions;
 import io.eranalytics.pipeline.webapi.service.WebApiException;
@@ -21,7 +24,15 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.boot.ApplicationRunner;
+import org.springframework.boot.DefaultApplicationArguments;
+import org.springframework.boot.env.YamlPropertySourceLoader;
+import org.springframework.core.Ordered;
+import org.springframework.core.env.PropertySource;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.mock.env.MockEnvironment;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -43,6 +54,22 @@ class WebApiUnitTest {
                         .setControllerAdvice(new WebApiErrorHandler())
                         .addFilters(new InviteCodeFilter(invites, json))
                         .build();
+    }
+
+    @Test
+    void recoveryOpensAdmissionBeforeContinuousCollectionRunner() throws Exception {
+        QuestionProcessingStore store = mock(QuestionProcessingStore.class);
+        QuestionAdmissionGate gate = new QuestionAdmissionGate();
+        ApplicationRunner recovery =
+                new WebApiConfiguration().recoverUnfinishedQuestions(store, gate);
+
+        assertThat(recovery).isInstanceOf(Ordered.class);
+        assertThat(((Ordered) recovery).getOrder()).isLessThan(10);
+        recovery.run(new DefaultApplicationArguments(new String[0]));
+
+        verify(store).failUnfinishedAfterRestart();
+        assertThatCode(() -> gate.acquire("receipt")).doesNotThrowAnyException();
+        gate.release("receipt");
     }
 
     @Test
@@ -92,6 +119,38 @@ class WebApiUnitTest {
                 .andExpect(status().isAccepted())
                 .andExpect(header().string("Location", "/api/questions/receipt-test"))
                 .andExpect(jsonPath("$.status").value("accepted"));
+    }
+
+    @Test
+    void rejectedQuestionKeepsErrorFieldsAndIncludesNumericRemaining() throws Exception {
+        when(questions.ask(eq("valid"), any()))
+                .thenThrow(
+                        new WebApiException(
+                                HttpStatus.SERVICE_UNAVAILABLE,
+                                "QUESTION_BUSY",
+                                "잠시 뒤 다시 질문해 주세요.",
+                                17));
+        http.perform(
+                        post("/api/questions")
+                                .header("X-Invite-Code", "valid")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"question\":\"질문\"}"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("QUESTION_BUSY"))
+                .andExpect(jsonPath("$.message").value("잠시 뒤 다시 질문해 주세요."))
+                .andExpect(jsonPath("$.remaining_today").value(17));
+    }
+
+    @Test
+    void applicationYamlDefaultsAgentReadTimeoutToThreeHundredSixtySeconds() throws Exception {
+        MockEnvironment environment = new MockEnvironment();
+        for (PropertySource<?> source :
+                new YamlPropertySourceLoader()
+                        .load("application", new ClassPathResource("application.yml"))) {
+            environment.getPropertySources().addLast(source);
+        }
+        assertThat(environment.getProperty("er.web-api.agent.read-timeout-ms", Long.class))
+                .isEqualTo(360_000L);
     }
 
     @Test

@@ -13,10 +13,13 @@ public class QuestionDispatcher {
     private static final Logger log = LoggerFactory.getLogger(QuestionDispatcher.class);
     private final QuestionWorker worker;
     private final QuestionProcessingStore store;
+    private final QuestionAdmissionGate gate;
 
-    public QuestionDispatcher(QuestionWorker worker, QuestionProcessingStore store) {
+    public QuestionDispatcher(
+            QuestionWorker worker, QuestionProcessingStore store, QuestionAdmissionGate gate) {
         this.worker = worker;
         this.store = store;
+        this.gate = gate;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -24,10 +27,14 @@ public class QuestionDispatcher {
         try {
             worker.process(event.requestId());
         } catch (RuntimeException rejected) {
-            fail(
-                    event.requestId(),
-                    QuestionFailure.DISPATCH_UNAVAILABLE.name(),
-                    QuestionFailure.DISPATCH_UNAVAILABLE.getMessage());
+            try {
+                fail(
+                        event.requestId(),
+                        QuestionFailure.DISPATCH_UNAVAILABLE.name(),
+                        QuestionFailure.DISPATCH_UNAVAILABLE.getMessage());
+            } finally {
+                gate.release(event.requestId());
+            }
         }
     }
 

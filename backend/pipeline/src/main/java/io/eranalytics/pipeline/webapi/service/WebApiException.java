@@ -7,11 +7,17 @@ import org.springframework.http.HttpStatus;
 public class WebApiException extends RuntimeException {
     private final HttpStatus status;
     private final String code;
+    private final Integer remainingToday;
 
     public WebApiException(HttpStatus status, String code, String message) {
+        this(status, code, message, null);
+    }
+
+    public WebApiException(HttpStatus status, String code, String message, Integer remainingToday) {
         super(message);
         this.status = status;
         this.code = code;
+        this.remainingToday = remainingToday;
     }
 
     public static WebApiException invalidInvite() {

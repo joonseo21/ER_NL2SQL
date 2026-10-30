@@ -72,13 +72,17 @@ public class UsageService {
         DailyUsageEntity personal = counter(date, code);
         if (personal.getRequestCount() >= 50) {
             throw new WebApiException(
-                    HttpStatus.TOO_MANY_REQUESTS, "INVITE_LIMIT_EXCEEDED", "오늘 질문 횟수를 모두 사용했습니다.");
+                    HttpStatus.TOO_MANY_REQUESTS,
+                    "INVITE_LIMIT_EXCEEDED",
+                    "오늘 질문 횟수를 모두 사용했습니다.",
+                    0);
         }
         if (global.getRequestCount() >= 300) {
             throw new WebApiException(
                     HttpStatus.TOO_MANY_REQUESTS,
                     "GLOBAL_LIMIT_EXCEEDED",
-                    "오늘 전체 질문 횟수를 모두 사용했습니다.");
+                    "오늘 전체 질문 횟수를 모두 사용했습니다.",
+                    0);
         }
         global.increment();
         personal.increment();

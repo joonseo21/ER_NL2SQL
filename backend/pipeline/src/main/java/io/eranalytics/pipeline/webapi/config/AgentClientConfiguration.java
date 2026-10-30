@@ -24,7 +24,7 @@ public class AgentClientConfiguration {
             @Value("${er.web-api.agent.base-url:http://127.0.0.1:8000}") String baseUrl,
             @Value("${AGENT_INTERNAL_TOKEN:}") String token,
             @Value("${er.web-api.agent.connect-timeout-ms:3000}") long connectTimeout,
-            @Value("${er.web-api.agent.read-timeout-ms:330000}") long readTimeout) {
+            @Value("${er.web-api.agent.read-timeout-ms:360000}") long readTimeout) {
         return new HttpAgentClient(
                 json,
                 baseUrl,

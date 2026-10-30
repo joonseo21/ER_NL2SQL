@@ -15,13 +15,16 @@ import io.eranalytics.pipeline.webapi.dto.WebApiRequests;
 import io.eranalytics.pipeline.webapi.entity.DailyUsageEntity;
 import io.eranalytics.pipeline.webapi.entity.DailyUsageId;
 import io.eranalytics.pipeline.webapi.entity.InviteCodeEntity;
+import io.eranalytics.pipeline.webapi.entity.QuestionRequestEntity;
 import io.eranalytics.pipeline.webapi.repository.DailyUsageRepository;
 import io.eranalytics.pipeline.webapi.repository.FeedbackRepository;
 import io.eranalytics.pipeline.webapi.repository.InviteCodeRepository;
 import io.eranalytics.pipeline.webapi.repository.QuestionLogRepository;
 import io.eranalytics.pipeline.webapi.repository.QuestionRequestRepository;
 import io.eranalytics.pipeline.webapi.service.QuestionAccepted;
+import io.eranalytics.pipeline.webapi.service.QuestionAdmissionGate;
 import io.eranalytics.pipeline.webapi.service.QuestionFailure;
+import io.eranalytics.pipeline.webapi.service.QuestionProcessingStore;
 import io.eranalytics.pipeline.webapi.service.QuestionService;
 import io.eranalytics.pipeline.webapi.service.UsageService;
 import io.eranalytics.pipeline.webapi.service.WebApiClock;
@@ -81,6 +84,8 @@ class WebApiLogicIntegrationTest {
     @Autowired FeedbackRepository feedback;
     @Autowired QuestionService questions;
     @Autowired QuestionRequestRepository requests;
+    @Autowired QuestionAdmissionGate gate;
+    @Autowired QuestionProcessingStore processingStore;
     @Autowired UsageService usageService;
     @Autowired ApplicationEventPublisher events;
     @Autowired TestClock clock;
@@ -126,8 +131,7 @@ class WebApiLogicIntegrationTest {
 
     @BeforeEach
     void prepare() throws Exception {
-        await().atMost(Duration.ofSeconds(10))
-                .until(() -> requests.countByStatusIn(List.of("accepted", "processing")) == 0);
+        await().atMost(Duration.ofSeconds(10)).until(() -> !gate.isOccupied());
         try (Connection connection = DriverManager.getConnection(testUrl(), "stage2_test", "");
                 Statement sql = connection.createStatement()) {
             sql.execute(
@@ -245,9 +249,15 @@ class WebApiLogicIntegrationTest {
                                                 jsonPath("$.message")
                                                         .value(failure.exception().getMessage()));
                             });
+            await().atMost(Duration.ofSeconds(5)).until(() -> !gate.isOccupied());
         }
         verify(agent, times(6)).query(anyString(), any());
         assertThat(logs.count()).isZero();
+        MockAgentClient recovered = new MockAgentClient(json, "answer");
+        doAnswer(call -> recovered.query(call.getArgument(0), call.getArgument(1)))
+                .when(agent)
+                .query(anyString(), any());
+        assertThat(ask().path("kind").asText()).isEqualTo("answer");
     }
 
     @Test
@@ -292,7 +302,8 @@ class WebApiLogicIntegrationTest {
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content("{\"question\":\"질문\"}"))
                 .andExpect(status().isTooManyRequests())
-                .andExpect(jsonPath("$.code").value("INVITE_LIMIT_EXCEEDED"));
+                .andExpect(jsonPath("$.code").value("INVITE_LIMIT_EXCEEDED"))
+                .andExpect(jsonPath("$.remaining_today").value(0));
         clock.now = Instant.parse("2026-10-12T15:00:00Z");
         assertThat(ask().path("remaining_today").asInt()).isEqualTo(49);
         assertThat(
@@ -313,57 +324,178 @@ class WebApiLogicIntegrationTest {
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content("{\"question\":\"질문\"}"))
                 .andExpect(status().isTooManyRequests())
-                .andExpect(jsonPath("$.code").value("GLOBAL_LIMIT_EXCEEDED"));
+                .andExpect(jsonPath("$.code").value("GLOBAL_LIMIT_EXCEEDED"))
+                .andExpect(jsonPath("$.remaining_today").value(0));
         assertLogsCount(1);
     }
 
     @Test
-    void concurrentRequestsDoNotExceedPersonalOrGlobalLimit() throws Exception {
+    void busyRejectionReturnsCommittedRemainingWithoutNewReceiptOrUsage() throws Exception {
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        MockAgentClient mock = new MockAgentClient(json, "answer");
+        when(agent.query(anyString(), any()))
+                .thenAnswer(
+                        call -> {
+                            started.countDown();
+                            if (!release.await(10, TimeUnit.SECONDS)) throw new AssertionError();
+                            return mock.query(call.getArgument(0), call.getArgument(1));
+                        });
+        try {
+            String id =
+                    questions
+                            .ask(CODE, new WebApiRequests.Question("첫 질문", null))
+                            .path("request_id")
+                            .asText();
+            assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
+            assertThat(id)
+                    .matches("[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}");
+            http.perform(
+                            post("/api/questions")
+                                    .header("X-Invite-Code", CODE)
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .content("{\"question\":\"다음 질문\"}"))
+                    .andExpect(status().isServiceUnavailable())
+                    .andExpect(jsonPath("$.code").value("QUESTION_BUSY"))
+                    .andExpect(jsonPath("$.remaining_today").value(49));
+            assertThat(requests.count()).isEqualTo(1);
+            assertThat(
+                            usage.findById(new DailyUsageId(LocalDate.of(2026, 10, 12), "GLOBAL"))
+                                    .orElseThrow()
+                                    .getRequestCount())
+                    .isEqualTo(1);
+        } finally {
+            release.countDown();
+        }
+        await().until(() -> !gate.isOccupied());
+    }
+
+    @Test
+    void resultLookupIsOwnerOnlyAndNeverConsumesUsage() throws Exception {
+        String id =
+                questions
+                        .ask(CODE, new WebApiRequests.Question("질문", null))
+                        .path("request_id")
+                        .asText();
+        assertThat(id)
+                .matches("[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}");
+        invites.save(new InviteCodeEntity("other", null, NOW));
+        http.perform(get("/api/questions/" + id).header("X-Invite-Code", CODE))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.request_id").value(id));
+        String other =
+                http.perform(get("/api/questions/" + id).header("X-Invite-Code", "other"))
+                        .andExpect(status().isNotFound())
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        String missing =
+                http.perform(
+                                get("/api/questions/00000000-0000-4000-8000-000000000000")
+                                        .header("X-Invite-Code", "other"))
+                        .andExpect(status().isNotFound())
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(json.readTree(other)).isEqualTo(json.readTree(missing));
+        assertThat(json.readTree(other).path("code").asText()).isEqualTo("QUESTION_NOT_FOUND");
+        assertThat(
+                        usage.findById(new DailyUsageId(LocalDate.of(2026, 10, 12), "GLOBAL"))
+                                .orElseThrow()
+                                .getRequestCount())
+                .isEqualTo(1);
+        assertThat(requests.count()).isEqualTo(1);
+        await().until(() -> !gate.isOccupied());
+    }
+
+    @Test
+    void concurrentRequestsAdmitOnlyOneWithoutChargingRejectedAttempts() throws Exception {
         seed(48, 298);
-        List<Future<Boolean>> attempts = new ArrayList<>();
+        CountDownLatch agentStarted = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        MockAgentClient mock = new MockAgentClient(json, "answer");
+        when(agent.query(anyString(), any()))
+                .thenAnswer(
+                        call -> {
+                            agentStarted.countDown();
+                            if (!release.await(10, TimeUnit.SECONDS)) throw new AssertionError();
+                            return mock.query(call.getArgument(0), call.getArgument(1));
+                        });
+        List<Future<Integer>> attempts = new ArrayList<>();
         try (ExecutorService executor = Executors.newFixedThreadPool(6)) {
             for (int index = 0; index < 12; index++) {
                 attempts.add(
                         executor.submit(
                                 () -> {
                                     try {
-                                        questions.ask(
-                                                CODE, new WebApiRequests.Question("질문", null));
-                                        return true;
+                                        return http.perform(
+                                                        post("/api/questions")
+                                                                .header("X-Invite-Code", CODE)
+                                                                .contentType(
+                                                                        MediaType.APPLICATION_JSON)
+                                                                .content("{\"question\":\"질문\"}"))
+                                                .andReturn()
+                                                .getResponse()
+                                                .getStatus();
                                     } catch (WebApiException error) {
-                                        assertThat(error.getStatus().value()).isEqualTo(429);
-                                        return false;
+                                        return error.getStatus().value();
                                     }
                                 }));
             }
-            int success = 0;
-            for (Future<Boolean> result : attempts) {
-                if (result.get()) success++;
+            int accepted = 0;
+            for (Future<Integer> result : attempts) {
+                int status = result.get();
+                assertThat(status).isIn(202, 503);
+                if (status == 202) accepted++;
             }
-            assertThat(success).isEqualTo(2);
+            assertThat(accepted).isEqualTo(1);
+            assertThat(agentStarted.await(5, TimeUnit.SECONDS)).isTrue();
+            assertThat(requests.count()).isEqualTo(1);
+            assertThat(
+                            usage.findById(new DailyUsageId(LocalDate.of(2026, 10, 12), "GLOBAL"))
+                                    .orElseThrow()
+                                    .getRequestCount())
+                    .isEqualTo(299);
+            assertThat(
+                            usage.findById(
+                                            new DailyUsageId(
+                                                    LocalDate.of(2026, 10, 12), "INVITE:" + CODE))
+                                    .orElseThrow()
+                                    .getRequestCount())
+                    .isEqualTo(49);
+        } finally {
+            release.countDown();
         }
-        assertLogsCount(2);
-        assertThat(
-                        usage.findById(new DailyUsageId(LocalDate.of(2026, 10, 12), "GLOBAL"))
-                                .orElseThrow()
-                                .getRequestCount())
-                .isEqualTo(300);
+        assertLogsCount(1);
+        await().until(() -> !gate.isOccupied());
+        ask();
+        http.perform(
+                        post("/api/questions")
+                                .header("X-Invite-Code", CODE)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"question\":\"질문\"}"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("INVITE_LIMIT_EXCEEDED"));
     }
 
     @Test
-    void firstCounterCreationRacesPreserveAllCounts() throws Exception {
-        List<Future<?>> attempts = new ArrayList<>();
-        try (ExecutorService executor = Executors.newFixedThreadPool(3)) {
-            for (int index = 0; index < 6; index++) {
-                String code = "race-invite-" + index;
-                invites.save(new InviteCodeEntity(code, "synthetic", NOW));
-                attempts.add(
-                        executor.submit(
-                                () ->
-                                        questions.ask(
-                                                code, new WebApiRequests.Question("질문", null))));
-            }
-            for (Future<?> result : attempts) result.get();
+    void firstCounterCreationAcrossCodesPreservesCounts() throws Exception {
+        for (int index = 0; index < 6; index++) {
+            String code = "race-invite-" + index;
+            invites.save(new InviteCodeEntity(code, "synthetic", NOW));
+            String id =
+                    questions
+                            .ask(code, new WebApiRequests.Question("질문", null))
+                            .path("request_id")
+                            .asText();
+            await().until(
+                            () ->
+                                    "completed"
+                                            .equals(
+                                                    requests.findById(id)
+                                                            .orElseThrow()
+                                                            .getStatus()));
+            await().until(() -> !gate.isOccupied());
         }
         assertLogsCount(6);
         assertThat(
@@ -377,29 +509,19 @@ class WebApiLogicIntegrationTest {
     void differentCodesCompeteForLastGlobalSlotWithoutOverrun() throws Exception {
         seed(0, 299);
         invites.save(new InviteCodeEntity("other", null, NOW));
-        List<Future<Boolean>> attempts = new ArrayList<>();
-        try (ExecutorService executor = Executors.newFixedThreadPool(3)) {
-            for (String code : List.of(CODE, "other", CODE, "other")) {
-                attempts.add(
-                        executor.submit(
-                                () -> {
-                                    try {
-                                        questions.ask(
-                                                code, new WebApiRequests.Question("질문", null));
-                                        return true;
-                                    } catch (WebApiException error) {
-                                        assertThat(error.getCode())
-                                                .isEqualTo("GLOBAL_LIMIT_EXCEEDED");
-                                        return false;
-                                    }
-                                }));
-            }
-            int success = 0;
-            for (Future<Boolean> attempt : attempts) {
-                if (attempt.get()) success++;
-            }
-            assertThat(success).isEqualTo(1);
-        }
+        String id =
+                questions
+                        .ask(CODE, new WebApiRequests.Question("질문", null))
+                        .path("request_id")
+                        .asText();
+        await().until(() -> "completed".equals(requests.findById(id).orElseThrow().getStatus()));
+        await().until(() -> !gate.isOccupied());
+        assertThatThrownBy(() -> questions.ask("other", new WebApiRequests.Question("질문", null)))
+                .isInstanceOf(WebApiException.class)
+                .satisfies(
+                        error ->
+                                assertThat(((WebApiException) error).getCode())
+                                        .isEqualTo("GLOBAL_LIMIT_EXCEEDED"));
         assertLogsCount(1);
         assertThat(
                         usage.findById(new DailyUsageId(LocalDate.of(2026, 10, 12), "GLOBAL"))
@@ -428,6 +550,7 @@ class WebApiLogicIntegrationTest {
         String id = receipt.path("request_id").asText();
         await().atMost(Duration.ofSeconds(5))
                 .until(() -> "failed".equals(requests.findById(id).orElseThrow().getStatus()));
+        await().atMost(Duration.ofSeconds(5)).until(() -> !gate.isOccupied());
         assertThat(questions.find(CODE, id).path("error_code").asText())
                 .isEqualTo("QUESTION_PROCESSING_FAILED");
         assertThat(
@@ -493,6 +616,7 @@ class WebApiLogicIntegrationTest {
         String id = receipt.path("request_id").asText();
         await().atMost(Duration.ofSeconds(5))
                 .until(() -> "completed".equals(requests.findById(id).orElseThrow().getStatus()));
+        await().atMost(Duration.ofSeconds(5)).until(() -> !gate.isOccupied());
         com.fasterxml.jackson.databind.node.ObjectNode result =
                 (com.fasterxml.jackson.databind.node.ObjectNode)
                         questions.find(CODE, id).path("result");
@@ -524,6 +648,7 @@ class WebApiLogicIntegrationTest {
 
     @Test
     void returnsReceiptWhileAgentIsBlockedAfterCommitOnAsyncThread() throws Exception {
+        seed(49, 49);
         CountDownLatch started = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         MockAgentClient mock = new MockAgentClient(json, "answer");
@@ -558,6 +683,24 @@ class WebApiLogicIntegrationTest {
                             .getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
             String id = json.readTree(body).path("request_id").asText();
             assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
+            http.perform(
+                            post("/api/questions")
+                                    .header("X-Invite-Code", CODE)
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .content("{\"question\":\"뒤 질문\"}"))
+                    .andExpect(status().isServiceUnavailable())
+                    .andExpect(jsonPath("$.code").value("QUESTION_BUSY"))
+                    .andExpect(
+                            jsonPath("$.message")
+                                    .value(
+                                            "지금 다른 질문을 처리하고 있습니다. 잠시 뒤 다시 질문해 주세요. 이번 시도는 질문 횟수에 포함되지 않습니다."))
+                    .andExpect(jsonPath("$.remaining_today").value(0));
+            assertThat(requests.count()).isEqualTo(1);
+            assertThat(
+                            usage.findById(new DailyUsageId(LocalDate.of(2026, 10, 12), "GLOBAL"))
+                                    .orElseThrow()
+                                    .getRequestCount())
+                    .isEqualTo(50);
             http.perform(get("/api/questions/" + id).header("X-Invite-Code", CODE))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.status").value("processing"));
@@ -569,6 +712,36 @@ class WebApiLogicIntegrationTest {
             release.countDown();
         }
         assertLogsCount(1);
+        await().until(() -> !gate.isOccupied());
+        http.perform(
+                        post("/api/questions")
+                                .header("X-Invite-Code", CODE)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"question\":\"뒤 질문\"}"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("INVITE_LIMIT_EXCEEDED"))
+                .andExpect(jsonPath("$.remaining_today").value(0));
+    }
+
+    @Test
+    void marksOldAcceptedAndProcessingReceiptsFailedWithoutReplay() {
+        for (String state : List.of("accepted", "processing")) {
+            QuestionRequestEntity old =
+                    new QuestionRequestEntity(
+                            "old-" + state, CODE, "옛 질문", json.createObjectNode(), NOW);
+            if ("processing".equals(state)) old.processing(NOW.plusSeconds(1));
+            requests.saveAndFlush(old);
+        }
+        assertThat(processingStore.failUnfinishedAfterRestart()).isEqualTo(2);
+        for (String state : List.of("accepted", "processing")) {
+            QuestionRequestEntity old = requests.findById("old-" + state).orElseThrow();
+            assertThat(old.getStatus()).isEqualTo("failed");
+            assertThat(old.getErrorCode()).isEqualTo("PROCESS_INTERRUPTED");
+            assertThat(old.getMessage())
+                    .isEqualTo(QuestionFailure.PROCESS_INTERRUPTED.getMessage());
+        }
+        verifyNoInteractions(agent);
+        assertThat(usage.count()).isZero();
     }
 
     private void seed(int personal, int global) {

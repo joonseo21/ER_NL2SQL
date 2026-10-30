@@ -64,7 +64,7 @@ services:
       # Same value as the agent service. Spring refuses to start in http mode without it.
       AGENT_INTERNAL_TOKEN: ${AGENT_INTERNAL_TOKEN:-}
       AGENT_CONNECT_TIMEOUT_MS: ${AGENT_CONNECT_TIMEOUT_MS:-3000}
-      AGENT_READ_TIMEOUT_MS: ${AGENT_READ_TIMEOUT_MS:-330000}
+      AGENT_READ_TIMEOUT_MS: ${AGENT_READ_TIMEOUT_MS:-360000}
       ER_SEASON_ID: ${ER_SEASON_ID:?Set ER_SEASON_ID in .env}
       ER_REQUESTS_PER_SECOND: ${ER_REQUESTS_PER_SECOND:-0.5}
       # Not ER_COLLECTION_ENABLED: that name is false in host-run .env files and
