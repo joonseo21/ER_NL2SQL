@@ -6,8 +6,7 @@ from string import Formatter
 
 from ..models.errors import SummaryFormatError
 from ..models.query import QueryResponse
-from ..models.serialization import json_value
-from ..models.summary import SummaryDraft, SummarySentence
+from ..models.summary import SummaryDraft, SummarySentence, summary_cell_value
 
 # Metric names that contain a digit. A template may name the metric; every value still
 # comes from a result cell. Result column names are server-verified identifiers.
@@ -41,7 +40,7 @@ def _render(sentence: SummarySentence, response: QueryResponse) -> str:
             cell = sentence.cells[index]
             if cell.column not in response.columns:
                 raise SummaryFormatError
-            value = json_value(response.rows[cell.row][cell.column])
+            value = summary_cell_value(response.rows[cell.row][cell.column])
             if isinstance(value, (dict, list)):
                 raise SummaryFormatError
             pieces.append("자료 없음" if value is None else str(value))

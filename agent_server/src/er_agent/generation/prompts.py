@@ -58,6 +58,13 @@ Use participant_appearances for participant metrics, games for game counts, team
 for deduplicated (game_id, team_number). Never declare a rate, unique-user count,
 returned row count, or the global pick-rate denominator as the target sample.
 Use COUNT(DISTINCT participant_id) when child joins multiply appearances.
+The final SELECT must retain these counts, even when the question asks only for
+rates or changes. For side-by-side patch comparisons return picks_before and
+picks_after (or samples_before and samples_after) alongside the before/after rates
+and their change. Carry each patch's target COUNT through the ordered ARRAY_AGG,
+just like its rate: [1] for before, [2] for after. Declare the AFTER count as sample;
+the evidence for a comparison row refers to the after period. Never add the two
+counts or substitute total_appearances/the rate denominator for either sample.
 Keep this sample column and its unit during SQL repair. For nonaggregate results
 or an unidentifiable sample, set sample=null; do not invent counts.
 """

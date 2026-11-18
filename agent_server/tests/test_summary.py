@@ -46,13 +46,26 @@ def draft(template: str = "비율은 {0}%입니다.", row: Any = 0, column: Any 
 @pytest.mark.parametrize(
     "value,expected",
     [
-        (Decimal("12.345678901234567890"), "12.345678901234567890"),
+        (Decimal("12.345678901234567890"), "12.35"),
+        (Decimal("1.005"), "1.01"),
+        (Decimal("-1.005"), "-1.01"),
+        (Decimal("-0.004"), "0.00"),
+        (Decimal("9999999999999999999999999999.995"), "10000000000000000000000000000.00"),
+        (1.6362794672744107, "1.64"),
+        (Decimal("2.4398126980623394"), "2.44"),
+        (Decimal("0.8035332307879287"), "0.80"),
+        (1392, "1392"),
+        ("1.2345678901234567", "1.2345678901234567"),
+        ("v12.5.0", "v12.5.0"),
+        ("00123", "00123"),
         (None, "자료 없음"),
         (date(2026, 10, 8), "2026-10-08"),
         ("합성 이름", "합성 이름"),
     ],
 )
-def test_summary_inserts_exact_database_value(value: Any, expected: str) -> None:
+def test_summary_formats_numeric_cells_and_preserves_other_values(
+    value: Any, expected: str
+) -> None:
     assert (
         render_summary(parse_summary(draft("결과는 {0}입니다.")), answer(value))
         == f"결과는 {expected}입니다."
@@ -157,8 +170,23 @@ def test_nested_result_values_are_not_flattened_into_summary(value: Any) -> None
 def test_summary_prompt_uses_result_without_raw_question_or_sql() -> None:
     prompt = build_summary_prompt(answer())
     assert "PRIVATE" not in prompt
-    assert "12.345678901234567890" in prompt
+    assert '"rate": "12.35"' in prompt
+    assert "12.345678901234567890" not in prompt
     assert "No advice, recommendations, causality, predictions" in prompt
+    assert "never SQL column identifiers" in prompt
+    assert "pick_rate_before = 변경 전 픽률" in prompt
+    assert "pick_rate_after = 변경 후 픽률" in prompt
+    assert "pick_rate_change = 픽률 변화" in prompt
+    assert "percentage points" in prompt.replace("\n", " ")
+
+
+def test_summary_formatting_does_not_change_table_precision() -> None:
+    response = answer()
+    original = response.to_dict()
+    build_summary_prompt(response)
+    assert render_summary(parse_summary(draft()), response) == "비율은 12.35%입니다."
+    assert response.to_dict() == original
+    assert response.to_dict()["rows"][0]["rate"] == "12.345678901234567890"
 
 
 def test_empty_rendered_summary_is_a_summary_failure() -> None:

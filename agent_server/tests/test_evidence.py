@@ -8,7 +8,7 @@ import pytest
 from er_agent.models.evidence import SampleColumn, SampleUnit
 from er_agent.models.query import DataEvidence
 from er_agent.models.sql import QueryTable
-from er_agent.query.evidence import UNKNOWN_SAMPLE, result_evidence
+from er_agent.query.evidence import COMPARISON_SAMPLE, UNKNOWN_SAMPLE, result_evidence
 from er_agent.sql.evidence import verified_sample
 
 PARTICIPANTS = SampleColumn("samples", SampleUnit.PARTICIPANTS)
@@ -48,6 +48,11 @@ PARTICIPANTS = SampleColumn("samples", SampleUnit.PARTICIPANTS)
         ),
         (
             "SELECT count(*) AS samples FROM participants p JOIN games g ON g.game_id=p.game_id",
+            SampleUnit.PARTICIPANTS,
+            True,
+        ),
+        (
+            "SELECT count(*) AS samples FROM games g JOIN participants p ON g.game_id=p.game_id",
             SampleUnit.PARTICIPANTS,
             True,
         ),
@@ -207,3 +212,140 @@ def test_repeated_cte_occurrences_are_distinct_sources(filtered_alias: str) -> N
         FROM source p JOIN source q ON p.game_id=q.game_id
         WHERE {filtered_alias}.character_num=%(character_code)s"""
     assert verified_sample(sql, PARTICIPANTS, require_target=True) is (filtered_alias == "p")
+
+
+@pytest.mark.parametrize(
+    "column,expression,source,unit",
+    [
+        ("samples", "count(*)", "participants", "participant_appearances"),
+        ("sample_size", "count(*)", "games", "games"),
+        ("sample_count", "count(DISTINCT game_id)", "participants", "games"),
+        ("picks", "count(DISTINCT participant_id)", "participants", "participant_appearances"),
+        ("participant_appearances", "count(*)", "participants", "participant_appearances"),
+        ("game_count", "count(*)", "games", "games"),
+        ("team_count", "count(DISTINCT (game_id, team_number))", "participants", "teams"),
+    ],
+)
+@pytest.mark.parametrize("declaration", [None, SampleColumn("missing", SampleUnit.GAMES)])
+def test_sample_alias_fallback_verifies_count_and_unit(
+    column: str, expression: str, source: str, unit: str, declaration: SampleColumn | None
+) -> None:
+    evidence, warnings = result_evidence(
+        QueryTable((column,), ({column: 1392},)),
+        f"SELECT {expression} AS {column} FROM {source}",
+        declaration,
+        DataEvidence(),
+    )
+    assert evidence.sample_size == 1392 and evidence.sample_unit == unit
+    assert evidence.groups[0].sample_size == 1392
+    assert not warnings
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT 1392 AS samples FROM participants",
+        "SELECT count(DISTINCT user_id) AS samples FROM participants",
+        "SELECT count(*) AS samples FROM participants p JOIN participant_traits t ON p.participant_id=t.participant_id",
+        "SELECT count(*) AS samples FROM participants p RIGHT JOIN characters c ON c.character_code=p.character_num",
+        "SELECT count(*) AS samples FROM participants p JOIN characters c ON c.name_ko=p.tier",
+        "SELECT count(*) AS samples, count(DISTINCT game_id) AS game_count FROM participants",
+        "SELECT count(*) AS samples FROM participants",
+    ],
+)
+def test_unverified_or_ambiguous_samples_have_one_response_warning(sql: str) -> None:
+    # The last query has a known unit but invalid returned sample values.
+    columns = ("samples", "game_count") if "game_count" in sql else ("samples",)
+    table = QueryTable(columns, tuple(dict.fromkeys(columns) for _ in range(5)))
+    evidence, warnings = result_evidence(table, sql, None, DataEvidence())
+    assert warnings == (UNKNOWN_SAMPLE,)
+    assert [group.row_index for group in evidence.groups] == list(range(5))
+    assert all(group.sample_size is None and not group.warnings for group in evidence.groups)
+
+
+def test_rate_only_result_does_not_invent_samples() -> None:
+    evidence, warnings = result_evidence(
+        QueryTable(("pick_rate_change",), ({"pick_rate_change": 1.5},) * 5),
+        "SELECT 1.5 AS pick_rate_change FROM participants",
+        None,
+        DataEvidence(),
+    )
+    assert all(group.sample_size is None for group in evidence.groups)
+    assert warnings == (UNKNOWN_SAMPLE,)
+
+
+@pytest.mark.parametrize("join", ["JOIN", "LEFT JOIN"])
+def test_name_lookup_join_does_not_hide_participant_sample(join: str) -> None:
+    sql = f"""SELECT c.name_ko, count(*) AS samples FROM participants p
+        JOIN games g ON g.game_id=p.game_id
+        {join} characters c ON c.character_code=p.character_num GROUP BY c.name_ko"""
+    assert verified_sample(sql, PARTICIPANTS)
+
+
+COMPARISON_SQL = """WITH per_patch AS (
+    SELECT p.character_num, p.version_major, p.version_minor, count(*) AS picks,
+           sum(count(*)) OVER (PARTITION BY p.version_major,p.version_minor) AS total
+    FROM participants p {target}
+    GROUP BY p.character_num, p.version_major, p.version_minor
+), compared AS (
+    SELECT character_num,
+           array_agg(picks ORDER BY version_major,version_minor) AS counts,
+           array_agg(100.0*picks/NULLIF(total,0) ORDER BY version_major,version_minor) AS rates
+    FROM per_patch GROUP BY character_num HAVING count(*)=2
+)
+SELECT c.name_ko AS character_name, counts[1] AS picks_before, counts[2] AS picks_after,
+       rates[1] AS pick_rate_before, rates[2] AS pick_rate_after,
+       rates[2]-rates[1] AS pick_rate_change
+FROM compared b LEFT JOIN characters c ON c.character_code=b.character_num"""
+
+
+@pytest.mark.parametrize("require_target", [False, True])
+def test_comparison_count_lineage_through_ordered_arrays(require_target: bool) -> None:
+    sql = COMPARISON_SQL.format(
+        target="WHERE p.character_num=%(character_code)s" if require_target else ""
+    )
+    assert verified_sample(
+        sql, SampleColumn("picks_before", SampleUnit.PARTICIPANTS), require_target
+    )
+    assert verified_sample(
+        sql, SampleColumn("picks_after", SampleUnit.PARTICIPANTS), require_target
+    )
+    assert not verified_sample(sql, SampleColumn("pick_rate_after", SampleUnit.PARTICIPANTS))
+    if require_target:
+        assert not verified_sample(
+            COMPARISON_SQL.format(target=""),
+            SampleColumn("picks_after", SampleUnit.PARTICIPANTS),
+            True,
+        )
+
+
+@pytest.mark.parametrize("before", [0, 29, 30])
+def test_comparison_evidence_uses_after_count_and_checks_before(before: int) -> None:
+    row = dict(
+        character_name="케네스",
+        picks_before=before,
+        picks_after=1392,
+        pick_rate_before=1.6,
+        pick_rate_after=2.4,
+        pick_rate_change=0.8,
+    )
+    table = QueryTable(tuple(row), (row,))
+    evidence, warnings = result_evidence(
+        table, COMPARISON_SQL.format(target=""), None, DataEvidence()
+    )
+    assert evidence.sample_size == 1392 and evidence.sample_unit == "participant_appearances"
+    assert warnings[0] == COMPARISON_SAMPLE
+    assert UNKNOWN_SAMPLE not in warnings
+    assert len(warnings) == (1 if before == 30 else 2)
+    assert before == 30 or "변경 전" in warnings[1]
+
+
+def test_fallback_cannot_use_target_pick_rate_denominator() -> None:
+    evidence, warnings = result_evidence(
+        QueryTable(("samples",), ({"samples": 1392},)),
+        "SELECT count(*) AS samples FROM participants",
+        None,
+        DataEvidence(),
+        require_target=True,
+    )
+    assert evidence.sample_size is None and warnings == (UNKNOWN_SAMPLE,)

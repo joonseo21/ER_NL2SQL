@@ -1,8 +1,24 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import ROUND_HALF_UP, Decimal, localcontext
+from typing import Any
 
+from .serialization import json_value
 from .validation import _integer, _text
+
+
+def summary_cell_value(value: Any) -> Any:
+    """Format typed numeric cells for prose, preserving text codes and table data."""
+    if isinstance(value, Decimal) or type(value) is float:
+        number = Decimal(str(value))
+        if not number.is_finite():
+            raise ValueError("Summary numbers must be finite")
+        with localcontext() as context:
+            context.rounding = ROUND_HALF_UP
+            rendered = format(number, ".2f")
+        return "0.00" if Decimal(rendered) == 0 else rendered
+    return json_value(value)
 
 
 @dataclass(frozen=True)

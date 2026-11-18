@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextlib import nullcontext
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -11,11 +12,13 @@ import pytest
 
 from er_agent.models.context import ContextSnapshot, QueryIntent, ResolvedContext
 from er_agent.models.errors import DatabaseQueryError
+from er_agent.models.evidence import SampleColumn, SampleUnit
 from er_agent.models.generation import Generation
 from er_agent.models.names import NameTerm
 from er_agent.models.query import QueryRequest, ResponseKind
 from er_agent.models.sql import QueryTable
 from er_agent.models.summary import CellReference, SummaryDraft, SummarySentence
+from er_agent.query.evidence import UNKNOWN_SAMPLE
 from er_agent.query.service import QueryService
 from er_agent.recording.trial import TrialRecorder
 
@@ -111,3 +114,68 @@ def test_service_clarifies_unverified_name_before_executor_port(
     executor.execute.assert_not_called()
     generator.repair.assert_not_called()
     assert not any(record["event"] == "sql_attempt" for record in sink.records)
+
+
+def test_answer_recovers_sample_after_repair_and_preserves_precision(
+    query_snapshot: ContextSnapshot,
+) -> None:
+    query, executor, generator, sink = service(
+        query_snapshot,
+        Generation(
+            QueryIntent(),
+            "SELECT count(*)/0 AS original_count FROM participants",
+            SampleColumn("original_count", SampleUnit.PARTICIPANTS),
+        ),
+        [
+            DatabaseQueryError("22012"),
+            [{"samples": 1392, "pick_rate": Decimal("1.6362794672744107")}],
+        ],
+    )
+    generator.repair.return_value = (
+        "SELECT count(*) AS samples, 1.6362794672744107 AS pick_rate FROM participants"
+    )
+    generator.summarize.return_value = SummaryDraft(
+        (SummarySentence("픽률은 {0}%입니다.", (CellReference(0, "pick_rate"),)),)
+    )
+    response = query.run(QueryRequest("픽률은?"))
+    payload = response.to_dict()
+    assert payload["evidence"]["groups"] == [
+        {
+            "row_index": 0,
+            "sample_size": 1392,
+            "sample_unit": "participant_appearances",
+            "warnings": [],
+        }
+    ]
+    assert UNKNOWN_SAMPLE not in payload["warnings"]
+    assert payload["summary"] == "픽률은 1.64%입니다."
+    assert payload["rows"][0]["pick_rate"] == "1.6362794672744107"
+    assert executor.execute.call_count == 2
+    assert sink.records[-1]["response"] == payload
+
+
+def test_missing_sample_is_warned_once_in_final_response(query_snapshot: ContextSnapshot) -> None:
+    query, _, generator, _ = service(
+        query_snapshot,
+        Generation(
+            QueryIntent(), "SELECT character_num, 0.8 AS pick_rate_change FROM participants"
+        ),
+        [
+            [
+                {"character_num": code, "pick_rate_change": Decimal("0.8035332307879287")}
+                for code in range(1, 6)
+            ]
+        ],
+    )
+    generator.summarize.return_value = SummaryDraft(
+        (SummarySentence("픽률 변화는 {0}%p입니다.", (CellReference(0, "pick_rate_change"),)),)
+    )
+    payload = query.run(QueryRequest("픽률 변화는?")).to_dict()
+    assert payload["warnings"].count(UNKNOWN_SAMPLE) == 1
+    assert sum(UNKNOWN_SAMPLE in warning for warning in payload["warnings"]) == 1
+    assert len(payload["evidence"]["groups"]) == 5
+    assert all(
+        group["sample_size"] is None and group["warnings"] == []
+        for group in payload["evidence"]["groups"]
+    )
+    assert payload["summary"] == "픽률 변화는 0.80%p입니다."

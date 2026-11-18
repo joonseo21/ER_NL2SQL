@@ -62,12 +62,15 @@ WITH per_patch AS (
 )
 SELECT c.name_ko AS character_name,
        bp.picks_by_patch[1] AS picks_before, bp.picks_by_patch[2] AS picks_after,
+       bp.pick_rates[1] AS pick_rate_before, bp.pick_rates[2] AS pick_rate_after,
        bp.pick_rates[2] - bp.pick_rates[1] AS pick_rate_change
 FROM both_patches bp
 LEFT JOIN characters c ON c.character_code = bp.character_num
 ORDER BY pick_rate_change DESC
 LIMIT 5
 ```
+
+전후 비율만 묻더라도 최종 결과에 `picks_before`, `picks_after`를 모두 남긴다. 생성 응답의 `sample`은 변경 후 열(`picks_after`, 단위 `participant_appearances`)을 지정한다. 기존 행별 근거는 변경 후 표본이며, 변경 전 표본은 같은 표에 보존하고 작은 표본·0건 여부도 따로 경고한다. 두 시점의 출현을 합산하거나 전체 픽률 분모로 표본을 대신하지 않는다.
 
 ## 승률·TOP 3 비율·평균 순위
 

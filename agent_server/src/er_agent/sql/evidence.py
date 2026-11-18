@@ -46,45 +46,79 @@ def _origin(scope: Scope, column: exp.Column) -> tuple[str, str] | None:
 
 
 def _appearance_source(scope: Scope) -> SampleUnit | None:
-    # Only a flat source or a participant -> game many-to-one join is certified.
-    # A subquery/CTE with DISTINCT/GROUP/aggregation could change the unit.
-    tables = [source for source in scope.sources.values() if isinstance(source, exp.Table)]
-    if len(tables) != len(scope.sources):
-        if len(scope.sources) == 1:
-            source = next(iter(scope.sources.values()))
-            if (
-                isinstance(source, Scope)
-                and not any(source.expression.args.get(key) for key in ("group", "distinct"))
-                and not any(
-                    item.find(exp.AggFunc, exp.Unnest) is not None
-                    for item in source.expression.selects
-                )
-            ):
-                return _appearance_source(source)
+    # Start at a fact source and admit only joins to known unique keys. Child
+    # joins, self joins, and grouped/deduplicated CTE rows need DISTINCT counts.
+    first = scope.expression.args.get("from_")
+    if first is None:
         return None
-    if len(tables) == 1:
-        return {"participants": SampleUnit.PARTICIPANTS, "games": SampleUnit.GAMES}.get(
-            tables[0].name
+    alias = first.this.alias_or_name
+    source = scope.sources.get(alias)
+    if isinstance(source, exp.Table):
+        unit = {"participants": SampleUnit.PARTICIPANTS, "games": SampleUnit.GAMES}.get(source.name)
+    elif (
+        isinstance(source, Scope)
+        and not any(source.expression.args.get(key) for key in ("group", "distinct"))
+        and not any(
+            item.find(exp.AggFunc, exp.Unnest) is not None for item in source.expression.selects
         )
-    if sorted(table.name for table in tables) != ["games", "participants"]:
-        return None
-    joins = scope.expression.args.get("joins") or []
-    if len(joins) != 1 or joins[0].args.get("side") not in (None, "", "LEFT"):
-        return None
-    condition = joins[0].args.get("on")
-    if isinstance(condition, exp.EQ) and all(
-        isinstance(item, exp.Column) for item in (condition.this, condition.expression)
     ):
-        origins = {_origin(scope, condition.this), _origin(scope, condition.expression)}
-        if origins == {("games", "game_id"), ("participants", "game_id")}:
-            # LEFT JOIN from games could add empty game rows, so reject that case.
-            first = scope.expression.args["from_"].this
-            if (
-                not joins[0].args.get("side")
-                or scope.sources[first.alias_or_name].name == "participants"
-            ):
-                return SampleUnit.PARTICIPANTS
-    return None
+        unit = _appearance_source(source)
+    else:
+        return None
+    if unit is None:
+        return None
+    preceding = {alias}
+    unique_keys = {
+        "games": "game_id",
+        "characters": "character_code",
+        "weapon_types": "code",
+        "items": "code",
+        "trait_names": "code",
+        "tactical_skills": "code",
+        "skill_groups": "code",
+        "areas": "code",
+        "weather_types": "code",
+    }
+    for join in scope.expression.args.get("joins") or []:
+        target = join.this
+        condition = join.args.get("on")
+        # games -> participants is a one-to-many INNER join whose resulting
+        # rows are participant appearances, as in the reverse join order.
+        if (
+            isinstance(target, exp.Table)
+            and target.name == "participants"
+            and unit == SampleUnit.GAMES
+            and not join.args.get("side")
+            and join.args.get("kind") in (None, "", "INNER")
+            and isinstance(condition, exp.EQ)
+            and all(isinstance(item, exp.Column) for item in (condition.this, condition.expression))
+            and {_origin(scope, item) for item in (condition.this, condition.expression)}
+            == {("games", "game_id"), ("participants", "game_id")}
+        ):
+            unit = SampleUnit.PARTICIPANTS
+            preceding.add(target.alias_or_name)
+            continue
+        if (
+            not isinstance(target, exp.Table)
+            or target.name not in unique_keys
+            or join.args.get("side") not in (None, "", "LEFT")
+            or join.args.get("kind") not in (None, "", "INNER")
+            or not isinstance(condition, exp.EQ)
+            or not all(
+                isinstance(item, exp.Column) for item in (condition.this, condition.expression)
+            )
+        ):
+            return None
+        pairs = ((condition.this, condition.expression), (condition.expression, condition.this))
+        if not any(
+            key.table == target.alias_or_name
+            and key.name == unique_keys[target.name]
+            and value.table in preceding
+            for key, value in pairs
+        ):
+            return None
+        preceding.add(target.alias_or_name)
+    return unit
 
 
 def _restricts_target(
@@ -125,9 +159,11 @@ def _row_source(scope: Scope) -> tuple[tuple[int, str], ...] | None:
     for alias, source in scope.sources.items():
         if isinstance(source, exp.Table) and source.name == table:
             return ((id(scope), alias),)
-        if isinstance(source, Scope) and len(scope.sources) == 1:
-            path = _row_source(source)
-            return ((id(scope), alias),) + path if path is not None else None
+    alias = scope.expression.args["from_"].this.alias_or_name
+    source = scope.sources[alias]
+    if isinstance(source, Scope):
+        path = _row_source(source)
+        return ((id(scope), alias),) + path if path is not None else None
     return None
 
 
@@ -151,6 +187,16 @@ def _count_unit(
             return (
                 _count_unit(source, projection, require_target) if projection is not None else None
             )
+    if isinstance(expression, exp.Paren):
+        return _count_unit(scope, expression.this, require_target)
+    if isinstance(expression, exp.Bracket):
+        # sqlglot normalizes PostgreSQL array subscripts to zero-based literals.
+        if len(expression.expressions) != 1:
+            return None
+        index = expression.expressions[0]
+        if not isinstance(index, exp.Literal) or not index.is_int or int(index.this) < 0:
+            return None
+        return _array_count_unit(scope, expression.this, require_target)
     predicate = None
     if isinstance(expression, exp.Filter):
         predicate = expression.expression
@@ -165,6 +211,25 @@ def _count_unit(
         ):
             return None
     return _unit_for_count(scope, expression.this)
+
+
+def _array_count_unit(
+    scope: Scope, expression: exp.Expression, require_target: bool
+) -> SampleUnit | None:
+    if isinstance(expression, exp.Paren):
+        return _array_count_unit(scope, expression.this, require_target)
+    if isinstance(expression, exp.Column):
+        source = scope.sources.get(expression.table)
+        if isinstance(source, Scope):
+            projection = _projection(source, expression.name)
+            if projection is not None:
+                return _array_count_unit(source, projection, require_target)
+    if isinstance(expression, exp.ArrayAgg):
+        value = expression.this
+        if isinstance(value, exp.Order):
+            value = value.this
+        return _count_unit(scope, value, require_target)
+    return None
 
 
 def _unit_for_count(scope: Scope, target: exp.Expression) -> SampleUnit | None:
@@ -203,9 +268,21 @@ def _unit_for_count(scope: Scope, target: exp.Expression) -> SampleUnit | None:
 def verified_sample(sql: str, sample: SampleColumn | None, require_target: bool = False) -> bool:
     if sample is None:
         return False
+    return sample_columns(sql, (sample.column,), require_target).get(sample.column) == sample
+
+
+def sample_columns(
+    sql: str, columns: tuple[str, ...], require_target: bool = False
+) -> dict[str, SampleColumn]:
+    """Infer units from COUNT lineage, never from an alias or result magnitude."""
     statement = parse_one(guard_sql(sql).sql, dialect="postgres")
     scope = build_scope(statement)
     if scope is None:
-        return False
-    projection = _projection(scope, sample.column)
-    return projection is not None and _count_unit(scope, projection, require_target) == sample.unit
+        return {}
+    result = {}
+    for column in columns:
+        projection = _projection(scope, column)
+        unit = _count_unit(scope, projection, require_target) if projection is not None else None
+        if unit is not None:
+            result[column] = SampleColumn(column, unit)
+    return result
