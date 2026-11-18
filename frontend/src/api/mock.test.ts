@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { normalizeRequestId } from '../lib/requestId'
 import { ApiError } from './errors'
-import { createMockApi, MOCK_SCENARIOS } from './mock'
+import { createMockApi, MOCK_LOGIN, MOCK_LOGIN_INVITE_CODE, MOCK_SCENARIOS } from './mock'
 import type { MockScenarioId } from './mock'
 import type { AcceptedQuestion } from './types'
 
@@ -321,5 +321,46 @@ describe('가짜 서버의 남은 횟수·접수 번호(spec D-23)', () => {
     } finally {
       setItem.mockRestore()
     }
+  })
+})
+
+describe('가짜 로그인(M1-045)', () => {
+  const api = () => createMockApi({ delayMs: 0, initialRemaining: 42 })
+
+  it('시연 계정은 연결된 초대 코드와 남은 횟수를 돌려주고, 그 코드로 질문 화면 호출이 통과한다', async () => {
+    const mock = api()
+    const result = await mock.login(MOCK_LOGIN.username, MOCK_LOGIN.password)
+    expect(result).toEqual({ invite_code: MOCK_LOGIN_INVITE_CODE, remaining_today: 42 })
+    await expect(mock.getConditions(result.invite_code)).resolves.toBeDefined()
+  })
+
+  it.each([
+    ['demo', 'wrong-password', 'LOGIN_FAILED', 401, '아이디 또는 비밀번호가 올바르지 않습니다.'],
+    ['nobody', 'x', 'LOGIN_FAILED', 401, '아이디 또는 비밀번호가 올바르지 않습니다.'],
+    ['locked', 'x', 'LOGIN_RATE_LIMITED', 429, '로그인 시도가 너무 많습니다. 10분 뒤 다시 시도해 주세요.'],
+    [
+      'disabled',
+      'x',
+      'LOGIN_DISABLED',
+      404,
+      '지금은 로그인을 사용할 수 없습니다. 초대 코드로 입장해 주세요.',
+    ],
+  ])('%s 로그인은 %s(HTTP %i)', async (username, password, code, status, message) => {
+    await expect(api().login(username, password)).rejects.toMatchObject({ code, status, message })
+  })
+
+  it('형식을 벗어나면 VALIDATION_FAILED다(대문자·짧은 아이디·빈 비밀번호·200자 초과)', async () => {
+    for (const [u, p] of [
+      ['Demo', 'x'],
+      ['ab', 'x'],
+      ['demo', ''],
+      ['demo', 'p'.repeat(201)],
+    ]) {
+      await expect(api().login(u, p)).rejects.toMatchObject({ code: 'VALIDATION_FAILED', status: 400 })
+    }
+  })
+
+  it('한도 초과(429)와 달리 로그인 429에는 남은 횟수가 없다', async () => {
+    await expect(api().login('locked', 'x')).rejects.toHaveProperty('remainingToday', null)
   })
 })

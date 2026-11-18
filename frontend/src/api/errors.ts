@@ -10,6 +10,10 @@ export type ApiErrorCode =
   | 'COLLECTION_UNAVAILABLE'
   // 다른 질문을 처리 중이라 접수 전에 거절(HTTP 503, spec D-22). 접수되지 않아 횟수를 쓰지 않는다.
   | 'QUESTION_BUSY'
+  // 로그인(POST /api/auth/login, M1-045). LOGIN_RATE_LIMITED의 429는 질문 한도의 429와 달리 remaining_today가 없다.
+  | 'LOGIN_FAILED'
+  | 'LOGIN_RATE_LIMITED'
+  | 'LOGIN_DISABLED'
   // 상태 조회 본문(HTTP 200)에서 status=failed일 때 오는 처리 실패 코드 (계약의 "상태 조회와 비동기 실패")
   | 'AGENT_AUTH_FAILED'
   | 'AGENT_REQUEST_REJECTED'
@@ -75,6 +79,9 @@ export const QUESTION_BUSY_MESSAGE =
 /** HTTP 오류 본문에 message가 없을 때 코드별로 쓰는 문구다. 없는 코드는 상태 코드가 든 기본 문구를 쓴다. */
 const HTTP_ERROR_MESSAGES: Partial<Record<ApiErrorCode, string>> = {
   QUESTION_BUSY: QUESTION_BUSY_MESSAGE,
+  LOGIN_FAILED: '아이디 또는 비밀번호가 올바르지 않습니다.',
+  LOGIN_RATE_LIMITED: '로그인 시도가 너무 많습니다. 10분 뒤 다시 시도해 주세요.',
+  LOGIN_DISABLED: '지금은 로그인을 사용할 수 없습니다. 초대 코드로 입장해 주세요.',
 }
 
 export function httpErrorMessage(code: ApiErrorCode, status: number): string {
@@ -98,6 +105,9 @@ const SERVER_CODE_SET: Record<string, true> = {
   STORAGE_BUSY: true,
   COLLECTION_UNAVAILABLE: true,
   QUESTION_BUSY: true,
+  LOGIN_FAILED: true,
+  LOGIN_RATE_LIMITED: true,
+  LOGIN_DISABLED: true,
   AGENT_AUTH_FAILED: true,
   AGENT_REQUEST_REJECTED: true,
   AGENT_INTERNAL_ERROR: true,

@@ -8,6 +8,7 @@ import type {
   FeedbackRequest,
   FeedbackResponse,
   InviteVerifyResponse,
+  LoginResponse,
   PollOptions,
   QuestionAcceptedResponse,
   QuestionRequest,
@@ -244,6 +245,10 @@ export function createHttpApi(options: HttpApiOptions = {}): ErApi {
   return {
     verifyInvite: (code) =>
       request<InviteVerifyResponse>({ method: 'POST', path: '/invite/verify', body: { code } }),
+
+    // 로그인에는 초대 코드 헤더가 없다. 비밀번호는 요청 본문으로만 보내고 이 함수 밖에 남기지 않는다.
+    login: (username, password) =>
+      request<LoginResponse>({ method: 'POST', path: '/auth/login', body: { username, password } }),
 
     getConditions: (inviteCode) =>
       request<ConditionsResponse>({ method: 'GET', path: '/conditions', inviteCode }),

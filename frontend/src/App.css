@@ -132,6 +132,7 @@ p {
 }
 
 input[type='text'],
+input[type='password'],
 select,
 textarea {
   font: inherit;
@@ -653,5 +654,23 @@ th.num {
   width: 100%;
   text-align: left;
   white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* 로그인 화면: 입력란은 360px 폭에서도 카드 안에 들어가게 한다. */
+.card input[type='text'],
+.card input[type='password'] {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.login-alt {
+  margin: 16px 0 0;
+}
+
+/* 상단에 로그인한 아이디. 긴 아이디도 줄을 바꿔 넘치지 않게 한다. */
+.login-user {
+  font-size: 0.9rem;
   overflow-wrap: anywhere;
 }

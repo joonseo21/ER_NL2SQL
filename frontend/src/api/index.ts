@@ -5,7 +5,7 @@ import type { ErApi } from './types'
 
 export { ApiError, asApiError } from './errors'
 export type { ApiErrorCode } from './errors'
-export { MOCK_SCENARIOS, mockControl } from './mock'
+export { MOCK_LOGIN, MOCK_LOGIN_INVITE_CODE, MOCK_SCENARIOS, mockControl } from './mock'
 export type { MockScenarioId } from './mock'
 export * from './types'
 

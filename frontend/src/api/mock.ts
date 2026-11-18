@@ -4,7 +4,7 @@ import answer from './mocks/answer.json'
 import clarification from './mocks/clarification.json'
 import notice from './mocks/notice.json'
 import { ownerKey } from '../lib/pendingQuestion'
-import { ApiError, failureMessage, QUESTION_BUSY_MESSAGE } from './errors'
+import { ApiError, failureMessage, httpErrorMessage, QUESTION_BUSY_MESSAGE } from './errors'
 import type { AcceptedInfo } from './errors'
 import { FEEDBACK_COMMENT_MAX } from './types'
 import type {
@@ -98,6 +98,17 @@ const COLLECTION_SUMMARY: CollectionSummaryResponse = {
   snapshot_at: '2026-10-13T11:45:10+09:00',
   cached_until: '2026-10-13T11:50:10+09:00',
 }
+
+/**
+ * 가짜 로그인 계정. 백엔드 없이 로그인 화면의 성공·실패를 시연하고 시험하기 위한 것이며 실제 계정이 아니다.
+ * - demo / demo-password: 성공(연결된 초대 코드 MOCK_LOGIN_INVITE_CODE)
+ * - locked: 429 LOGIN_RATE_LIMITED, disabled: 404 LOGIN_DISABLED
+ * - 형식 오류(소문자·숫자·_·- 3~32자, 비밀번호 1~200자를 벗어남): 400 VALIDATION_FAILED
+ * - 그 밖의 아이디·비밀번호: 401 LOGIN_FAILED
+ */
+export const MOCK_LOGIN = { username: 'demo', password: 'demo-password' } as const
+export const MOCK_LOGIN_INVITE_CODE = 'mock-login-invite'
+const LOGIN_USERNAME_PATTERN = /^[a-z0-9_-]{3,32}$/
 
 const DAILY_LIMIT = 50
 /** 화면 대기 시간과 같은 값(웹 API 계약 420초). 가짜 서버도 이 시간이 지나면 자동 조회를 멈춘다. */
@@ -240,6 +251,24 @@ export function createMockApi(options: MockApiOptions = {}): ErApi {
       await wait()
       assertInviteCode(code)
       return { valid: true, remaining_today: remaining }
+    },
+
+    async login(username, password) {
+      await wait()
+      if (!LOGIN_USERNAME_PATTERN.test(username) || password.length < 1 || password.length > 200) {
+        throw new ApiError('VALIDATION_FAILED', '요청 형식이 올바르지 않습니다.', 400)
+      }
+      if (username === 'disabled') {
+        throw new ApiError('LOGIN_DISABLED', httpErrorMessage('LOGIN_DISABLED', 404), 404)
+      }
+      if (username === 'locked') {
+        // 질문 한도의 429와 달리 remaining_today가 없다.
+        throw new ApiError('LOGIN_RATE_LIMITED', httpErrorMessage('LOGIN_RATE_LIMITED', 429), 429)
+      }
+      if (username !== MOCK_LOGIN.username || password !== MOCK_LOGIN.password) {
+        throw new ApiError('LOGIN_FAILED', httpErrorMessage('LOGIN_FAILED', 401), 401)
+      }
+      return { invite_code: MOCK_LOGIN_INVITE_CODE, remaining_today: remaining }
     },
 
     async getConditions(inviteCode) {

@@ -15,6 +15,7 @@ function setup() {
 }
 
 async function reachQuestionScreen(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: '초대 코드로 입장' }))
   await user.type(screen.getByLabelText('초대 코드'), 'friend')
   await user.click(screen.getByRole('button', { name: '확인' }))
   await screen.findByRole('heading', { name: '조건' })
@@ -24,17 +25,17 @@ const guideButton = () => screen.getByRole('button', { name: '서비스 안내' 
 const guidePanel = () => screen.queryByRole('region', { name: '서비스 안내' })
 
 describe('서비스 안내(spec D-25, M1-044)', () => {
-  it('초대 코드 입력 화면에서 열고 닫을 수 있다', async () => {
+  it('첫 화면(로그인)에서 열고 닫을 수 있다', async () => {
     const { user } = setup()
-    expect(screen.getByRole('heading', { name: '초대 코드 입력' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '로그인' })).toBeInTheDocument()
     expect(guideButton()).toHaveAttribute('aria-expanded', 'false')
     expect(guidePanel()).not.toBeInTheDocument()
 
     await user.click(guideButton())
     expect(guidePanel()).toBeInTheDocument()
     expect(guideButton()).toHaveAttribute('aria-expanded', 'true')
-    // 안내를 열어도 초대 코드 입력 화면은 그대로다.
-    expect(screen.getByRole('heading', { name: '초대 코드 입력' })).toBeInTheDocument()
+    // 안내를 열어도 첫 화면은 그대로다.
+    expect(screen.getByRole('heading', { name: '로그인' })).toBeInTheDocument()
 
     await user.click(within(guidePanel()!).getByRole('button', { name: '닫기' }))
     expect(guidePanel()).not.toBeInTheDocument()

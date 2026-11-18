@@ -231,6 +231,15 @@ export interface InviteVerifyResponse {
   remaining_today: number
 }
 
+/**
+ * POST /api/auth/login의 응답(웹 API 계약, M1-045). 관리자가 만든 아이디·비밀번호로 로그인하면 서버가
+ * 그 계정에 연결된 초대 코드를 돌려준다. 화면은 이 코드를 초대 코드 확인과 같은 경로로 넘긴다.
+ */
+export interface LoginResponse {
+  invite_code: string
+  remaining_today: number
+}
+
 export interface PatchOption {
   major: number
   minor: number
@@ -260,6 +269,8 @@ export interface ConditionsResponse {
  */
 export interface ErApi {
   verifyInvite(code: string): Promise<InviteVerifyResponse>
+  /** 아이디·비밀번호로 로그인한다. 초대 코드 헤더는 필요 없고, 성공하면 연결된 초대 코드를 돌려준다. */
+  login(username: string, password: string): Promise<LoginResponse>
   getConditions(inviteCode: string): Promise<ConditionsResponse>
   /**
    * 질문을 접수하고 결과가 나올 때까지 기다려 돌려준다. 접수·조회 반복은 구현이 맡으므로 호출하는 쪽은

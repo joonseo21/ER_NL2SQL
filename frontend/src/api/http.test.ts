@@ -592,3 +592,56 @@ describe('남은 횟수와 접수 번호(spec D-23)', () => {
     expect(callAt(fetchFn, 0).init.method).toBe('GET')
   })
 })
+
+describe('로그인 POST /api/auth/login', () => {
+  const credentials = ['alice_01', 'S3cret!pw'] as const
+
+  it('아이디·비밀번호를 본문으로만 보내고 초대 코드 헤더 없이 연결된 코드와 남은 횟수를 받는다', async () => {
+    const { api, fetchFn } = setup(() => jsonResponse({ invite_code: 'linked-code', remaining_today: 48 }))
+
+    await expect(api.login(...credentials)).resolves.toEqual({ invite_code: 'linked-code', remaining_today: 48 })
+
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+    const call = callAt(fetchFn, 0)
+    expect(call.url).toBe('/api/auth/login')
+    expect(call.init.method).toBe('POST')
+    expect(call.headers['X-Invite-Code']).toBeUndefined()
+    expect(JSON.parse(call.init.body as string)).toEqual({ username: 'alice_01', password: 'S3cret!pw' })
+    // 비밀번호는 주소(URL)에 넣지 않는다.
+    expect(call.url).not.toContain('S3cret')
+  })
+
+  it.each([
+    [401, 'LOGIN_FAILED', '아이디 또는 비밀번호가 올바르지 않습니다.'],
+    [429, 'LOGIN_RATE_LIMITED', '로그인 시도가 너무 많습니다. 10분 뒤 다시 시도해 주세요.'],
+    [404, 'LOGIN_DISABLED', '지금은 로그인을 사용할 수 없습니다. 초대 코드로 입장해 주세요.'],
+    [400, 'VALIDATION_FAILED', '요청 형식이 올바르지 않습니다.'],
+  ])('HTTP %i %s는 code로 구분하고 서버 message를 그대로 둔다', async (status, code, message) => {
+    const { api } = setup(() => jsonResponse({ code, message }, status))
+    await expect(api.login(...credentials)).rejects.toMatchObject({ code, message, status, remainingToday: null })
+  })
+
+  it('로그인 429는 질문 한도 429와 달리 remaining_today가 없어도 한도 초과 코드가 아니다', async () => {
+    const { api } = setup(() => jsonResponse({ code: 'LOGIN_RATE_LIMITED', message: '잠겼습니다.' }, 429))
+    const error = await api.login(...credentials).catch((e: unknown) => e)
+    expect(error).toMatchObject({ code: 'LOGIN_RATE_LIMITED' })
+    expect(error).not.toMatchObject({ code: 'INVITE_LIMIT_EXCEEDED' })
+  })
+
+  it('message가 비어 있으면 계약의 코드별 문구를 쓴다', async () => {
+    const { api } = setup(() => jsonResponse({ code: 'LOGIN_FAILED', message: '' }, 401))
+    await expect(api.login(...credentials)).rejects.toMatchObject({
+      message: '아이디 또는 비밀번호가 올바르지 않습니다.',
+    })
+  })
+
+  it('네트워크 실패는 기존 방식(NETWORK_ERROR)으로 알린다', async () => {
+    const { api } = setup(() => {
+      throw new TypeError('fetch failed')
+    })
+    await expect(api.login(...credentials)).rejects.toMatchObject({
+      code: 'NETWORK_ERROR',
+      message: '서버에 연결하지 못했습니다. 네트워크를 확인해 주세요.',
+    })
+  })
+})

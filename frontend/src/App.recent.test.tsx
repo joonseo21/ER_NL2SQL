@@ -37,6 +37,9 @@ function setup(overrides: Partial<ErApi> = {}) {
 }
 
 async function enter(user: ReturnType<typeof userEvent.setup>, code = 'friend') {
+  // 첫 화면은 로그인이므로 초대 코드 입장으로 전환한다. "초대 코드 바꾸기" 뒤처럼 이미 초대 코드 화면이면 건너뛴다.
+  const toggle = screen.queryByRole('button', { name: '초대 코드로 입장' })
+  if (toggle) await user.click(toggle)
   await user.type(screen.getByLabelText('초대 코드'), code)
   await user.click(screen.getByRole('button', { name: '확인' }))
   await screen.findByRole('heading', { name: '조건' })

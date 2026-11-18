@@ -26,6 +26,7 @@ function setup(initial: MockScenarioId = 'answer', prepare?: (api: ReturnType<ty
 function wrapApi(base: ErApi) {
   return {
     verifyInvite: vi.fn<ErApi['verifyInvite']>(base.verifyInvite),
+    login: vi.fn<ErApi['login']>(base.login),
     getConditions: vi.fn<ErApi['getConditions']>(base.getConditions),
     askQuestion: vi.fn<ErApi['askQuestion']>(base.askQuestion),
     resumeQuestion: vi.fn<ErApi['resumeQuestion']>(base.resumeQuestion),
@@ -36,6 +37,9 @@ function wrapApi(base: ErApi) {
 }
 
 async function enterInviteCode(user: ReturnType<typeof userEvent.setup>, code = 'friend') {
+  // 첫 화면은 로그인이므로 초대 코드 입장으로 전환한다. 로그아웃 뒤처럼 이미 초대 코드 화면이면 건너뛴다.
+  const toggle = screen.queryByRole('button', { name: '초대 코드로 입장' })
+  if (toggle) await user.click(toggle)
   await user.type(screen.getByLabelText('초대 코드'), code)
   await user.click(screen.getByRole('button', { name: '확인' }))
 }
@@ -51,11 +55,16 @@ async function ask(user: ReturnType<typeof userEvent.setup>, question = '수집�
 }
 
 describe('초대 코드 화면', () => {
-  it('처음에는 초대 코드 입력 화면을 보여 준다', () => {
-    setup()
+  it('처음에는 로그인 화면을 보여 주고, 전환하면 초대 코드 입력 화면이 나온다', async () => {
+    const { user } = setup()
     expect(screen.getByRole('heading', { name: 'ER Analytics' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: '초대 코드 입력' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '로그인' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '초대 코드 입력' })).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: '조건' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '초대 코드로 입장' }))
+    expect(screen.getByRole('heading', { name: '초대 코드 입력' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '로그인' })).not.toBeInTheDocument()
   })
 
   it('가짜 응답 모드임을 화면에 밝힌다', () => {
@@ -70,8 +79,9 @@ describe('초대 코드 화면', () => {
     expect(screen.queryByRole('heading', { name: '조건' })).not.toBeInTheDocument()
   })
 
-  it('코드가 비어 있으면 확인 버튼을 누를 수 없다', () => {
-    setup()
+  it('코드가 비어 있으면 확인 버튼을 누를 수 없다', async () => {
+    const { user } = setup()
+    await user.click(screen.getByRole('button', { name: '초대 코드로 입장' }))
     expect(screen.getByRole('button', { name: '확인' })).toBeDisabled()
   })
 
@@ -957,8 +967,8 @@ describe('답변 화면의 접수 번호와 새로고침 뒤 결과 유지', () 
 
       cleanup()
       setup()
-      // 초대 코드도 저장하지 못했으므로 첫 화면부터 다시 시작한다.
-      expect(await screen.findByRole('heading', { name: '초대 코드 입력' })).toBeInTheDocument()
+      // 초대 코드도 저장하지 못했으므로 첫 화면(로그인)부터 다시 시작한다.
+      expect(await screen.findByRole('heading', { name: '로그인' })).toBeInTheDocument()
     } finally {
       spies.forEach((spy) => spy.mockRestore())
     }

@@ -8,10 +8,12 @@ interface Props {
   /** 이전에 입력한 코드가 거절되어 돌아온 경우 보여 줄 안내 */
   notice?: string
   onVerified: (code: string, remainingToday: number) => void
+  /** 로그인 화면으로 돌아가는 전환. 로그인을 쓸 수 없을 때(LOGIN_DISABLED)는 넘기지 않아 버튼을 숨긴다. */
+  onBackToLogin?: () => void
 }
 
-/** 초대 코드를 입력받는 첫 화면이다. 계정 로그인은 없다. */
-export function InviteGate({ api, notice, onVerified }: Props) {
+/** 초대 코드를 입력받는 화면이다. 로그인 화면의 "초대 코드로 입장"으로 들어오며, 로그인을 쓸 수 없을 때의 대체 입구다. */
+export function InviteGate({ api, notice, onVerified, onBackToLogin }: Props) {
   const [code, setCode] = useState('')
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -63,6 +65,13 @@ export function InviteGate({ api, notice, onVerified }: Props) {
           {pending ? '확인 중…' : '확인'}
         </button>
       </form>
+      {onBackToLogin && (
+        <p className="login-alt">
+          <button type="button" className="link" onClick={onBackToLogin} disabled={pending}>
+            아이디·비밀번호로 로그인
+          </button>
+        </p>
+      )}
     </section>
   )
 }
