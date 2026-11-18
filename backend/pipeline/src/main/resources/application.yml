@@ -28,6 +28,7 @@ spring:
 er:
   web-api:
     enabled: ${ER_WEB_API_ENABLED:false}
+    accounts-file: ${WEB_API_ACCOUNTS_FILE:}
     frontend-location: ${WEB_API_FRONTEND_LOCATION:classpath:/static/}
     agent:
       mode: ${WEB_API_AGENT_MODE:http}

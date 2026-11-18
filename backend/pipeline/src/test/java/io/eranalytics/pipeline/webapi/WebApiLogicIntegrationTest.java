@@ -21,6 +21,7 @@ import io.eranalytics.pipeline.webapi.repository.FeedbackRepository;
 import io.eranalytics.pipeline.webapi.repository.InviteCodeRepository;
 import io.eranalytics.pipeline.webapi.repository.QuestionLogRepository;
 import io.eranalytics.pipeline.webapi.repository.QuestionRequestRepository;
+import io.eranalytics.pipeline.webapi.service.PasswordHashes;
 import io.eranalytics.pipeline.webapi.service.QuestionAccepted;
 import io.eranalytics.pipeline.webapi.service.QuestionAdmissionGate;
 import io.eranalytics.pipeline.webapi.service.QuestionFailure;
@@ -29,6 +30,8 @@ import io.eranalytics.pipeline.webapi.service.QuestionService;
 import io.eranalytics.pipeline.webapi.service.UsageService;
 import io.eranalytics.pipeline.webapi.service.WebApiClock;
 import io.eranalytics.pipeline.webapi.service.WebApiException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Statement;
@@ -38,6 +41,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -116,6 +120,20 @@ class WebApiLogicIntegrationTest {
         properties.add("er.web-api.datasource.url", () -> url);
         properties.add("er.web-api.datasource.username", () -> "api_server");
         properties.add("er.web-api.datasource.password", () -> "");
+        Path accounts = Files.createTempFile("webapi-login-test-", ".json");
+        accounts.toFile().deleteOnExit();
+        new ObjectMapper()
+                .writeValue(
+                        accounts.toFile(),
+                        List.of(
+                                Map.of(
+                                        "username",
+                                        "logic_user",
+                                        "password_hash",
+                                        PasswordHashes.create("synthetic".toCharArray()),
+                                        "invite_code",
+                                        CODE)));
+        properties.add("er.web-api.accounts-file", accounts::toString);
     }
 
     private static String testUrl() {
@@ -143,6 +161,49 @@ class WebApiLogicIntegrationTest {
         MockAgentClient mock = new MockAgentClient(json, "answer");
         when(agent.query(anyString(), any()))
                 .thenAnswer(call -> mock.query(call.getArgument(0), call.getArgument(1)));
+    }
+
+    @Test
+    void loginUsesRealInviteActivationAndUsageWithoutConsumingQuota() throws Exception {
+        seed(8, 295);
+        String response =
+                http.perform(
+                                post("/api/auth/login")
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .content(
+                                                "{\"username\":\"logic_user\",\"password\":\"synthetic\"}"))
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$.remaining_today").value(5))
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString();
+        String code = json.readTree(response).required("invite_code").asText();
+        http.perform(get("/api/conditions").header("X-Invite-Code", code))
+                .andExpect(status().isOk());
+        assertThat(
+                        usage.findById(new DailyUsageId(LocalDate.of(2026, 10, 12), "GLOBAL"))
+                                .orElseThrow()
+                                .getRequestCount())
+                .isEqualTo(295);
+        InviteCodeEntity invite = invites.findById(CODE).orElseThrow();
+        invite.setActive(false);
+        invites.saveAndFlush(invite);
+        http.perform(
+                        post("/api/auth/login")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"username\":\"logic_user\",\"password\":\"synthetic\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("LOGIN_FAILED"));
+        usage.deleteAll();
+        invites.deleteAll();
+        http.perform(
+                        post("/api/auth/login")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"username\":\"logic_user\",\"password\":\"synthetic\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("LOGIN_FAILED"));
     }
 
     @Test

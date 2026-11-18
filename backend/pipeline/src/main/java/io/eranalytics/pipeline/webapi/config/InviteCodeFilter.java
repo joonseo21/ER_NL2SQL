@@ -24,7 +24,8 @@ public class InviteCodeFilter extends OncePerRequestFilter {
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getRequestURI().substring(request.getContextPath().length());
         return !path.startsWith("/api/")
-                || ("POST".equals(request.getMethod()) && "/api/invite/verify".equals(path));
+                || ("POST".equals(request.getMethod())
+                        && ("/api/invite/verify".equals(path) || "/api/auth/login".equals(path)));
     }
 
     @Override
